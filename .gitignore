@@ -1,0 +1,28 @@
+# Node.js
+api/node_modules/
+api/dist/
+api/.env
+
+# Python
+python-service/__pycache__/
+python-service/venv/
+python-service/.pytest_cache/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Application Specific
+jobs/
+models/
+
+# OS/IDE
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*.swo

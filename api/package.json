@@ -1,0 +1,26 @@
+{
+  "name": "steel-platform-api",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --env-file=.env --import tsx/esm --watch src/index.ts",
+    "start": "node --env-file=.env --import tsx/esm src/index.ts",
+    "worker": "node --env-file=.env --import tsx/esm src/workers/drawingWorker.ts"
+  },
+  "dependencies": {
+    "@fastify/multipart": "^8.3.0",
+    "axios": "^1.7.2",
+    "bullmq": "^5.8.4",
+    "fastify": "^4.28.0",
+    "ioredis": "^5.4.1",
+    "pg": "^8.12.0",
+    "uuid": "^10.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.9",
+    "@types/pg": "^8.11.6",
+    "tsx": "^4.16.2",
+    "typescript": "^5.5.3"
+  }
+}
