@@ -55,17 +55,34 @@ def rasterize(body: RasterizeRequest):
     pages_dir = os.path.join(job_dir, "pages")
     os.makedirs(pages_dir, exist_ok=True)
     
-    pages = convert_from_path(body.pdf_path, dpi=body.dpi or 300)
-    result = []
+    # Use paths_only=True to prevent loading all massive images into memory at once
+    # This prevents the 500 Internal Server Error (OOM crash) for large architectural PDFs
+    paths = convert_from_path(
+        body.pdf_path, 
+        dpi=body.dpi or 300,
+        output_folder=pages_dir,
+        fmt="png",
+        paths_only=True
+    )
     
-    for i, page in enumerate(pages):
-        path = os.path.join(pages_dir, f"page_{i+1}.png")
-        page.save(path, "PNG")
+    from PIL import Image
+    import os as builtin_os
+    
+    result = []
+    for i, path in enumerate(paths):
+        # pdftoppm generates names like 'xxxx-01.png'. We want to rename them to 'page_X.png'
+        new_path = builtin_os.path.join(pages_dir, f"page_{i+1}.png")
+        if path != new_path:
+            builtin_os.rename(path, new_path)
+            
+        with Image.open(new_path) as img:
+            width, height = img.size
+            
         result.append({
             "page_number": i + 1,
-            "image_path": path,
-            "width": page.width,
-            "height": page.height
+            "image_path": new_path,
+            "width": width,
+            "height": height
         })
         
     return { "pages": result }
