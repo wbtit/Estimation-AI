@@ -57,12 +57,19 @@ async function stage2ClassifySheets(jobId: string, pages: python.RasterizePage[]
   const classified = [];
 
   for (const page of pages) {
-    const cls = await python.classifySheet(page.image_path);
+    const pageRow = await db.query(
+      `SELECT id FROM pages WHERE job_id = $1 AND page_number = $2`,
+      [jobId, page.page_number],
+    );
+    const pageId = pageRow.rows[0]?.id;
+    if (!pageId) continue;
+
+    const cls = await python.classifySheet(page.image_path, jobId, pageId);
 
     await db.query(
-      `UPDATE pages SET sheet_type = $1, sheet_type_confidence = $2
-       WHERE job_id = $3 AND page_number = $4`,
-      [cls.sheet_type, cls.confidence, jobId, page.page_number],
+      `UPDATE pages SET sheet_type = $1, sheet_type_confidence = $2, title_block_text = $3
+       WHERE id = $4`,
+      [cls.sheet_type, cls.confidence, cls.title_block_text, pageId],
     );
 
     classified.push({ ...page, sheet_type: cls.sheet_type, confidence: cls.confidence });
@@ -104,7 +111,7 @@ async function stage3ExtractSchedules(
 
 // ── Stage 4 + 5: Detect + OCR ─────────────────────────────────────────────────
 
-const DETECTION_SHEET_TYPES = new Set(['framing_plan', 'elevation', 'section', 'connection_detail']);
+const DETECTION_SHEET_TYPES = new Set(['framing_plan', 'elevation', 'section', 'connection_detail', 'foundation_plan']);
 
 async function stage4And5DetectAndOcr(
   jobId: string,

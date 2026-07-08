@@ -20,6 +20,8 @@ class RasterizeRequest(BaseModel):
 
 class ClassifyRequest(BaseModel):
     image_path: str
+    job_id: str
+    page_id: str
 
 class ScheduleRequest(BaseModel):
     image_path: str
@@ -68,6 +70,9 @@ def rasterize(body: RasterizeRequest):
     from PIL import Image
     import os as builtin_os
     
+    # Disable DecompressionBombWarning for massive architectural PDFs
+    Image.MAX_IMAGE_PIXELS = None
+    
     result = []
     for i, path in enumerate(paths):
         # pdftoppm generates names like 'xxxx-01.png'. We want to rename them to 'page_X.png'
@@ -92,44 +97,67 @@ def rasterize(body: RasterizeRequest):
 
 SHEET_TYPE_KEYWORDS = {
     "framing_plan":      ["FRAMING PLAN", "FL. PLAN", "FLOOR FRAMING"],
-    "member_schedule":   ["SCHEDULE", "MEMBER LIST", "BEAM SCHEDULE"],
+    "member_schedule":   ["SCHEDULE", "MEMBER LIST", "BEAM SCHEDULE", "COLUMN SCHEDULE", "LINTEL SCHEDULE", "BASE PLATE SCHEDULE"],
     "elevation":         ["ELEVATION", "ELEV"],
     "section":           ["SECTION", "SECT"],
     "connection_detail": ["CONNECTION", "DETAIL", "TYP. CONN"],
     "general_notes":     ["GENERAL NOTES", "SPECIFICATIONS", "NOTES"],
+    "foundation_plan":   ["FOUNDATION PLAN", "SUPPLEMENTAL FOUNDATION PLAN"],
 }
+
+_reader = None
+def get_ocr_reader():
+    global _reader
+    if _reader is None:
+        import easyocr
+        _reader = easyocr.Reader(['en'], gpu=False)
+    return _reader
 
 @app.post("/classify-sheet")
 def classify_sheet(body: ClassifyRequest):
-    """
-    TODO: Replace stub with YOLOv8 classifier once model is trained.
-    Keyword fallback is used here for bootstrap.
-    """
-    filename = os.path.basename(body.image_path).lower()
+    from PIL import Image
+    import numpy as np
 
-    # Infer sheet type from filename convention (stub heuristic)
-    if "schedule" in filename:
-        sheet_type, confidence = "member_schedule", 0.85
-    elif "plan" in filename:
-        sheet_type, confidence = "framing_plan", 0.85
-    elif "elev" in filename:
-        sheet_type, confidence = "elevation", 0.80
-    elif "section" in filename:
-        sheet_type, confidence = "section", 0.80
-    else:
-        # Default: alternate between framing_plan and member_schedule for stub
-        page_num = 1
-        try:
-            page_num = int(filename.split("page_")[1].split(".")[0])
-        except Exception:
-            pass
-        sheet_type = "member_schedule" if page_num == 1 else "framing_plan"
-        confidence = 0.70
+    # Disable DecompressionBombWarning for massive architectural PDFs
+    Image.MAX_IMAGE_PIXELS = None
+
+    # 1. Crop to the rightmost ~15% for the title block
+    with Image.open(body.image_path) as img:
+        width, height = img.size
+        left = int(width * 0.85)
+        crop_box = (left, 0, width, height)
+        cropped_img = img.crop(crop_box)
+        
+    cropped_np = np.array(cropped_img)
+
+    # 2. Extract text with EasyOCR
+    reader = get_ocr_reader()
+    results = reader.readtext(cropped_np)
+    
+    raw_texts = [res[1] for res in results]
+    title_block_text = " ".join(raw_texts)
+    title_block_text_upper = title_block_text.upper()
+
+    # 3. Match against keywords
+    matched_type = "unknown"
+    best_confidence = 0.0
+
+    for sheet_type, keywords in SHEET_TYPE_KEYWORDS.items():
+        for keyword in keywords:
+            if keyword in title_block_text_upper:
+                matched_type = sheet_type
+                best_confidence = 0.85
+                break
+        if matched_type != "unknown":
+            break
+
+    if matched_type == "unknown":
+        best_confidence = 0.10
 
     return {
-        "sheet_type": sheet_type,
-        "confidence": confidence,
-        "title_block_text": f"STUB TITLE BLOCK — {sheet_type.upper()}",
+        "sheet_type": matched_type,
+        "confidence": best_confidence,
+        "title_block_text": title_block_text
     }
 
 

@@ -23,8 +23,9 @@ CREATE TABLE IF NOT EXISTS pages (
   height_px             INT,
   sheet_type            TEXT,
   -- framing_plan | elevation | section | connection_detail
-  -- member_schedule | general_notes | unknown
+  -- member_schedule | general_notes | unknown | foundation_plan
   sheet_type_confidence FLOAT,
+  title_block_text      TEXT,
   created_at            TIMESTAMPTZ DEFAULT NOW()
 );
 

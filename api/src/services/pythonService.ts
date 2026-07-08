@@ -4,7 +4,7 @@ const PYTHON_URL = process.env.PYTHON_SERVICE_URL ?? 'http://localhost:8000';
 
 const client = axios.create({
   baseURL: PYTHON_URL,
-  timeout: 120_000,
+  timeout: 0, // 0 means no timeout
 });
 
 async function callWithRetry<T>(path: string, body: unknown): Promise<T> {
@@ -42,8 +42,8 @@ export interface SheetClassification {
   title_block_text: string;
 }
 
-export async function classifySheet(imagePath: string): Promise<SheetClassification> {
-  return callWithRetry('/classify-sheet', { image_path: imagePath });
+export async function classifySheet(imagePath: string, jobId: string, pageId: string): Promise<SheetClassification> {
+  return callWithRetry('/classify-sheet', { image_path: imagePath, job_id: jobId, page_id: pageId });
 }
 
 // ── Stage 3 ──────────────────────────────────────────────────────────────────
