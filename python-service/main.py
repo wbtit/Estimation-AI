@@ -22,6 +22,8 @@ class ClassifyRequest(BaseModel):
     image_path: str
     job_id: str
     page_id: str
+    pdf_path: str
+    page_number: int
 
 class ScheduleRequest(BaseModel):
     image_path: str
@@ -96,7 +98,7 @@ def rasterize(body: RasterizeRequest):
 # ── Stage 2: Classify sheet ───────────────────────────────────────────────────
 
 SHEET_TYPE_KEYWORDS = {
-    "framing_plan":      ["FRAMING PLAN", "FL. PLAN", "FLOOR FRAMING"],
+    "framing_plan":      ["FRAMING PLAN", "FL. PLAN", "FLOOR FRAMING", "PODIUM PLAN"],
     "member_schedule":   ["SCHEDULE", "MEMBER LIST", "BEAM SCHEDULE", "COLUMN SCHEDULE", "LINTEL SCHEDULE", "BASE PLATE SCHEDULE"],
     "elevation":         ["ELEVATION", "ELEV"],
     "section":           ["SECTION", "SECT"],
@@ -105,59 +107,159 @@ SHEET_TYPE_KEYWORDS = {
     "foundation_plan":   ["FOUNDATION PLAN", "SUPPLEMENTAL FOUNDATION PLAN"],
 }
 
-_reader = None
-def get_ocr_reader():
-    global _reader
-    if _reader is None:
-        import easyocr
-        _reader = easyocr.Reader(['en'], gpu=False)
-    return _reader
+import re
+def is_anchor(text):
+    # tolerant of O/0, I/1
+    text = text.upper().replace('O', '0').replace('I', '1').replace(' ', '')
+    return bool(re.match(r'^[A-Z]{1,4}\d{2,4}[A-Z]?$', text))
+
+def bbox_distance(b1, b2):
+    # center distance
+    c1x = b1[0] + b1[2]/2
+    c1y = b1[1] + b1[3]/2
+    c2x = b2[0] + b2[2]/2
+    c2y = b2[1] + b2[3]/2
+    return ((c1x - c2x)**2 + (c1y - c2y)**2)**0.5
 
 @app.post("/classify-sheet")
 def classify_sheet(body: ClassifyRequest):
     from PIL import Image
     import numpy as np
-
+    from ocr_engine import get_engine
+    
     # Disable DecompressionBombWarning for massive architectural PDFs
     Image.MAX_IMAGE_PIXELS = None
 
-    # 1. Crop to the rightmost ~15% for the title block
+    engine = get_engine()
+
+    def process_region(image_array):
+        results = engine.detect_text(image_array)
+        
+        anchor_res = None
+        for res in results:
+            if is_anchor(res['text']):
+                anchor_res = res
+                break
+                
+        if anchor_res:
+            # find closest text
+            dists = []
+            for res in results:
+                if res == anchor_res: continue
+                d = bbox_distance(anchor_res['bbox'], res['bbox'])
+                dists.append((d, res))
+            dists.sort(key=lambda x: x[0])
+            
+            # Take the 1-3 closest text blocks as drawing name candidates
+            candidates = [x[1] for x in dists[:3]]
+            
+            matched_type = "unknown"
+            match_conf = 0.0
+            matched_text = ""
+            
+            for cand in candidates:
+                cand_text = cand['text'].upper()
+                for stype, keywords in SHEET_TYPE_KEYWORDS.items():
+                    for kw in keywords:
+                        if kw in cand_text:
+                            matched_type = stype
+                            match_conf = cand['confidence']
+                            matched_text = cand['text']
+                            break
+                    if matched_type != "unknown":
+                        break
+                if matched_type != "unknown":
+                    break
+                    
+            if matched_type != "unknown":
+                # adjust down if multiple ambiguous candidates or anchor is weird
+                return True, matched_type, match_conf, " ".join([r['text'] for r in results]), matched_text
+        
+        return False, "unknown", 0.0, " ".join([r['text'] for r in results]), ""
+
     with Image.open(body.image_path) as img:
         width, height = img.size
-        left = int(width * 0.85)
-        crop_box = (left, 0, width, height)
-        cropped_img = img.crop(crop_box)
         
-    cropped_np = np.array(cropped_img)
-
-    # 2. Extract text with EasyOCR
-    reader = get_ocr_reader()
-    results = reader.readtext(cropped_np)
-    
-    raw_texts = [res[1] for res in results]
-    title_block_text = " ".join(raw_texts)
-    title_block_text_upper = title_block_text.upper()
-
-    # 3. Match against keywords
-    matched_type = "unknown"
-    best_confidence = 0.0
-
-    for sheet_type, keywords in SHEET_TYPE_KEYWORDS.items():
-        for keyword in keywords:
-            if keyword in title_block_text_upper:
-                matched_type = sheet_type
-                best_confidence = 0.85
+        # Tier 1 Crops
+        # Right edge (~15% width)
+        right_box = (int(width * 0.85), 0, width, height)
+        # Bottom edge (~15% height)
+        bottom_box = (0, int(height * 0.85), width, height)
+        # Bottom-right corner (~15% x 15%)
+        br_box = (int(width * 0.85), int(height * 0.85), width, height)
+        
+        crops = [
+            ("right", img.crop(right_box)),
+            ("bottom", img.crop(bottom_box)),
+            ("br", img.crop(br_box))
+        ]
+        
+        resolved = False
+        final_type = "unknown"
+        final_conf = 0.0
+        full_text = ""
+        matched_text = ""
+        tier = 0
+        
+        for name, crop_img in crops:
+            found, m_type, m_conf, f_text, m_text = process_region(np.array(crop_img))
+            if not full_text: full_text = f_text # save at least one text
+            if found:
+                resolved = True
+                final_type = m_type
+                final_conf = m_conf
+                full_text = f_text
+                matched_text = m_text
+                tier = 1
                 break
-        if matched_type != "unknown":
-            break
+                
+        # Tier 2 Fallback
+        if not resolved:
+            found, m_type, m_conf, f_text, m_text = process_region(np.array(img))
+            tier = 2
+            full_text = f_text
+            if found:
+                final_type = m_type
+                final_conf = m_conf
+                matched_text = m_text
+                
+    if final_type == "unknown":
+        final_conf = 0.1
+        matched_text = "N/A"
 
-    if matched_type == "unknown":
-        best_confidence = 0.10
+    # Schedule Detection
+    schedule_present = False
+    
+    # 1. pdfplumber
+    try:
+        import pdfplumber
+        with pdfplumber.open(body.pdf_path) as pdf:
+            if body.page_number <= len(pdf.pages):
+                page = pdf.pages[body.page_number - 1]
+                tables = page.find_tables()
+                if tables and len(tables) > 0:
+                    schedule_present = True
+    except Exception as e:
+        print("pdfplumber error:", e)
+        
+    # 2. fallback to img2table
+    if not schedule_present:
+        try:
+            from img2table.document import Image as Img2TableImage
+            doc = Img2TableImage(body.image_path)
+            tables = doc.extract_tables(implicit_rows=False)
+            if tables and len(tables) > 0:
+                schedule_present = True
+        except Exception as e:
+            print("img2table error:", e)
 
     return {
-        "sheet_type": matched_type,
-        "confidence": best_confidence,
-        "title_block_text": title_block_text
+        "sheet_type": final_type,
+        "confidence": final_conf,
+        "title_block_text": full_text,
+        "detected_schedule_present": schedule_present,
+        "matched_text": matched_text,
+        "tier": tier
     }
 
 

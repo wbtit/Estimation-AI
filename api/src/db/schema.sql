@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS pages (
   -- member_schedule | general_notes | unknown | foundation_plan
   sheet_type_confidence FLOAT,
   title_block_text      TEXT,
+  detected_schedule_present BOOLEAN DEFAULT FALSE,
   created_at            TIMESTAMPTZ DEFAULT NOW()
 );
 

@@ -53,7 +53,7 @@ async function stage1Rasterize(jobId: string, pdfPath: string) {
 
 // ── Stage 2: Classify sheets ──────────────────────────────────────────────────
 
-async function stage2ClassifySheets(jobId: string, pages: python.RasterizePage[]) {
+async function stage2ClassifySheets(jobId: string, pdfPath: string, pages: python.RasterizePage[]) {
   const classified = [];
 
   for (const page of pages) {
@@ -64,15 +64,15 @@ async function stage2ClassifySheets(jobId: string, pages: python.RasterizePage[]
     const pageId = pageRow.rows[0]?.id;
     if (!pageId) continue;
 
-    const cls = await python.classifySheet(page.image_path, jobId, pageId);
+    const cls = await python.classifySheet(page.image_path, jobId, pageId, pdfPath, page.page_number);
 
     await db.query(
-      `UPDATE pages SET sheet_type = $1, sheet_type_confidence = $2, title_block_text = $3
-       WHERE id = $4`,
-      [cls.sheet_type, cls.confidence, cls.title_block_text, pageId],
+      `UPDATE pages SET sheet_type = $1, sheet_type_confidence = $2, title_block_text = $3, detected_schedule_present = $4
+       WHERE id = $5`,
+      [cls.sheet_type, cls.confidence, cls.title_block_text, cls.detected_schedule_present, pageId],
     );
 
-    classified.push({ ...page, sheet_type: cls.sheet_type, confidence: cls.confidence });
+    classified.push({ ...page, sheet_type: cls.sheet_type, confidence: cls.confidence, detected_schedule_present: cls.detected_schedule_present, matched_text: cls.matched_text, tier: cls.tier });
   }
 
   return classified;
@@ -83,9 +83,9 @@ async function stage2ClassifySheets(jobId: string, pages: python.RasterizePage[]
 async function stage3ExtractSchedules(
   jobId: string,
   pdfPath: string,
-  pages: Array<python.RasterizePage & { sheet_type: string }>,
+  pages: Array<python.RasterizePage & { sheet_type: string; detected_schedule_present: boolean }>,
 ) {
-  const schedulePages = pages.filter((p) => p.sheet_type === 'member_schedule');
+  const schedulePages = pages.filter((p) => p.sheet_type === 'member_schedule' || p.detected_schedule_present);
 
   for (const page of schedulePages) {
     const pageRow = await db.query(
@@ -393,7 +393,7 @@ const worker = new Worker(
       const pages = await stage1Rasterize(jobId, pdfPath);
 
       await setStage(jobId, 'classifying', 10);
-      const classifiedPages = await stage2ClassifySheets(jobId, pages);
+      const classifiedPages = await stage2ClassifySheets(jobId, pdfPath, pages);
 
       await setStage(jobId, 'extracting_schedule', 15);
       await stage3ExtractSchedules(jobId, pdfPath, classifiedPages);

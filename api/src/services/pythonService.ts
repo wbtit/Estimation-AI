@@ -40,10 +40,25 @@ export interface SheetClassification {
   sheet_type:       string;
   confidence:       number;
   title_block_text: string;
+  detected_schedule_present: boolean;
+  matched_text?: string;
+  tier?: number;
 }
 
-export async function classifySheet(imagePath: string, jobId: string, pageId: string): Promise<SheetClassification> {
-  return callWithRetry('/classify-sheet', { image_path: imagePath, job_id: jobId, page_id: pageId });
+export async function classifySheet(
+  imagePath: string, 
+  jobId: string, 
+  pageId: string,
+  pdfPath: string,
+  pageNumber: number
+): Promise<SheetClassification> {
+  return callWithRetry('/classify-sheet', { 
+    image_path: imagePath, 
+    job_id: jobId, 
+    page_id: pageId,
+    pdf_path: pdfPath,
+    page_number: pageNumber
+  });
 }
 
 // ── Stage 3 ──────────────────────────────────────────────────────────────────
