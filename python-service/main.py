@@ -98,19 +98,22 @@ def rasterize(body: RasterizeRequest):
 # ── Stage 2: Classify sheet ───────────────────────────────────────────────────
 
 SHEET_TYPE_KEYWORDS = {
-    "framing_plan":      ["FRAMING PLAN", "FL. PLAN", "FLOOR FRAMING", "PODIUM PLAN"],
+    "framing_plan":      ["FRAMING PLAN", "FL. PLAN", "FLOOR FRAMING"],
     "member_schedule":   ["SCHEDULE", "MEMBER LIST", "BEAM SCHEDULE", "COLUMN SCHEDULE", "LINTEL SCHEDULE", "BASE PLATE SCHEDULE"],
     "elevation":         ["ELEVATION", "ELEV"],
     "section":           ["SECTION", "SECT"],
     "connection_detail": ["CONNECTION", "DETAIL", "TYP. CONN"],
-    "general_notes":     ["GENERAL NOTES", "SPECIFICATIONS", "NOTES"],
+    "general_notes":     ["GENERAL NOTES", "SPECIFICATIONS", "NOTES", "SPECIAL INSPECTION", "INSPECTIONS", "STRUCTURAL SPECIAL"],
     "foundation_plan":   ["FOUNDATION PLAN", "SUPPLEMENTAL FOUNDATION PLAN"],
 }
 
 import re
 def is_anchor(text):
+    original = text.strip()
+    if not any(c.isdigit() for c in original):
+        return False
     # tolerant of O/0, I/1
-    text = text.upper().replace('O', '0').replace('I', '1').replace(' ', '')
+    text = original.upper().replace('O', '0').replace('I', '1').replace(' ', '')
     return bool(re.match(r'^[A-Z]{1,4}\d{2,4}[A-Z]?$', text))
 
 def bbox_distance(b1, b2):
@@ -135,11 +138,15 @@ def classify_sheet(body: ClassifyRequest):
     def process_region(image_array):
         results = engine.detect_text(image_array)
         
-        anchor_res = None
+        valid_anchors = []
         for res in results:
             if is_anchor(res['text']):
-                anchor_res = res
-                break
+                valid_anchors.append(res)
+                
+        anchor_res = None
+        if valid_anchors:
+            valid_anchors.sort(key=lambda r: r['bbox'][0] + r['bbox'][1], reverse=True)
+            anchor_res = valid_anchors[0]
                 
         if anchor_res:
             # find closest text
@@ -168,14 +175,52 @@ def classify_sheet(body: ClassifyRequest):
                             break
                     if matched_type != "unknown":
                         break
+                
+                if matched_type == "unknown":
+                    if "PODIUM" in cand_text and "LEVEL" in cand_text:
+                        matched_type = "framing_plan"
+                        match_conf = cand['confidence']
+                        matched_text = cand['text']
+
                 if matched_type != "unknown":
                     break
                     
             if matched_type != "unknown":
                 # adjust down if multiple ambiguous candidates or anchor is weird
                 return True, matched_type, match_conf, " ".join([r['text'] for r in results]), matched_text
+                
+        # Fallback: if no anchor found or no keywords near anchor, search all text blocks
+        matched_type = "unknown"
+        match_conf = 0.0
+        matched_text = ""
+        full_text = " ".join([r['text'] for r in results])
         
-        return False, "unknown", 0.0, " ".join([r['text'] for r in results]), ""
+        # Sort results by confidence or just search all
+        for cand in results:
+            cand_text = cand['text'].upper()
+            for stype, keywords in SHEET_TYPE_KEYWORDS.items():
+                for kw in keywords:
+                    if kw in cand_text:
+                        matched_type = stype
+                        match_conf = cand['confidence']
+                        matched_text = cand['text']
+                        break
+                if matched_type != "unknown":
+                    break
+            
+            if matched_type == "unknown":
+                if "PODIUM" in cand_text and "LEVEL" in cand_text:
+                    matched_type = "framing_plan"
+                    match_conf = cand['confidence']
+                    matched_text = cand['text']
+
+            if matched_type != "unknown":
+                break
+                
+        if matched_type != "unknown":
+            return True, matched_type, match_conf, full_text, matched_text
+
+        return False, "unknown", 0.0, full_text, ""
 
     with Image.open(body.image_path) as img:
         width, height = img.size
@@ -237,8 +282,28 @@ def classify_sheet(body: ClassifyRequest):
             if body.page_number <= len(pdf.pages):
                 page = pdf.pages[body.page_number - 1]
                 tables = page.find_tables()
-                if tables and len(tables) > 0:
-                    schedule_present = True
+                
+                pw, ph = page.width, page.height
+                for t in tables:
+                    x0, y0, x1, y1 = t.bbox
+                    # Ignore full page border
+                    if (x1 - x0) > 0.9 * pw and (y1 - y0) > 0.9 * ph: continue
+                    
+                    if len(t.rows) >= 3:
+                        extracted = t.extract()
+                        text_flat = " ".join([str(c).upper() for r in extracted[:3] for c in r if c])
+                        header_keywords = ["SIZE", "TYPE", "REMARK", "MARK", "LENGTH", "QTY", "QUANTITY", "DESCRIPTION"]
+                        matches = sum(1 for k in header_keywords if k in text_flat)
+                        
+                        is_schedule = ("SCHEDULE" in text_flat or "MEMBER LIST" in text_flat or matches >= 2)
+                        if "GROUT" in text_flat or "WASHER" in text_flat or "COLUMN TYPE" in text_flat or "IBC 2018" in text_flat:
+                            is_schedule = False
+                        if "SPECIAL INSPECTIONS" in text_flat and "SCHEDULE" not in text_flat:
+                            is_schedule = False
+                            
+                        if is_schedule:
+                            schedule_present = True
+                            break
     except Exception as e:
         print("pdfplumber error:", e)
         
@@ -249,7 +314,26 @@ def classify_sheet(body: ClassifyRequest):
             doc = Img2TableImage(body.image_path)
             tables = doc.extract_tables(implicit_rows=False)
             if tables and len(tables) > 0:
-                schedule_present = True
+                img_h, img_w = img.size[1], img.size[0]
+                for t in tables:
+                    x0, y0, x1, y1 = t.bbox.x1, t.bbox.y1, t.bbox.x2, t.bbox.y2
+                    if (x1 - x0) > 0.9 * img_w and (y1 - y0) > 0.9 * img_h: continue
+                    
+                    if t.df.shape[0] >= 3:
+                        # Convert top 3 rows to text
+                        text_flat = " ".join([str(x) for x in t.df.head(3).values.flatten()]).upper()
+                        header_keywords = ["SIZE", "TYPE", "REMARK", "MARK", "LENGTH", "QTY", "QUANTITY", "DESCRIPTION"]
+                        matches = sum(1 for k in header_keywords if k in text_flat)
+                        
+                        is_schedule = ("SCHEDULE" in text_flat or "MEMBER LIST" in text_flat or matches >= 2)
+                        if "GROUT" in text_flat or "WASHER" in text_flat or "COLUMN TYPE" in text_flat or "IBC 2018" in text_flat:
+                            is_schedule = False
+                        if "SPECIAL INSPECTIONS" in text_flat and "SCHEDULE" not in text_flat:
+                            is_schedule = False
+                            
+                        if is_schedule:
+                            schedule_present = True
+                            break
         except Exception as e:
             print("img2table error:", e)
 

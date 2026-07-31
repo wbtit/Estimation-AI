@@ -36,11 +36,11 @@ class PaddleOCREngine(OCREngine):
     def __init__(self):
         from paddleocr import PaddleOCR
         logger.info("Initializing PaddleOCR engine...")
-        self.ocr = PaddleOCR(use_angle_cls=False, lang='en', show_log=False)
+        self.ocr = PaddleOCR(use_angle_cls=False, lang='en')
 
     def detect_text(self, image) -> List[Dict[str, Any]]:
         # image should be a numpy array or path
-        results = self.ocr.ocr(image, cls=False)
+        results = self.ocr.ocr(image)
         output = []
         if not results or not results[0]:
             return output
