@@ -66,7 +66,8 @@ def rasterize(body: RasterizeRequest):
         dpi=body.dpi or 300,
         output_folder=pages_dir,
         fmt="png",
-        paths_only=True
+        paths_only=True,
+        grayscale=True
     )
     
     from PIL import Image

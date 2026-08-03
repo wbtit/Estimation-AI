@@ -7,7 +7,7 @@ from pdf2image import convert_from_path
 def run_test():
     pdf_path = sys.argv[1]
     print(f"Loading {pdf_path}...")
-    pages = convert_from_path(pdf_path, dpi=200)
+    pages = convert_from_path(pdf_path, dpi=200, grayscale=True)
     
     # Save pages locally for testing
     page_files = []
