@@ -112,10 +112,14 @@ import re
 def is_anchor(text):
     original = text.strip()
     if not any(c.isdigit() for c in original):
-        return False
-    # tolerant of O/0, I/1
-    text = original.upper().replace('O', '0').replace('I', '1').replace(' ', '')
-    return bool(re.match(r'^[A-Z]{1,4}\d{2,4}[A-Z]?$', text))
+        return False, None
+    upper_orig = original.upper().replace(' ', '')
+    if bool(re.match(r'^[A-Z]{1,4}\d{2,4}[A-Z]?$', upper_orig)):
+        return True, "exact"
+    text = upper_orig.replace('O', '0').replace('I', '1')
+    if bool(re.match(r'^[A-Z]{1,4}\d{2,4}[A-Z]?$', text)):
+        return True, "fuzzy"
+    return False, None
 
 def bbox_distance(b1, b2):
     # center distance
@@ -141,7 +145,9 @@ def classify_sheet(body: ClassifyRequest):
         
         valid_anchors = []
         for res in results:
-            if is_anchor(res['text']):
+            is_match, match_type = is_anchor(res['text'])
+            if is_match:
+                res['anchor_match_type'] = match_type
                 valid_anchors.append(res)
                 
         anchor_res = None
@@ -165,7 +171,16 @@ def classify_sheet(body: ClassifyRequest):
             match_conf = 0.0
             matched_text = ""
             
+            all_matched_types = set()
             for cand in candidates:
+                cand_text = cand['text'].upper()
+                for stype, keywords in SHEET_TYPE_KEYWORDS.items():
+                    if any(kw in cand_text for kw in keywords):
+                        all_matched_types.add(stype)
+                if "PODIUM" in cand_text and "LEVEL" in cand_text:
+                    all_matched_types.add("framing_plan")
+            
+            for cand, dist in zip(candidates, [x[0] for x in dists[:3]]):
                 cand_text = cand['text'].upper()
                 for stype, keywords in SHEET_TYPE_KEYWORDS.items():
                     for kw in keywords:
@@ -184,11 +199,12 @@ def classify_sheet(body: ClassifyRequest):
                         matched_text = cand['text']
 
                 if matched_type != "unknown":
-                    break
+                    competing = len(all_matched_types - {matched_type})
+                    return True, matched_type, match_conf, " ".join([r['text'] for r in results]), matched_text, anchor_res['anchor_match_type'], dist, competing
                     
             if matched_type != "unknown":
-                # adjust down if multiple ambiguous candidates or anchor is weird
-                return True, matched_type, match_conf, " ".join([r['text'] for r in results]), matched_text
+                # Fallback, though we shouldn't reach here if unknown
+                pass
                 
         # Fallback: if no anchor found or no keywords near anchor, search all text blocks
         matched_type = "unknown"
@@ -197,6 +213,15 @@ def classify_sheet(body: ClassifyRequest):
         full_text = " ".join([r['text'] for r in results])
         
         # Sort results by confidence or just search all
+        all_matched_types = set()
+        for cand in results:
+            cand_text = cand['text'].upper()
+            for stype, keywords in SHEET_TYPE_KEYWORDS.items():
+                if any(kw in cand_text for kw in keywords):
+                    all_matched_types.add(stype)
+            if "PODIUM" in cand_text and "LEVEL" in cand_text:
+                all_matched_types.add("framing_plan")
+                
         for cand in results:
             cand_text = cand['text'].upper()
             for stype, keywords in SHEET_TYPE_KEYWORDS.items():
@@ -216,12 +241,10 @@ def classify_sheet(body: ClassifyRequest):
                     matched_text = cand['text']
 
             if matched_type != "unknown":
-                break
-                
-        if matched_type != "unknown":
-            return True, matched_type, match_conf, full_text, matched_text
+                competing = len(all_matched_types - {matched_type})
+                return True, matched_type, match_conf, full_text, matched_text, "none", 0.0, competing
 
-        return False, "unknown", 0.0, full_text, ""
+        return False, "unknown", 0.0, full_text, "", "none", 0.0, 0
 
     with Image.open(body.image_path) as img:
         width, height = img.size
@@ -245,10 +268,13 @@ def classify_sheet(body: ClassifyRequest):
         final_conf = 0.0
         full_text = ""
         matched_text = ""
+        anchor_match_type = "none"
+        anchor_distance_px = 0.0
+        competing = 0
         tier = 0
         
         for name, crop_img in crops:
-            found, m_type, m_conf, f_text, m_text = process_region(np.array(crop_img))
+            found, m_type, m_conf, f_text, m_text, a_match, a_dist, comp = process_region(np.array(crop_img))
             if not full_text: full_text = f_text # save at least one text
             if found:
                 resolved = True
@@ -256,18 +282,24 @@ def classify_sheet(body: ClassifyRequest):
                 final_conf = m_conf
                 full_text = f_text
                 matched_text = m_text
+                anchor_match_type = a_match
+                anchor_distance_px = float(a_dist)
+                competing = int(comp)
                 tier = 1
                 break
                 
         # Tier 2 Fallback
         if not resolved:
-            found, m_type, m_conf, f_text, m_text = process_region(np.array(img))
+            found, m_type, m_conf, f_text, m_text, a_match, a_dist, comp = process_region(np.array(img))
             tier = 2
             full_text = f_text
             if found:
                 final_type = m_type
                 final_conf = m_conf
                 matched_text = m_text
+                anchor_match_type = a_match
+                anchor_distance_px = float(a_dist)
+                competing = int(comp)
                 
     if final_type == "unknown":
         final_conf = 0.1
@@ -275,6 +307,7 @@ def classify_sheet(body: ClassifyRequest):
 
     # Schedule Detection
     schedule_present = False
+    schedule_regions = []
     
     # 1. pdfplumber
     try:
@@ -304,7 +337,7 @@ def classify_sheet(body: ClassifyRequest):
                             
                         if is_schedule:
                             schedule_present = True
-                            break
+                            schedule_regions.append({"x1": float(x0), "y1": float(y0), "x2": float(x1), "y2": float(y1)})
     except Exception as e:
         print("pdfplumber error:", e)
         
@@ -334,7 +367,7 @@ def classify_sheet(body: ClassifyRequest):
                             
                         if is_schedule:
                             schedule_present = True
-                            break
+                            schedule_regions.append({"x1": float(x0), "y1": float(y0), "x2": float(x1), "y2": float(y1)})
         except Exception as e:
             print("img2table error:", e)
 
@@ -344,7 +377,14 @@ def classify_sheet(body: ClassifyRequest):
         "title_block_text": full_text,
         "detected_schedule_present": schedule_present,
         "matched_text": matched_text,
-        "tier": tier
+        "tier": tier,
+        "matched_candidate_text": matched_text,
+        "anchor_match_type": anchor_match_type,
+        "anchor_distance_px": anchor_distance_px,
+        "competing_keyword_count": competing,
+        "resolving_tier": tier,
+        "text_source": "ocr",
+        "detected_schedule_regions": schedule_regions if schedule_present else None
     }
 
 

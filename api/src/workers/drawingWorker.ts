@@ -67,15 +67,63 @@ async function stage2ClassifySheets(jobId: string, pdfPath: string, pages: pytho
     const cls = await python.classifySheet(page.image_path, jobId, pageId, pdfPath, page.page_number);
 
     await db.query(
-      `UPDATE pages SET sheet_type = $1, sheet_type_confidence = $2, title_block_text = $3, detected_schedule_present = $4
-       WHERE id = $5`,
-      [cls.sheet_type, cls.confidence, cls.title_block_text, cls.detected_schedule_present, pageId],
+      `UPDATE pages SET 
+         sheet_type = $1, 
+         sheet_type_confidence = $2, 
+         title_block_text = $3, 
+         detected_schedule_present = $4,
+         matched_candidate_text = $5,
+         anchor_match_type = $6,
+         anchor_distance_px = $7,
+         competing_keyword_count = $8,
+         resolving_tier = $9,
+         text_source = $10,
+         detected_schedule_regions = $11
+       WHERE id = $12`,
+      [
+        cls.sheet_type, 
+        cls.confidence, 
+        cls.title_block_text, 
+        cls.detected_schedule_present,
+        cls.matched_candidate_text,
+        cls.anchor_match_type,
+        cls.anchor_distance_px,
+        cls.competing_keyword_count,
+        cls.resolving_tier,
+        cls.text_source,
+        cls.detected_schedule_regions ? JSON.stringify(cls.detected_schedule_regions) : null,
+        pageId
+      ],
     );
 
-    classified.push({ ...page, sheet_type: cls.sheet_type, confidence: cls.confidence, detected_schedule_present: cls.detected_schedule_present, matched_text: cls.matched_text, tier: cls.tier });
+    classified.push({ 
+      ...page, 
+      sheet_type: cls.sheet_type, 
+      confidence: cls.confidence, 
+      detected_schedule_present: cls.detected_schedule_present, 
+      matched_text: cls.matched_text, 
+      tier: cls.tier 
+    });
   }
 
   return classified;
+}
+
+// ── Stage 2.5: Flag unclassified sheets ───────────────────────────────────────
+
+async function stage2_5FlagUnclassified(jobId: string, pages: Array<python.RasterizePage & { sheet_type: string; detected_schedule_present: boolean }>) {
+  for (const page of pages) {
+    const goesToStage3 = page.sheet_type === 'member_schedule' || page.detected_schedule_present;
+    const goesToStage4 = DETECTION_SHEET_TYPES.has(page.sheet_type);
+    const explicitlySkipped = (page.sheet_type === 'general_notes' || page.sheet_type === 'connection_detail') && !page.detected_schedule_present;
+
+    if (!goesToStage3 && !goesToStage4 && !explicitlySkipped) {
+      await db.query(
+        `UPDATE pages SET needs_review = true, review_reason = 'unclassified_sheet' WHERE job_id = $1 AND page_number = $2`,
+        [jobId, page.page_number],
+      );
+    }
+  }
 }
 
 // ── Stage 3: Extract member schedules ─────────────────────────────────────────
@@ -394,6 +442,8 @@ const worker = new Worker(
 
       await setStage(jobId, 'classifying', 10);
       const classifiedPages = await stage2ClassifySheets(jobId, pdfPath, pages);
+      
+      await stage2_5FlagUnclassified(jobId, classifiedPages);
 
       await setStage(jobId, 'extracting_schedule', 15);
       await stage3ExtractSchedules(jobId, pdfPath, classifiedPages);

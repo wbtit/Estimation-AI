@@ -27,6 +27,19 @@ CREATE TABLE IF NOT EXISTS pages (
   sheet_type_confidence FLOAT,
   title_block_text      TEXT,
   detected_schedule_present BOOLEAN DEFAULT FALSE,
+  
+  -- diagnostic columns
+  matched_candidate_text   TEXT,
+  anchor_match_type        TEXT,
+  anchor_distance_px       FLOAT,
+  competing_keyword_count  INT,
+  resolving_tier           INT,
+  text_source              TEXT,
+  
+  detected_schedule_regions JSONB,
+  needs_review             BOOLEAN DEFAULT FALSE,
+  review_reason            TEXT,
+  
   created_at            TIMESTAMPTZ DEFAULT NOW()
 );
 
