@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS jobs (
   current_stage TEXT,
   error         TEXT,
   created_at    TIMESTAMPTZ DEFAULT NOW(),
+  processing_started_at TIMESTAMPTZ,
   updated_at    TIMESTAMPTZ DEFAULT NOW()
 );
 

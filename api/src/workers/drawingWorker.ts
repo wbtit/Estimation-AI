@@ -40,6 +40,8 @@ async function stage1Rasterize(jobId: string, pdfPath: string) {
     [result.pages.length, jobId],
   );
 
+  await db.query(`DELETE FROM pages WHERE job_id = $1`, [jobId]);
+
   for (const p of result.pages) {
     await db.query(
       `INSERT INTO pages (job_id, page_number, image_path, width_px, height_px)
@@ -430,7 +432,7 @@ const worker = new Worker(
 
     try {
       await db.query(
-        `UPDATE jobs SET status = 'processing', updated_at = NOW() WHERE id = $1`,
+        `UPDATE jobs SET status = 'processing', processing_started_at = NOW(), updated_at = NOW() WHERE id = $1`,
         [jobId],
       );
 
@@ -474,7 +476,7 @@ const worker = new Worker(
       throw err;
     }
   },
-  { connection, concurrency: 2 },
+  { connection, concurrency: 1 },
 );
 
 worker.on('completed', (job) => console.log(`[worker] completed jobId=${job.data.jobId}`));
