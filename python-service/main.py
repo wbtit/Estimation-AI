@@ -135,6 +135,18 @@ def classify_sheet(body: ClassifyRequest):
     import numpy as np
     from ocr_engine import get_engine
     
+    import gc
+    
+    def get_current_rss_mb():
+        try:
+            with open('/proc/self/status') as f:
+                for line in f:
+                    if line.startswith('VmRSS:'):
+                        return int(line.split()[1]) / 1024
+        except:
+            pass
+        return 0.0
+
     # Disable DecompressionBombWarning for massive architectural PDFs
     Image.MAX_IMAGE_PIXELS = None
 
@@ -273,6 +285,9 @@ def classify_sheet(body: ClassifyRequest):
         competing = 0
         tier = 0
         
+        tier1_rss = 0.0
+        tier2_rss = 0.0
+        
         for name, crop_img in crops:
             found, m_type, m_conf, f_text, m_text, a_match, a_dist, comp = process_region(np.array(crop_img))
             if not full_text: full_text = f_text # save at least one text
@@ -288,6 +303,9 @@ def classify_sheet(body: ClassifyRequest):
                 tier = 1
                 break
                 
+        gc.collect()
+        tier1_rss = get_current_rss_mb()
+                
         # Tier 2 Fallback
         if not resolved:
             found, m_type, m_conf, f_text, m_text, a_match, a_dist, comp = process_region(np.array(img))
@@ -301,6 +319,11 @@ def classify_sheet(body: ClassifyRequest):
                 anchor_distance_px = float(a_dist)
                 competing = int(comp)
                 
+            gc.collect()
+            tier2_rss = get_current_rss_mb()
+            
+        print(f"[MEMORY] Page {body.page_number} Tier 1 Peak RSS: {tier1_rss:.1f} MB | Tier 2 Peak RSS: {tier2_rss:.1f} MB | Resolved in Tier {tier}", flush=True)
+        
     if final_type == "unknown":
         final_conf = 0.1
         matched_text = "N/A"
@@ -384,7 +407,11 @@ def classify_sheet(body: ClassifyRequest):
         "competing_keyword_count": competing,
         "resolving_tier": tier,
         "text_source": "ocr",
-        "detected_schedule_regions": schedule_regions if schedule_present else None
+        "detected_schedule_regions": schedule_regions if schedule_present else None,
+        "memory_stats": {
+            "tier1_rss_mb": tier1_rss,
+            "tier2_rss_mb": tier2_rss
+        }
     }
 
 
