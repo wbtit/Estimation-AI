@@ -121,3 +121,15 @@ def test_output_never_contains_file_names(tmp_path: Path, capsys: pytest.Capture
     assert "Acme" not in printed and "Secret" not in printed and "job-002" in printed
     assert "Acme" in (out / "inventory_map.csv").read_text()  # the mapping file is the only place
     assert "Acme" not in (out / "inventory.csv").read_text()
+
+
+def test_labelled_circles_are_found_on_a_rotated_page(tmp_path: Path) -> None:
+    def build(page: pymupdf.Page) -> None:
+        page.set_rotation(270)
+        inv_m = ~page.rotation_matrix  # draw in displayed coordinates
+        centre = pymupdf.Point(400, 300)
+        page.draw_circle(centre * inv_m, 15, width=1)
+        page.insert_text(pymupdf.Point(396, 304) * inv_m, "A", fontsize=12)
+
+    row = inv.inspect(make(tmp_path / "h.pdf", build), "job-x", "t")
+    assert row["circles"] == 1 and row["labelled_circles"] == 1

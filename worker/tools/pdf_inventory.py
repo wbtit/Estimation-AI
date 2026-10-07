@@ -174,9 +174,9 @@ def geometry(page: pymupdf.Page, text_words: list) -> dict:
 
 
 def _inside(word, cx, cy, r, matrix) -> bool:
-    # words from get_text are in displayed coordinates already
-    wx, wy = (word[0] + word[2]) / 2, (word[1] + word[3]) / 2
-    return math.hypot(wx - cx, wy - cy) < 0.9 * r
+    # text coordinates are in unrotated page space; map the word centre like the paths
+    c = pymupdf.Point((word[0] + word[2]) / 2, (word[1] + word[3]) / 2) * matrix
+    return math.hypot(c.x - cx, c.y - cy) < 0.9 * r
 
 
 def exploded_dash_segments(segs: list[tuple[float, float, float, float]]) -> int:
@@ -206,6 +206,8 @@ def exploded_dash_segments(segs: list[tuple[float, float, float, float]]) -> int
                     if j == i or j in taken:
                         continue
                     vx, vy = arr[j, 0] - ex, arr[j, 1] - ey
+                    if vx * math.cos(ang[i]) + vy * math.sin(ang[i]) <= 0:
+                        continue  # only forward: a chain never links backwards
                     gap = math.hypot(vx, vy)
                     if not 0.2 * length[i] <= gap <= 2.5 * length[i]:
                         continue

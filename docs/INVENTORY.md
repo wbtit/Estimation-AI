@@ -13,11 +13,14 @@ Tool: `worker/tools/pdf_inventory.py` (run as `python -I`, from outside the data
 | Raster-only (scanned) | 0 | 0 |
 | With optional-content layers | 17 (8 with a layer referenced by page content, 9 not) | |
 | Creator category | Bluebeam 22, AutoCAD 4, other 6, unknown 2 | 13 / 2 / 3 / 1 |
-| Circles with a short label (sampled pages) | present in all 34 | present in all 19 (16 with 20 or more) |
+| Circles with a short label (sampled pages) | present in 32 of 34 | present in 18 of 19 (all 18 with 20 or more); the exception has two-line callouts only |
 | Dashes | exploded 32, real pattern 0, none 2 | exploded 18, none 1 |
 | Repeated content | 15 files repeat an earlier file | |
 
 Two files are byte-identical to `job-001` (one in each item); these are the two outlined-text files.
+
+## Corrections made after the first run
+Two bugs in this tool were found and fixed, and the inventory was rerun: text coordinates on rotated pages were not mapped through the page rotation (this undercounted labelled circles on rotated files), and dash chaining could link a segment backwards. The numbers above are from the corrected run.
 
 ## What the flags mean, and their limits
 - **Sampling:** text characters, sizes and producer come from all pages. Path-based flags (vector-heavy, raster, circles, dashes) come from up to 6 evenly spaced pages per file, because counting paths on every page was too slow.
