@@ -1,11 +1,12 @@
 // Deterministic BOM generator. Length and weight are computed here from the resolved end points
 // and the catalog weight per metre; they are never stored. No pricing in this phase.
 //
-// A member is "included" in the totals when both its length and its catalog weight could be
-// computed and are positive. Members that cannot be weighed stay in the BOM, flagged, and are
-// counted as excluded so nothing is hidden. Included members can still be amber or red for other
-// reasons (for example a missing grade); their status is carried on the line.
-import type { MemberType, StatusColor, Member } from '../contract/index.js';
+// Totals policy:
+//  * GREEN and AMBER members that can be weighed are counted in the main totals.
+//  * RED members are never counted in the main totals. They stay on their BOM lines (with a
+//    length and weight when those can still be computed) and are reported separately on the
+//    `excluded_red` line, so nothing is hidden.
+import type { Member, MemberType, StatusColor } from '../contract/index.js';
 import { memberLengthMm } from '../members/geometry.js';
 import {
   compareIds,
@@ -29,6 +30,7 @@ export interface BomLine {
   total_weight_kg: number | null;
   status: StatusColor;
   issue_codes: IssueCode[];
+  /** True for green/amber members that could be weighed. Red members are always false. */
   included_in_totals: boolean;
 }
 
@@ -43,8 +45,16 @@ export interface BomGroup {
 export interface BomTotals {
   members: number;
   members_included: number;
-  members_excluded: number;
   pieces_included: number;
+  total_length_mm: number;
+  total_weight_kg: number;
+}
+
+/** Red members, reported apart from the totals. Length and weight cover `members_weighed` only. */
+export interface BomExcludedRed {
+  members: number;
+  pieces: number;
+  members_weighed: number;
   total_length_mm: number;
   total_weight_kg: number;
 }
@@ -52,6 +62,7 @@ export interface BomTotals {
 export interface Bom {
   lines: BomLine[];
   totals: BomTotals;
+  excluded_red: BomExcludedRed;
   by_profile: BomGroup[];
   by_type: BomGroup[];
 }
@@ -94,7 +105,6 @@ export function generateBom(
       length !== null && length > 0 && weightPerM !== null && weightPerM > 0
         ? (length / 1000) * weightPerM
         : null;
-    const included = unitWeight !== null;
 
     return {
       member_id: m.member_id,
@@ -111,24 +121,31 @@ export function generateBom(
       total_weight_kg: unitWeight === null ? null : unitWeight * m.quantity,
       status: result.status,
       issue_codes: result.issues.map((i) => i.code),
-      included_in_totals: included,
+      included_in_totals: unitWeight !== null && result.status !== 'red',
     };
   });
 
-  const includedLines = lines.filter((l) => l.included_in_totals);
-  const totals: BomTotals = {
-    members: lines.length,
-    members_included: includedLines.length,
-    members_excluded: lines.length - includedLines.length,
-    pieces_included: includedLines.reduce((s, l) => s + l.quantity, 0),
-    total_length_mm: includedLines.reduce((s, l) => s + (l.total_length_mm ?? 0), 0),
-    total_weight_kg: includedLines.reduce((s, l) => s + (l.total_weight_kg ?? 0), 0),
-  };
+  const included = lines.filter((l) => l.included_in_totals);
+  const red = lines.filter((l) => l.status === 'red');
+  const redWeighed = red.filter((l) => l.total_weight_kg !== null);
 
   return {
     lines,
-    totals,
-    by_profile: group(includedLines, (l) => l.profile ?? ''),
-    by_type: group(includedLines, (l) => l.type),
+    totals: {
+      members: lines.length,
+      members_included: included.length,
+      pieces_included: included.reduce((s, l) => s + l.quantity, 0),
+      total_length_mm: included.reduce((s, l) => s + (l.total_length_mm ?? 0), 0),
+      total_weight_kg: included.reduce((s, l) => s + (l.total_weight_kg ?? 0), 0),
+    },
+    excluded_red: {
+      members: red.length,
+      pieces: red.reduce((s, l) => s + l.quantity, 0),
+      members_weighed: redWeighed.length,
+      total_length_mm: redWeighed.reduce((s, l) => s + (l.total_length_mm ?? 0), 0),
+      total_weight_kg: redWeighed.reduce((s, l) => s + (l.total_weight_kg ?? 0), 0),
+    },
+    by_profile: group(included, (l) => l.profile ?? ''),
+    by_type: group(included, (l) => l.type),
   };
 }

@@ -56,7 +56,7 @@ describe('Excel export', () => {
       'In totals',
       'Issues',
     ]);
-    expect(ws.rowCount).toBe(1 + 14 + 1);
+    expect(ws.rowCount).toBe(1 + 14 + 2); // header, members, total, excluded (red)
     const ids: unknown[] = [];
     for (let r = 2; r <= 15; r += 1) ids.push(ws.getRow(r).getCell(1).value);
     expect(ids).toEqual([
@@ -96,6 +96,12 @@ describe('Excel export', () => {
     expect(b4.getCell(15).value).toBe('No');
     expect(b4.getCell(16).value).toBe('MISSING_PROFILE');
 
+    // B6 is red (no end elevation): it is weighed on its line but not counted in the totals.
+    const b6 = rowByFirstCell(ws, 'B6');
+    expect(b6.getCell(12).value).toBe(60);
+    expect(b6.getCell(14).value).toBe('red');
+    expect(b6.getCell(15).value).toBe('No');
+
     expect(rowByFirstCell(ws, 'B3').getCell(16).value).toBe('MISSING_MATERIAL; MISSING_GRADE');
     expect(rowByFirstCell(ws, 'B11').getCell(7).value).toBe(4);
     expect(rowByFirstCell(ws, 'B11').getCell(12).value).toBe(600);
@@ -104,9 +110,15 @@ describe('Excel export', () => {
   it('BOM sheet: totals row sums only the members included in totals', async () => {
     const ws = (await workbook()).getWorksheet('BOM')!;
     const total = rowByFirstCell(ws, 'TOTAL (members in totals)');
-    expect(total.getCell(7).value).toBe(14);
-    expect(total.getCell(12).value).toBe(1465);
-    expect(total.getCell(13).value as number).toBeCloseTo(3229.77, 1);
+    expect(total.getCell(7).value).toBe(13);
+    expect(total.getCell(12).value).toBe(1405);
+    expect(total.getCell(13).value as number).toBeCloseTo(3097.49, 1);
+
+    // Red members are reported on their own line, not in the total above.
+    const excluded = rowByFirstCell(ws, 'EXCLUDED (red), members weighed only');
+    expect(excluded.getCell(7).value).toBe(4);
+    expect(excluded.getCell(12).value).toBe(60);
+    expect(excluded.getCell(13).value as number).toBeCloseTo(132.277, 3);
   });
 
   it('Summary sheet: inputs, counts, totals, groups, issue counts, and a no-pricing note', async () => {
@@ -117,19 +129,24 @@ describe('Excel export', () => {
     expect(value('Contract schema version')).toBe(0);
     expect(value('Pricing')).toBe('Not included in this export');
     expect(value('Total members')).toBe(14);
-    expect(value('Included in totals')).toBe(11);
-    expect(value('Excluded from totals (cannot be weighed)')).toBe(3);
+    expect(value('Included in totals')).toBe(10);
+    expect(value('Excluded (red), not in totals')).toBe(4);
     expect(value('Status green')).toBe(6);
     expect(value('Status amber')).toBe(4);
     expect(value('Status red')).toBe(4);
-    expect(value('Total length (mm)')).toBe(79000);
-    expect(value('Total length (ft-in)')).toBe(`259'-2 1/4"`);
-    expect(value('Total weight (kg)')).toBe(1465);
-    expect(value('Total weight (tonnes)')).toBe(1.465);
+    expect(value('Total length (mm)')).toBe(73000);
+    expect(value('Total length (ft-in)')).toBe(`239'-6"`);
+    expect(value('Total weight (kg)')).toBe(1405);
+    expect(value('Total weight (tonnes)')).toBe(1.405);
+    expect(value('Red members')).toBe(4);
+    expect(value('Red pieces')).toBe(4);
+    expect(value('Red members that could still be weighed')).toBe(1);
+    expect(value('Red weighed length (mm)')).toBe(6000);
+    expect(value('Red weighed weight (kg)')).toBe(60);
 
     const profile = rowByFirstCell(ws, 'TEST-002');
     expect([2, 3, 4, 5].map((c) => profile.getCell(c).value)).toEqual([2, 5, 29000, 725]);
-    expect(rowByFirstCell(ws, 'beam').getCell(5).value).toBe(1145);
+    expect(rowByFirstCell(ws, 'beam').getCell(5).value).toBe(1085);
     expect(rowByFirstCell(ws, 'DUPLICATE_MEMBER').getCell(2).value).toBe(2);
     expect(rowByFirstCell(ws, 'UNSUPPORTED_MEMBER').getCell(2).value).toBe(1);
   });

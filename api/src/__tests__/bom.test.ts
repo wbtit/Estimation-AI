@@ -79,7 +79,7 @@ describe('generateBom', () => {
     });
   });
 
-  it('keeps members that cannot be weighed in the BOM, flagged, and excludes them from totals', () => {
+  it('keeps members that cannot be weighed in the BOM, flagged, and reports them as excluded (red)', () => {
     const noProfile = beam('b2', { profile: null });
     const unknownProfile = beam('b3', { profile: 'TEST-404' });
     const noLength = beam('b4', { end: { resolved_xyz_mm: null } });
@@ -98,11 +98,63 @@ describe('generateBom', () => {
     expect(bom.totals).toEqual({
       members: 5,
       members_included: 2,
-      members_excluded: 3,
       pieces_included: 2,
       total_length_mm: 10000,
       total_weight_kg: 160,
     });
+    expect(bom.excluded_red).toEqual({
+      members: 3,
+      pieces: 3,
+      members_weighed: 0,
+      total_length_mm: 0,
+      total_weight_kg: 0,
+    });
+  });
+
+  it('keeps a RED member out of the main total even when it can be weighed, and reports it apart', () => {
+    const redButWeighable = beam('b2', {
+      quantity: 2,
+      start: { resolved_xyz_mm: [0, 3000, 4000] },
+      end: { elevation_mm: null, resolved_xyz_mm: [6000, 3000, 4000] },
+    });
+    const bom = bomOf([column, beam('b1'), redButWeighable]);
+
+    const line = bom.lines.find((l) => l.member_id === 'b2');
+    expect(line).toMatchObject({
+      status: 'red',
+      issue_codes: ['MISSING_END_ELEVATION'],
+      included_in_totals: false,
+      unit_weight_kg: 60, // still computed and shown on its line
+      total_weight_kg: 120,
+    });
+    expect(bom.totals).toEqual({
+      members: 3,
+      members_included: 2,
+      pieces_included: 2,
+      total_length_mm: 10000,
+      total_weight_kg: 160,
+    });
+    expect(bom.excluded_red).toEqual({
+      members: 1,
+      pieces: 2,
+      members_weighed: 1,
+      total_length_mm: 12000,
+      total_weight_kg: 120,
+    });
+    expect(bom.by_profile.map((g) => g.key)).toEqual(['TEST-001', 'TEST-002']);
+    expect(bom.by_profile[0]).toMatchObject({ member_count: 1, total_weight_kg: 60 });
+  });
+
+  it('keeps AMBER members in the main total', () => {
+    const amber = beam('b2', { material: null, supported_by: [] });
+    const bom = bomOf([column, beam('b1'), amber]);
+    expect(bom.lines.find((l) => l.member_id === 'b2')).toMatchObject({
+      status: 'amber',
+      included_in_totals: true,
+    });
+    expect(bom.totals.members_included).toBe(3);
+    expect(bom.totals.total_weight_kg).toBe(220);
+    expect(bom.excluded_red.members).toBe(0);
   });
 
   it('still includes a computable member that has a non-weight problem, and carries its status', () => {
@@ -191,5 +243,29 @@ describe('generateBom', () => {
   it('has no pricing fields', () => {
     const line = bomOf([column, beam('b1')]).lines[0] as unknown as Record<string, unknown>;
     expect(Object.keys(line).filter((k) => /cost|price|rate/i.test(k))).toEqual([]);
+  });
+});
+
+describe('column base elevation', () => {
+  it('is the elevation of the lower end, by position', async () => {
+    const { columnBaseElevationMm } = await import('../members/geometry.js');
+    const c = makeMember({
+      member_id: 'c',
+      type: 'column',
+      start: { elevation_mm: 4000, resolved_xyz_mm: [0, 0, 4000] },
+      end: { elevation_mm: 100, resolved_xyz_mm: [0, 0, 0] },
+    });
+    expect(columnBaseElevationMm(c)).toBe(100);
+  });
+
+  it('treats an elevation of 0 as a real base elevation', async () => {
+    const { columnBaseElevationMm } = await import('../members/geometry.js');
+    const c = makeMember({
+      member_id: 'c',
+      type: 'column',
+      start: { elevation_mm: 0, resolved_xyz_mm: [0, 0, 0] },
+      end: { elevation_mm: 4000, resolved_xyz_mm: [0, 0, 4000] },
+    });
+    expect(columnBaseElevationMm(c)).toBe(0);
   });
 });

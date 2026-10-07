@@ -6,7 +6,7 @@
 // not matter. Severity mapping and the column-support exemption are documented assumptions
 // (docs/OPEN_QUESTIONS.md, items 4 and 5).
 import type { Member, MemberType, StatusColor } from '../contract/index.js';
-import { memberLengthMm } from '../members/geometry.js';
+import { columnBaseElevationMm, memberLengthMm } from '../members/geometry.js';
 
 export type Severity = 'amber' | 'red';
 
@@ -18,6 +18,7 @@ export const ISSUE_CODES = [
   'MISSING_GRADE',
   'MISSING_START_ELEVATION',
   'MISSING_END_ELEVATION',
+  'COLUMN_BASE_ELEVATION_MISSING',
   'LENGTH_UNAVAILABLE',
   'NON_POSITIVE_LENGTH',
   'UNSUPPORTED_MEMBER',
@@ -62,6 +63,7 @@ const SEVERITY: Record<IssueCode, Severity> = {
   NON_POSITIVE_WEIGHT: 'red',
   MISSING_START_ELEVATION: 'red',
   MISSING_END_ELEVATION: 'red',
+  COLUMN_BASE_ELEVATION_MISSING: 'red',
   LENGTH_UNAVAILABLE: 'red',
   NON_POSITIVE_LENGTH: 'red',
   MISSING_MATERIAL: 'amber',
@@ -155,6 +157,17 @@ export function validateMembers(
     }
     if (m.end.elevation_mm == null) {
       issues.push(issue('MISSING_END_ELEVATION', 'end.elevation_mm', 'end elevation is missing'));
+    }
+
+    // Columns are exempt from the unsupported check, but their base elevation must be known.
+    if (m.type === 'column' && columnBaseElevationMm(m) === null) {
+      issues.push(
+        issue(
+          'COLUMN_BASE_ELEVATION_MISSING',
+          null,
+          'column base elevation cannot be determined (the lower end has no elevation)',
+        ),
+      );
     }
 
     const length = memberLengthMm(m);

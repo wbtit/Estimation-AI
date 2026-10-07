@@ -66,11 +66,17 @@ describe('GET /api/projects/:projectId/bom (real database)', () => {
     expect(body.validation.counts).toEqual({ green: 6, amber: 4, red: 4 });
     expect(body.bom.totals).toEqual({
       members: 14,
-      members_included: 11,
-      members_excluded: 3,
-      pieces_included: 14,
-      total_length_mm: 79000,
-      total_weight_kg: 1465,
+      members_included: 10,
+      pieces_included: 13,
+      total_length_mm: 73000,
+      total_weight_kg: 1405,
+    });
+    expect(body.bom.excluded_red).toEqual({
+      members: 4,
+      pieces: 4,
+      members_weighed: 1,
+      total_length_mm: 6000,
+      total_weight_kg: 60,
     });
     const b4 = body.validation.results.find((r: { member_id: string }) => r.member_id === 'B4');
     expect(b4.issues[0].code).toBe('MISSING_PROFILE');
@@ -139,7 +145,7 @@ describe('GET /api/projects/:projectId/bom.xlsx (real database)', () => {
 
     const wb = await loadWorkbook(res.rawPayload);
     expect(wb.worksheets.map((w) => w.name)).toEqual(['BOM', 'Summary']);
-    expect(wb.getWorksheet('BOM')?.rowCount).toBe(16);
+    expect(wb.getWorksheet('BOM')?.rowCount).toBe(17);
   });
 
   it('shares the 404 and 400 behaviour', async () => {

@@ -18,6 +18,7 @@ venv/
 
 # Client data: drawings and uploads are never committed
 uploads/
+fixtures/private/
 fixtures/**/*.pdf
 fixtures/**/*.PDF
 

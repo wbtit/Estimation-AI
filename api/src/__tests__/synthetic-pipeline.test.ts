@@ -69,20 +69,29 @@ describe('synthetic pipeline', () => {
     expect(b8?.end.grid_x?.codePointAt(0)).toBe(0x412);
   });
 
-  it('computes the expected BOM totals (hand-calculated)', async () => {
+  it('computes the expected BOM totals, with red members reported apart (hand-calculated)', async () => {
     const { bom } = await setup();
     expect(bom.totals).toEqual({
       members: 14,
-      members_included: 11,
-      members_excluded: 3, // B4 (no profile), B5 (not in catalog), B12 (no length)
-      pieces_included: 14,
-      total_length_mm: 79000,
-      total_weight_kg: 1465,
+      members_included: 10, // green and amber members that can be weighed
+      pieces_included: 13,
+      total_length_mm: 73000,
+      total_weight_kg: 1405,
+    });
+    // B4 (no profile), B5 (not in catalog), B12 (no length) cannot be weighed; B6 (no end
+    // elevation) can: 6000 mm x 10 kg/m = 60 kg, shown here but not in the main total.
+    expect(bom.excluded_red).toEqual({
+      members: 4,
+      pieces: 4,
+      members_weighed: 1,
+      total_length_mm: 6000,
+      total_weight_kg: 60,
     });
     expect(bom.lines.filter((l) => !l.included_in_totals).map((l) => l.member_id)).toEqual([
       'B12',
       'B4',
       'B5',
+      'B6',
     ]);
   });
 
@@ -94,17 +103,18 @@ describe('synthetic pipeline', () => {
     expect(weight('B2')).toBe(125); // 5 m (3-4-5 slope) x 25 kg/m
     expect(weight('B11')).toBe(600); // 6 m x 25 kg/m x 4
     expect(weight('B4')).toBeNull();
+    expect(weight('B6')).toBe(60); // red: weighed on its line, excluded from the totals
   });
 
-  it('groups by profile and by type (hand-calculated)', async () => {
+  it('groups by profile and by type, main total only (hand-calculated)', async () => {
     const { bom } = await setup();
     expect(bom.by_profile).toEqual([
       {
         key: 'TEST-001',
-        member_count: 7,
-        piece_count: 7,
-        total_length_mm: 42000,
-        total_weight_kg: 420,
+        member_count: 6,
+        piece_count: 6,
+        total_length_mm: 36000,
+        total_weight_kg: 360,
       },
       {
         key: 'TEST-002',
@@ -124,10 +134,10 @@ describe('synthetic pipeline', () => {
     expect(bom.by_type).toEqual([
       {
         key: 'beam',
-        member_count: 9,
-        piece_count: 12,
-        total_length_mm: 71000,
-        total_weight_kg: 1145,
+        member_count: 8,
+        piece_count: 11,
+        total_length_mm: 65000,
+        total_weight_kg: 1085,
       },
       {
         key: 'column',

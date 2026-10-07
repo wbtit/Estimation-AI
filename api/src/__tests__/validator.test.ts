@@ -272,3 +272,78 @@ describe('validator: report behaviour', () => {
     expect(() => validateMembers([beam(), beam()], catalog)).toThrow(/duplicate member_id/);
   });
 });
+
+describe('validator: a column must have a base elevation', () => {
+  /** Column from z=0 to z=4000, valid unless overridden. Columns are exempt from "unsupported". */
+  function col(overrides: Partial<MemberOverrides> = {}): Member {
+    return makeMember({
+      member_id: 'c9',
+      type: 'column',
+      start: { elevation_mm: 0, resolved_xyz_mm: [0, 0, 0] },
+      end: { elevation_mm: 4000, resolved_xyz_mm: [0, 0, 4000] },
+      ...overrides,
+    });
+  }
+
+  it('accepts a complete column and still exempts it from the unsupported check', () => {
+    expect(codesFor([col()], 'c9')).toEqual([]);
+  });
+
+  it('flags a column whose base (lower end) has no elevation, as red', () => {
+    const report = validateMembers(
+      [col({ start: { elevation_mm: null, resolved_xyz_mm: [0, 0, 0] } })],
+      catalog,
+    );
+    const issues = report.results[0]?.issues ?? [];
+    expect(issues.map((i) => [i.code, i.severity])).toEqual([
+      ['MISSING_START_ELEVATION', 'red'],
+      ['COLUMN_BASE_ELEVATION_MISSING', 'red'],
+    ]);
+    expect(report.results[0]?.status).toBe('red');
+  });
+
+  it('does not flag the base when only the top elevation is missing', () => {
+    expect(
+      codesFor([col({ end: { elevation_mm: null, resolved_xyz_mm: [0, 0, 4000] } })], 'c9'),
+    ).toEqual(['MISSING_END_ELEVATION']);
+  });
+
+  it('finds the base by position, not by which end is called start (column drawn top-down)', () => {
+    const topDown = (startElev: number | null, endElev: number | null) =>
+      col({
+        start: { elevation_mm: startElev, resolved_xyz_mm: [0, 0, 4000] },
+        end: { elevation_mm: endElev, resolved_xyz_mm: [0, 0, 0] },
+      });
+    expect(codesFor([topDown(4000, null)], 'c9')).toEqual([
+      'MISSING_END_ELEVATION',
+      'COLUMN_BASE_ELEVATION_MISSING',
+    ]);
+    expect(codesFor([topDown(null, 0)], 'c9')).toEqual(['MISSING_START_ELEVATION']);
+  });
+
+  it('with unresolved end points, uses the lower elevation when both exist', () => {
+    const unresolved = col({ start: { resolved_xyz_mm: null }, end: { resolved_xyz_mm: null } });
+    expect(codesFor([unresolved], 'c9')).toEqual(['LENGTH_UNAVAILABLE']);
+  });
+
+  it('with unresolved end points and a missing elevation, the base is unknown', () => {
+    const c = col({
+      start: { resolved_xyz_mm: null },
+      end: { elevation_mm: null, resolved_xyz_mm: null },
+    });
+    expect(codesFor([c], 'c9')).toEqual([
+      'MISSING_END_ELEVATION',
+      'COLUMN_BASE_ELEVATION_MISSING',
+      'LENGTH_UNAVAILABLE',
+    ]);
+  });
+
+  it('applies to columns only', () => {
+    const b = beam({ start: { elevation_mm: null } });
+    expect(codesFor([column, b], 'b1')).toEqual(['MISSING_START_ELEVATION']);
+  });
+
+  it('still checks that a column is not left unsupported when the exemption is removed', () => {
+    expect(codesFor([col()], 'c9', { supportExemptTypes: [] })).toEqual(['UNSUPPORTED_MEMBER']);
+  });
+});

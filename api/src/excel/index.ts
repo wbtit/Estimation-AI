@@ -94,6 +94,24 @@ function addBomSheet(wb: ExcelJS.Workbook, input: ExportInput): void {
   ]);
   boldRow(total);
 
+  // Red members are not in the total above; they are reported on their own line.
+  const r = input.bom.excluded_red;
+  ws.addRow([
+    'EXCLUDED (red), members weighed only',
+    null,
+    null,
+    null,
+    null,
+    null,
+    r.pieces,
+    null,
+    null,
+    null,
+    null,
+    r.total_weight_kg,
+    kgToLb(r.total_weight_kg),
+  ]);
+
   ws.getColumn(9).numFmt = '#,##0.0';
   for (const c of [10, 11, 12, 13]) ws.getColumn(c).numFmt = '#,##0.00';
   ws.columns.forEach((col, i) => {
@@ -143,7 +161,7 @@ function addSummarySheet(wb: ExcelJS.Workbook, input: ExportInput): void {
   boldRow(ws.addRow(['Members']));
   ws.addRow(['Total members', totals.members]);
   ws.addRow(['Included in totals', totals.members_included]);
-  ws.addRow(['Excluded from totals (cannot be weighed)', totals.members_excluded]);
+  ws.addRow(['Excluded (red), not in totals', input.bom.excluded_red.members]);
   ws.addRow(['Status green', counts.green]);
   ws.addRow(['Status amber', counts.amber]);
   ws.addRow(['Status red', counts.red]);
@@ -156,6 +174,16 @@ function addSummarySheet(wb: ExcelJS.Workbook, input: ExportInput): void {
   ws.addRow(['Total weight (kg)', totals.total_weight_kg]);
   ws.addRow(['Total weight (lb)', kgToLb(totals.total_weight_kg)]);
   ws.addRow(['Total weight (tonnes)', totals.total_weight_kg / 1000]);
+
+  const red = input.bom.excluded_red;
+  ws.addRow([]);
+  boldRow(ws.addRow(['Excluded (red), not in the totals above']));
+  ws.addRow(['Red members', red.members]);
+  ws.addRow(['Red pieces', red.pieces]);
+  ws.addRow(['Red members that could still be weighed', red.members_weighed]);
+  ws.addRow(['Red weighed length (mm)', red.total_length_mm]);
+  ws.addRow(['Red weighed weight (kg)', red.total_weight_kg]);
+  ws.addRow(['Red weighed weight (lb)', kgToLb(red.total_weight_kg)]);
 
   addGroupTable(ws, 'By profile', input.bom.by_profile);
   addGroupTable(ws, 'By type', input.bom.by_type);
