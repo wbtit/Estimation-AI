@@ -1,0 +1,4 @@
+shape,family,weight_kg_per_m,note
+TEST-001,TEST,10,synthetic - not a real shape
+TEST-002,TEST,25,synthetic - not a real shape
+TEST-003,TEST,40,synthetic - not a real shape

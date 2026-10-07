@@ -3,7 +3,7 @@
 Internal structural steel estimation platform (estimate stage). Scope, phases and the member
 data contract are in [docs/SPEC.md](docs/SPEC.md); security rules in [docs/SECURITY.md](docs/SECURITY.md).
 
-Current state: **Phase 0 skeleton** (infrastructure only, no features).
+Current state: **Phase 1** (contract, catalog loader, validator, BOM, Excel export, BOM API). Pricing is not implemented yet.
 
 ## Layout
 | Path | Contents |
@@ -39,3 +39,20 @@ Other targets: `make worker` (start the Python worker), `make web` (Vite dev ser
 
 Ports: Postgres `127.0.0.1:5432`, Redis `127.0.0.1:6380` (6380 avoids a host Redis on 6379),
 API `127.0.0.1:3000`, web `5173`.
+
+## Phase 1 commands
+```bash
+make migrate
+make seed-synthetic      # loads SYNTHETIC data only: project "synthetic-001" (14 made-up members) + TEST-xxx catalog
+make api                 # then, using the project id the seed printed:
+curl "http://127.0.0.1:3000/api/projects/<project-id>/bom?edition=TEST-EDITION"
+curl -o bom.xlsx "http://127.0.0.1:3000/api/projects/<project-id>/bom.xlsx?edition=TEST-EDITION"
+make schema              # regenerate schema/contract.v0.schema.json after changing the contract
+```
+Import the real AISC file (path supplied by you; columns and weight unit are explicit, nothing is guessed):
+```bash
+npm --prefix api run catalog:import -- --file <path.csv|xlsx> --edition "<label>" \
+  --name-col "<name header>" --weight-col "<weight header>" --weight-unit lb/ft   # or kg/m
+```
+The whole file is refused if any row has a weight that is not > 0, an empty or duplicate name. Editions are immutable.
+Design notes and open assumptions: [docs/PHASE1_PLAN.md](docs/PHASE1_PLAN.md), [docs/OPEN_QUESTIONS.md](docs/OPEN_QUESTIONS.md).

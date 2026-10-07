@@ -1,0 +1,84 @@
+{
+  "_comment": "SYNTHETIC data only: made-up project, shapes (TEST-xxx), materials and coordinates. Each member is overrides applied by makeMember() in api/src/synthetic/member-factory.ts. Expected results are in api/src/__tests__/synthetic-pipeline.test.ts.",
+  "project": {
+    "name": "synthetic-001",
+    "number": "SYN-001",
+    "status": "draft",
+    "design_standard": "AISC",
+    "location": null,
+    "drawing_issue": null,
+    "grids": [
+      { "axis": "x", "label": "A", "position_mm": 0 },
+      { "axis": "x", "label": "B", "position_mm": 6000 },
+      { "axis": "x", "label": "\u0410", "position_mm": 0 },
+      { "axis": "x", "label": "\u0412", "position_mm": 6000 },
+      { "axis": "y", "label": "1", "position_mm": 0 }
+    ],
+    "levels": [
+      { "name": "L0", "elevation_mm": 0 },
+      { "name": "L1", "elevation_mm": 4000 }
+    ]
+  },
+  "members": [
+    {
+      "member_id": "C1", "type": "column", "mark": "C1", "profile": "TEST-003", "profile_raw": "TEST-003",
+      "start": { "grid_x": "A", "grid_y": "1", "elevation_mm": 0, "resolved_xyz_mm": [0, 0, 0] },
+      "end": { "grid_x": "A", "grid_y": "1", "elevation_mm": 4000, "resolved_xyz_mm": [0, 0, 4000] }
+    },
+    {
+      "member_id": "C2", "type": "column", "mark": "C2", "profile": "TEST-003", "profile_raw": "TEST-003",
+      "start": { "grid_x": "B", "grid_y": "1", "elevation_mm": 0, "resolved_xyz_mm": [6000, 0, 0] },
+      "end": { "grid_x": "B", "grid_y": "1", "elevation_mm": 4000, "resolved_xyz_mm": [6000, 0, 4000] }
+    },
+    {
+      "member_id": "B1", "mark": "B1", "supported_by": ["C1", "C2"]
+    },
+    {
+      "member_id": "B2", "mark": "B2", "profile": "TEST-002", "profile_raw": "TEST-002", "supported_by": ["C1"],
+      "start": { "elevation_mm": 4000, "resolved_xyz_mm": [0, 0, 4000] },
+      "end": { "elevation_mm": 8000, "resolved_xyz_mm": [3000, 0, 8000] }
+    },
+    {
+      "member_id": "B3", "mark": "B3", "material": null, "grade": null, "supported_by": ["C1"],
+      "start": { "resolved_xyz_mm": [0, 3000, 4000] }, "end": { "resolved_xyz_mm": [6000, 3000, 4000] }
+    },
+    {
+      "member_id": "B4", "mark": "B4", "profile": null, "profile_raw": "TEST-??", "supported_by": ["C1"],
+      "start": { "resolved_xyz_mm": [0, 6000, 4000] }, "end": { "resolved_xyz_mm": [6000, 6000, 4000] }
+    },
+    {
+      "member_id": "B5", "mark": "B5", "profile": "TEST-404", "profile_raw": "TEST-404", "supported_by": ["C1"],
+      "start": { "resolved_xyz_mm": [0, 9000, 4000] }, "end": { "resolved_xyz_mm": [6000, 9000, 4000] }
+    },
+    {
+      "member_id": "B6", "mark": "B6", "supported_by": ["C1"],
+      "start": { "resolved_xyz_mm": [0, 12000, 4000] },
+      "end": { "elevation_mm": null, "resolved_xyz_mm": [6000, 12000, 4000] }
+    },
+    {
+      "member_id": "B7", "mark": "B7", "supported_by": [],
+      "start": { "resolved_xyz_mm": [0, 15000, 4000] }, "end": { "resolved_xyz_mm": [6000, 15000, 4000] }
+    },
+    {
+      "member_id": "B8", "mark": "B8", "supported_by": ["C1"],
+      "start": { "grid_x": "\u0410", "grid_y": "1", "resolved_xyz_mm": [0, 18000, 4000] },
+      "end": { "grid_x": "\u0412", "grid_y": "1", "resolved_xyz_mm": [6000, 18000, 4000] }
+    },
+    {
+      "member_id": "B9", "mark": "B9", "supported_by": ["C1"],
+      "start": { "resolved_xyz_mm": [0, 21000, 4000] }, "end": { "resolved_xyz_mm": [6000, 21000, 4000] }
+    },
+    {
+      "member_id": "B10", "mark": "B10", "supported_by": ["C1"],
+      "start": { "resolved_xyz_mm": [0, 21000, 4000] }, "end": { "resolved_xyz_mm": [6000, 21000, 4000] }
+    },
+    {
+      "member_id": "B11", "mark": "B11", "profile": "TEST-002", "profile_raw": "TEST-002", "quantity": 4, "supported_by": ["C2"],
+      "start": { "resolved_xyz_mm": [0, 24000, 4000] }, "end": { "resolved_xyz_mm": [6000, 24000, 4000] }
+    },
+    {
+      "member_id": "B12", "mark": "B12", "supported_by": ["C1"],
+      "start": { "resolved_xyz_mm": null }, "end": { "resolved_xyz_mm": null }
+    }
+  ]
+}

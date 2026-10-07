@@ -1,4 +1,4 @@
-.PHONY: setup up down ps migrate api worker web test test-api test-worker lint lint-api lint-worker lint-web gitleaks hooks
+.PHONY: setup up down ps migrate api worker web schema seed-synthetic test test-api test-worker lint lint-api lint-worker lint-web gitleaks hooks
 
 # One-time install: Node deps (root, api, web), Python 3.12 venv via uv, git hooks.
 setup: hooks
@@ -31,6 +31,14 @@ worker:
 
 web:
 	npm --prefix web run dev
+
+# Regenerate schema/contract.v0.schema.json from the Zod contract.
+schema:
+	npm --prefix api run schema:generate
+
+# Load the synthetic demo project and TEST-xxx catalog (made-up data) into the local DB.
+seed-synthetic:
+	npm --prefix api run seed:synthetic
 
 # Tests need the database: run `make up` and `make migrate` first.
 test: test-api test-worker
