@@ -3,7 +3,7 @@
 Internal structural steel estimation platform (estimate stage). Scope, phases and the member
 data contract are in [docs/SPEC.md](docs/SPEC.md); security rules in [docs/SECURITY.md](docs/SECURITY.md).
 
-Current state: **Phase 2** (projects, PDF upload, page scan and sheet classification, scale override) on top of Phase 1 (contract, catalog, validator, BOM, Excel). Pricing is not implemented yet.
+Current state: **Phase 4b** (deterministic reader for text outlined into stroked paths, glyph library, optional OCR cross-check) on top of Phase 2 (projects, PDF upload, page scan and sheet classification, scale override) and Phase 1 (contract, catalog, validator, BOM, Excel). Pricing is not implemented yet.
 
 ## Layout
 | Path | Contents |
@@ -72,3 +72,18 @@ curl -X PATCH http://127.0.0.1:3000/api/projects/<id>/sheets/<sheet-id>/scale-ov
 # scale accepts 1/8" = 1'-0", 1" = 20', 1:96, NTS; null clears the override (history is kept)
 ```
 Uploads and thumbnails go under `uploads/` (git-ignored). Real client drawings for local checks go in `fixtures/private/` (git-ignored, never committed; use anonymized names such as `job-001.pdf`). The scan reads vector PDFs only: it does not OCR, so a drawing whose text is outlined as curves (no text layer) gets null sheet number, title and scale plus review flags. Design and open assumptions: [docs/PHASE2_PLAN.md](docs/PHASE2_PLAN.md), [docs/OPEN_QUESTIONS.md](docs/OPEN_QUESTIONS.md).
+
+## Phase 4b commands (text reader and glyph library)
+```bash
+make migrate                                   # applies 003_glyph_library_text_items.sql
+make api ; make worker                         # two shells
+curl -X POST http://127.0.0.1:3000/api/projects/<id>/read-text -H 'content-type: application/json' -d '{"font_id":"cad-font-1"}'
+curl http://127.0.0.1:3000/api/projects/<id>/sheets/<sheet-id>/text-items            # ?needs_review=true to filter
+# the first read finds no confirmed glyph labels, so every letter is "?" and every shape becomes a proposed group:
+make glyph-sheets FONT=cad-font-1              # PNG contact sheets of unlabeled groups -> fixtures/private/glyph_sheets/
+make glyph-export FONT=cad-font-1              # review CSV -> fixtures/private/glyph_review.csv (OCR proposals pre-filled)
+# edit the CSV: set status to "confirmed" (and fix the label) for groups you have checked, then:
+make glyph-import REVIEWER="your name" DRY=--dry-run        # check first; drop DRY to apply
+```
+Only `confirmed` labels decode text; unknown shapes stay `?` and are counted. Optional OCR cross-check (off by default, local, no network): `make setup-ocr`, set `OCR_CROSSCHECK_ENABLED=true`, and `python -m src.text_reader.cli vote --pdf <file> --font-id <id>` to propose labels by majority vote. Accuracy against your own ground truth (private): `python -m src.text_reader.cli truth-template --pdf <file>`, fill `truth_text` in `fixtures/private/ground_truth_text.csv`, then `python -m src.text_reader.cli evaluate --pdf <file> --font-id <id>`. Details: [docs/PHASE4B_PLAN.md](docs/PHASE4B_PLAN.md), [docs/OCR_DEPENDENCY_REVIEW.md](docs/OCR_DEPENDENCY_REVIEW.md), [docs/SCHEMA_CHANGE_PROPOSAL.md](docs/SCHEMA_CHANGE_PROPOSAL.md) (awaiting your approval).
+

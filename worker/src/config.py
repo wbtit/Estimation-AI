@@ -16,6 +16,8 @@ class WorkerConfig:
     lock_timeout_seconds: float
     worker_id: str
     upload_dir: Path
+    glyph_font_id: str = "default"
+    ocr_crosscheck_enabled: bool = False
 
 
 def resolve_upload_dir(value: str | None) -> Path:
@@ -36,4 +38,7 @@ def load_config() -> WorkerConfig:
         lock_timeout_seconds=float(os.environ.get("WORKER_LOCK_TIMEOUT_SECONDS", "600")),
         worker_id=os.environ.get("WORKER_ID", f"worker-{os.uname().nodename}-{os.getpid()}"),
         upload_dir=resolve_upload_dir(os.environ.get("UPLOAD_DIR")),
+        glyph_font_id=os.environ.get("GLYPH_FONT_ID", "default"),
+        # Optional local OCR cross-check. Off unless explicitly enabled; needs `make setup-ocr`.
+        ocr_crosscheck_enabled=os.environ.get("OCR_CROSSCHECK_ENABLED", "false").lower() == "true",
     )

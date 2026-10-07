@@ -3,6 +3,7 @@ import { bomRoutes, type BomRouteOptions } from './routes/bom.js';
 import { healthRoutes, type HealthRouteOptions } from './routes/health.js';
 import { projectRoutes } from './routes/projects.js';
 import { sheetRoutes } from './routes/sheets.js';
+import { textItemRoutes } from './routes/text-items.js';
 
 export interface AppOptions {
   logger?: boolean;
@@ -24,5 +25,6 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     maxUploadBytes: options.maxUploadBytes,
   });
   app.register(sheetRoutes, { uploadDir: options.uploadDir });
+  app.register(textItemRoutes, {});
   return app;
 }

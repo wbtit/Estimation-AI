@@ -34,3 +34,15 @@ Each item is an assumption I made so Phase 1 could proceed while you were away. 
 21. **Duplicate sheet numbers.** The unique index on (project, sheet_number) from migration 001 is dropped: the number is extracted text, not an identity. Duplicates are kept and flagged `duplicate_sheet_number`; the page index is the identity.
 22. **Thresholds are tunable defaults, not measured values:** text layer >= 20 characters, vector drawing >= 50 paths, scanned = one image covering >= 50% of the page with too few vector paths, low classification confidence < 0.7.
 
+## Phase 4b
+
+23. **`font_id` meaning and default.** A glyph library belongs to a `font_id`: one CAD font as exported by one firm/tool. Default `default` (config `GLYPH_FONT_ID`); the `read-text` request can name another. Nothing detects the font automatically, so two different fonts under one id would mix their shapes. Tell me how you want ids assigned (per firm, per project, per CAD export).
+24. **Which sheets are read.** `read_text` reads sheets the scan marked `vector` (including drawings without a text layer) and skips `scanned` and `unknown` pages. Only upright lines of at least 2 characters become text items; single stray characters (for example a lone `1` in a triangle) are counted as unassigned, not stored. Tell me if single characters should become items.
+25. **Re-reading replaces items.** `read_text` deletes and rebuilds a project's `text_items` (they carry no user edits yet; keys are stable). `glyph_library.seen_count` is cumulative over reads (for ranking only), so re-reading the same sheet raises it again.
+26. **Case.** Library labels are upper case; a letter is lower case if shorter than 0.8 x the cap/digit height of its line. A real lower-case-only shape that differs from its capital still needs its own group and label. Mixed-case text beyond that is untested.
+27. **OCR vote scope.** Votes only come from lines whose OCR length equals the cluster count, so lines with small marks (dots, apostrophes, `=`) never vote and those marks must be labeled by you without OCR help. Vote proposals fold letters to upper case.
+28. **OCR model licence (needs your decision).** The model files ship without a licence text (docs/OCR_DEPENDENCY_REVIEW.md). Fine for internal use in my view; confirm upstream before any distribution, or tell me to drop the OCR group.
+29. **Confidence values are constants,** not calibrated probabilities (0.8 glyph only, 0.3 unknown shapes, 0.95 OCR agrees, 0.5 OCR disagrees). Say if you want different numbers.
+30. **`POST read-text` was added** (not in your list) because the job needs a way to be started; it only enqueues `read_text` for a project whose scan is done and refuses duplicates while one is queued or running.
+31. **Schema proposal waits for approval:** docs/SCHEMA_CHANGE_PROPOSAL.md, section 8 lists the five questions.
+

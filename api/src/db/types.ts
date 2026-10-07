@@ -103,6 +103,28 @@ export interface SheetEditsTable {
   created_at: Timestamp;
 }
 
+export interface TextItemsTable {
+  id: Generated<string>;
+  sheet_id: string;
+  item_key: string;
+  x0: Numeric;
+  y0: Numeric;
+  x1: Numeric;
+  y1: Numeric;
+  orientation: 'horizontal' | 'vertical';
+  text: string | null;
+  ocr_text: string | null;
+  methods: Generated<string[]>;
+  confidence: Numeric | null;
+  agree: boolean | null;
+  needs_review: Generated<boolean>;
+  review_reasons: Generated<string[]>;
+  char_count: Generated<number>;
+  unknown_count: Generated<number>;
+  font_id: string;
+  created_at: Timestamp;
+}
+
 export type MemberType = 'beam' | 'column' | 'brace' | 'joist' | 'other';
 export type MemberOrigin = 'extracted' | 'manual' | 'seed';
 export type StatusColor = 'green' | 'amber' | 'red';
@@ -224,4 +246,5 @@ export interface Database {
   jobs: JobsTable;
   project_files: ProjectFilesTable;
   sheet_edits: SheetEditsTable;
+  text_items: TextItemsTable;
 }

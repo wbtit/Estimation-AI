@@ -7,9 +7,15 @@ dependencies = [
     "psycopg[binary]>=3.2",
     "python-dotenv>=1.0",
     "pymupdf>=1.24",
+    "numpy>=2.0",
 ]
 
 [project.optional-dependencies]
+# Optional local OCR cross-check (docs/OCR_DEPENDENCY_REVIEW.md). Off by default; install with
+# `make setup-ocr`. Never needed for decoding.
+ocr = [
+    "rapidocr-onnxruntime>=1.4,<1.5",
+]
 dev = [
     "pytest>=8.3",
     "ruff>=0.7",

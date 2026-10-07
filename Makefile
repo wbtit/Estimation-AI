@@ -1,4 +1,4 @@
-.PHONY: setup up down ps migrate api worker web schema seed-synthetic test test-api test-worker lint lint-api lint-worker lint-web gitleaks hooks
+.PHONY: setup setup-ocr up down ps migrate api worker web schema seed-synthetic test test-api test-worker lint lint-api lint-worker lint-web gitleaks hooks glyph-sheets glyph-export glyph-import glyph-summary
 
 # One-time install: Node deps (root, api, web), Python 3.12 venv via uv, git hooks.
 setup: hooks
@@ -6,6 +6,10 @@ setup: hooks
 	npm --prefix api ci
 	npm --prefix web ci
 	cd worker && uv venv --python 3.12 --allow-existing .venv && uv pip sync --python .venv/bin/python requirements.txt
+
+# Optional: the local OCR cross-check (docs/OCR_DEPENDENCY_REVIEW.md). Not needed for decoding.
+setup-ocr:
+	cd worker && uv pip sync --python .venv/bin/python requirements-ocr.txt
 
 hooks:
 	git config core.hooksPath .githooks
@@ -63,3 +67,19 @@ lint-web:
 
 gitleaks:
 	./scripts/run-gitleaks.sh
+
+# Glyph library review (Phase 4b). FONT=<font id>; files go to the git-ignored fixtures/private/.
+FONT ?= default
+glyph-sheets:
+	cd worker && .venv/bin/python -m src.text_reader.cli contact-sheets --font-id $(FONT) --out ../fixtures/private/glyph_sheets
+
+glyph-export:
+	cd worker && .venv/bin/python -m src.text_reader.cli export-csv --font-id $(FONT) --out ../fixtures/private/glyph_review.csv
+
+# REVIEWER=<your name>; add DRY=--dry-run to check the file without changing anything.
+glyph-import:
+	cd worker && .venv/bin/python -m src.text_reader.cli import-csv --file ../fixtures/private/glyph_review.csv --reviewer "$(REVIEWER)" $(DRY)
+
+glyph-summary:
+	cd worker && .venv/bin/python -m src.text_reader.cli summary --font-id $(FONT)
+
