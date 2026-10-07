@@ -41,6 +41,66 @@ export interface SheetsTable {
   built_at: Timestamp | null;
   created_at: Timestamp;
   updated_at: Timestamp;
+  // Phase 2 scan results (written by the scan_pdf job; see db/migrations/002_phase2_scan.sql)
+  width_pt: Numeric | null;
+  height_pt: Numeric | null;
+  rotation: number | null;
+  page_kind: PageKind | null;
+  has_text_layer: boolean | null;
+  has_vector_paths: boolean | null;
+  text_char_count: number | null;
+  vector_path_count: number | null;
+  image_count: number | null;
+  image_coverage: Numeric | null;
+  sheet_number_source: string | null;
+  kind_confidence: Numeric | null;
+  kind_reason: string | null;
+  scales: Json<ScaleEntry[]>;
+  scale_parsed_ratio: Numeric | null;
+  scale_override_ratio: Numeric | null;
+  needs_review: Generated<boolean>;
+  review_reasons: Generated<string[]>;
+  thumbnail_path: string | null;
+  scanned_at: Timestamp | null;
+}
+
+export type PageKind = 'vector' | 'scanned' | 'unknown';
+
+/** One scale expression found on a page. ratio = real length / drawn length (null for NTS). */
+export interface ScaleEntry {
+  raw: string;
+  kind: 'ratio' | 'nts';
+  ratio: number | null;
+  count: number;
+}
+
+export type ScanStatus = 'pending' | 'scanning' | 'done' | 'failed';
+
+export interface ProjectFilesTable {
+  id: Generated<string>;
+  project_id: string;
+  original_filename: string;
+  stored_path: string;
+  sha256: string;
+  size_bytes: Numeric | number;
+  page_count: number | null;
+  pages_scanned: Generated<number>;
+  scan_status: ColumnType<ScanStatus, ScanStatus | undefined, ScanStatus>;
+  scan_error: string | null;
+  scanned_at: Timestamp | null;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export interface SheetEditsTable {
+  id: Generated<string>;
+  sheet_id: string;
+  field_name: string;
+  original_value: Json | null;
+  corrected_value: Json | null;
+  editor: string;
+  reason: string | null;
+  created_at: Timestamp;
 }
 
 export type MemberType = 'beam' | 'column' | 'brace' | 'joist' | 'other';
@@ -162,4 +222,6 @@ export interface Database {
   rate_table: RateTableTable;
   catalog_shapes: CatalogShapesTable;
   jobs: JobsTable;
+  project_files: ProjectFilesTable;
+  sheet_edits: SheetEditsTable;
 }

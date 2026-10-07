@@ -1,0 +1,181 @@
+{
+  "_comment": "Shared by the Python scanner and the TypeScript override validator (exact-match form). ratio = real length / drawn length.",
+  "valid": [
+    {
+      "input": "1/8\" = 1'-0\"",
+      "kind": "ratio",
+      "ratio": 96
+    },
+    {
+      "input": "1/8\"=1'-0\"",
+      "kind": "ratio",
+      "ratio": 96
+    },
+    {
+      "input": "1/4\" = 1'-0\"",
+      "kind": "ratio",
+      "ratio": 48
+    },
+    {
+      "input": "3/16\" = 1'-0\"",
+      "kind": "ratio",
+      "ratio": 64
+    },
+    {
+      "input": "3/32\" = 1'-0\"",
+      "kind": "ratio",
+      "ratio": 128
+    },
+    {
+      "input": "1/2\" = 1'-0\"",
+      "kind": "ratio",
+      "ratio": 24
+    },
+    {
+      "input": "3/4\" = 1'-0\"",
+      "kind": "ratio",
+      "ratio": 16
+    },
+    {
+      "input": "1\" = 1'-0\"",
+      "kind": "ratio",
+      "ratio": 12
+    },
+    {
+      "input": "1 1/2\" = 1'-0\"",
+      "kind": "ratio",
+      "ratio": 8
+    },
+    {
+      "input": "3\" = 1'-0\"",
+      "kind": "ratio",
+      "ratio": 4
+    },
+    {
+      "input": "1\" = 20'-0\"",
+      "kind": "ratio",
+      "ratio": 240
+    },
+    {
+      "input": "1\" = 20'",
+      "kind": "ratio",
+      "ratio": 240
+    },
+    {
+      "input": "1/8\" = 1'-6\"",
+      "kind": "ratio",
+      "ratio": 144
+    },
+    {
+      "input": "1/8 IN = 1 FT",
+      "kind": "ratio",
+      "ratio": 96
+    },
+    {
+      "input": "1/8 IN. = 1 FT.",
+      "kind": "ratio",
+      "ratio": 96
+    },
+    {
+      "input": "1/8\" = 1'",
+      "kind": "ratio",
+      "ratio": 96
+    },
+    {
+      "input": "SCALE: 1/8\" = 1'-0\"",
+      "kind": "ratio",
+      "ratio": 96
+    },
+    {
+      "input": "Scale 1/4\" = 1'-0\"",
+      "kind": "ratio",
+      "ratio": 48
+    },
+    {
+      "input": "SCALE:1/8\"=1'-0\"",
+      "kind": "ratio",
+      "ratio": 96
+    },
+    {
+      "input": "1/8\u201d = 1\u2019\u20130\u201d",
+      "kind": "ratio",
+      "ratio": 96
+    },
+    {
+      "input": "1:96",
+      "kind": "ratio",
+      "ratio": 96
+    },
+    {
+      "input": "1 : 100",
+      "kind": "ratio",
+      "ratio": 100
+    },
+    {
+      "input": "SCALE 1:50",
+      "kind": "ratio",
+      "ratio": 50
+    },
+    {
+      "input": "SCALE: 1:20",
+      "kind": "ratio",
+      "ratio": 20
+    },
+    {
+      "input": "1:12.5",
+      "kind": "ratio",
+      "ratio": 12.5
+    },
+    {
+      "input": "NTS",
+      "kind": "nts",
+      "ratio": null
+    },
+    {
+      "input": "N.T.S.",
+      "kind": "nts",
+      "ratio": null
+    },
+    {
+      "input": "N.T.S",
+      "kind": "nts",
+      "ratio": null
+    },
+    {
+      "input": "NOT TO SCALE",
+      "kind": "nts",
+      "ratio": null
+    },
+    {
+      "input": "SCALE: NTS",
+      "kind": "nts",
+      "ratio": null
+    },
+    {
+      "input": "Scale: Not To Scale",
+      "kind": "nts",
+      "ratio": null
+    }
+  ],
+  "invalid": [
+    "",
+    " ",
+    "scale",
+    "SCALE:",
+    "1/8",
+    "1/8\"",
+    "1/8\" =",
+    "1/8\" = ",
+    "0\" = 1'-0\"",
+    "1/8\" = 0'-0\"",
+    "1:0",
+    "2:1",
+    "FOO 1/8\" = 1'-0\"",
+    "1/8\" = 1'-0\" AND MORE",
+    "NTSX",
+    "NOTES",
+    "1/8 = 1",
+    "1/0\" = 1'-0\"",
+    "A:96"
+  ]
+}

@@ -11,6 +11,7 @@ import { SCHEMA_VERSION, type Member } from '../contract/index.js';
 import { getDb } from '../db/client.js';
 import type { Database } from '../db/types.js';
 import { buildBomWorkbook, XLSX_MIME } from '../excel/index.js';
+import { HttpError } from './http-error.js';
 import { rowToMember } from '../members/rows.js';
 import { validateMembers, type CatalogIndex, type ValidationReport } from '../validator/index.js';
 
@@ -29,15 +30,6 @@ interface Computation {
   catalog_edition: string;
   validation: ValidationReport;
   bom: Bom;
-}
-
-class HttpError extends Error {
-  constructor(
-    readonly status: number,
-    readonly body: Record<string, unknown>,
-  ) {
-    super(String(body.error));
-  }
 }
 
 async function compute(

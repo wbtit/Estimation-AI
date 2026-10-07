@@ -3,7 +3,7 @@
 Internal structural steel estimation platform (estimate stage). Scope, phases and the member
 data contract are in [docs/SPEC.md](docs/SPEC.md); security rules in [docs/SECURITY.md](docs/SECURITY.md).
 
-Current state: **Phase 1** (contract, catalog loader, validator, BOM, Excel export, BOM API). Pricing is not implemented yet.
+Current state: **Phase 2** (projects, PDF upload, page scan and sheet classification, scale override) on top of Phase 1 (contract, catalog, validator, BOM, Excel). Pricing is not implemented yet.
 
 ## Layout
 | Path | Contents |
@@ -56,3 +56,19 @@ npm --prefix api run catalog:import -- --file <path.csv|xlsx> --edition "<label>
 ```
 The whole file is refused if any row has a weight that is not > 0, an empty or duplicate name. Editions are immutable.
 Design notes and open assumptions: [docs/PHASE1_PLAN.md](docs/PHASE1_PLAN.md), [docs/OPEN_QUESTIONS.md](docs/OPEN_QUESTIONS.md).
+
+## Phase 2 commands
+```bash
+make migrate                 # applies 002_phase2_scan.sql
+make api                     # shell 1
+make worker                  # shell 2: runs the scan_pdf job
+curl -X POST http://127.0.0.1:3000/api/projects -H 'content-type: application/json' -d '{"name":"my project"}'
+curl -X POST http://127.0.0.1:3000/api/projects/<id>/pdf -F file=@drawings.pdf     # one PDF per project, max 500 MB
+curl http://127.0.0.1:3000/api/projects/<id>                  # status: created -> scanning -> scanned | scan_failed
+curl http://127.0.0.1:3000/api/projects/<id>/sheets            # one entry per page
+curl -o page1.png http://127.0.0.1:3000/api/projects/<id>/sheets/<sheet-id>/thumbnail
+curl -X PATCH http://127.0.0.1:3000/api/projects/<id>/sheets/<sheet-id>/scale-override \
+  -H 'content-type: application/json' -d '{"scale":"1:96","editor":"your name","reason":"why"}'
+# scale accepts 1/8" = 1'-0", 1" = 20', 1:96, NTS; null clears the override (history is kept)
+```
+Uploads and thumbnails go under `uploads/` (git-ignored). Real client drawings for local checks go in `fixtures/private/` (git-ignored, never committed; use anonymized names such as `job-001.pdf`). The scan reads vector PDFs only: it does not OCR, so a drawing whose text is outlined as curves (no text layer) gets null sheet number, title and scale plus review flags. Design and open assumptions: [docs/PHASE2_PLAN.md](docs/PHASE2_PLAN.md), [docs/OPEN_QUESTIONS.md](docs/OPEN_QUESTIONS.md).

@@ -6,15 +6,19 @@ import time
 from collections.abc import Callable
 from typing import Any
 
-from src.config import load_config
+import psycopg
+
+from src.config import WorkerConfig, load_config
 from src.db import connect
+from src.pdf_scan.job import JOB_TYPE as SCAN_PDF
+from src.pdf_scan.job import run_scan_pdf
 from src.queue import Job, claim_next_job, complete_job, fail_expired_jobs, fail_job
 
 log = logging.getLogger("worker")
 
-# Job type -> handler. Empty in Phase 0; extraction handlers are added in later phases.
-Handler = Callable[[Job], dict[str, Any]]
-HANDLERS: dict[str, Handler] = {}
+# Job type -> handler(connection, job, config) -> result stored on the job.
+Handler = Callable[[psycopg.Connection, Job, WorkerConfig], dict[str, Any]]
+HANDLERS: dict[str, Handler] = {SCAN_PDF: run_scan_pdf}
 
 
 def run() -> None:
@@ -34,7 +38,7 @@ def run() -> None:
     types = sorted(HANDLERS)
     log.info("started as %s, handling types: %s", config.worker_id, types or "none")
     if not types:
-        log.info("no handlers registered in Phase 0; the worker will idle")
+        log.info("no handlers registered; the worker will idle")
 
     while not stopping:
         try:
@@ -50,7 +54,7 @@ def run() -> None:
                         time.sleep(config.poll_interval_seconds)
                         continue
                     try:
-                        complete_job(conn, job.id, HANDLERS[job.type](job))
+                        complete_job(conn, job.id, HANDLERS[job.type](conn, job, config))
                         log.info("job %s (%s) completed", job.id, job.type)
                     except Exception as err:  # any handler failure is recorded
                         log.exception("job %s (%s) failed", job.id, job.type)

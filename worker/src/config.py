@@ -15,6 +15,13 @@ class WorkerConfig:
     poll_interval_seconds: float
     lock_timeout_seconds: float
     worker_id: str
+    upload_dir: Path
+
+
+def resolve_upload_dir(value: str | None) -> Path:
+    """UPLOAD_DIR, relative paths resolved against the repository root. Default: <repo>/uploads."""
+    repo_root = ROOT_ENV.parent
+    return (repo_root / (value or "uploads")).resolve()
 
 
 def load_config() -> WorkerConfig:
@@ -28,4 +35,5 @@ def load_config() -> WorkerConfig:
         poll_interval_seconds=float(os.environ.get("WORKER_POLL_INTERVAL_SECONDS", "2")),
         lock_timeout_seconds=float(os.environ.get("WORKER_LOCK_TIMEOUT_SECONDS", "600")),
         worker_id=os.environ.get("WORKER_ID", f"worker-{os.uname().nodename}-{os.getpid()}"),
+        upload_dir=resolve_upload_dir(os.environ.get("UPLOAD_DIR")),
     )
