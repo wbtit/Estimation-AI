@@ -1,0 +1,165 @@
+// Kysely table types for db/migrations/001_initial_schema.sql. Keep in sync with migrations.
+// NUMERIC columns come back from pg as strings, so they are typed as string here.
+import type { ColumnType, Generated } from 'kysely';
+
+type Timestamp = ColumnType<Date, Date | string | undefined, Date | string>;
+type Numeric = ColumnType<string, number | string, number | string>;
+type Json<T = unknown> = ColumnType<T, string, string>;
+
+export interface ProjectsTable {
+  id: Generated<string>;
+  schema_version: Generated<number>;
+  name: string;
+  number: string | null;
+  status: string;
+  design_standard: Generated<string>;
+  unit_system: Generated<string>;
+  location: string | null;
+  grids: Json;
+  levels: Json;
+  drawing_issue: string | null;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export type SheetKind = 'plan' | 'schedule' | 'detail' | 'notes' | 'other';
+export type BuildStatus = 'not_built' | 'building' | 'built' | 'failed';
+
+export interface SheetsTable {
+  id: Generated<string>;
+  project_id: string;
+  sheet_number: string | null;
+  title: string | null;
+  kind: ColumnType<SheetKind, SheetKind | undefined, SheetKind>;
+  page_index: number;
+  scale_parsed: string | null;
+  scale_override: string | null;
+  scale_source: string | null;
+  tos_notes: string | null;
+  crop_region: Json | null;
+  build_status: ColumnType<BuildStatus, BuildStatus | undefined, BuildStatus>;
+  built_at: Timestamp | null;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export type MemberType = 'beam' | 'column' | 'brace' | 'joist' | 'other';
+export type MemberOrigin = 'extracted' | 'manual' | 'seed';
+export type StatusColor = 'green' | 'amber' | 'red';
+export type ReviewStatus = 'unreviewed' | 'approved' | 'edited' | 'rejected';
+
+export interface MembersTable {
+  id: Generated<string>;
+  project_id: string;
+  sheet_id: string | null;
+  member_id: string;
+  origin: MemberOrigin;
+  type: MemberType;
+  mark: string | null;
+  profile_raw: string | null;
+  profile: string | null;
+  material: string | null;
+  grade: string | null;
+  start_grid_x: string | null;
+  start_grid_y: string | null;
+  start_offset_x_mm: Numeric | null;
+  start_offset_y_mm: Numeric | null;
+  start_elevation_mm: Numeric | null;
+  start_elevation_raw: string | null;
+  start_x_mm: Numeric | null;
+  start_y_mm: Numeric | null;
+  start_z_mm: Numeric | null;
+  start_resolution_method: string | null;
+  end_grid_x: string | null;
+  end_grid_y: string | null;
+  end_offset_x_mm: Numeric | null;
+  end_offset_y_mm: Numeric | null;
+  end_elevation_mm: Numeric | null;
+  end_elevation_raw: string | null;
+  end_x_mm: Numeric | null;
+  end_y_mm: Numeric | null;
+  end_z_mm: Numeric | null;
+  end_resolution_method: string | null;
+  level: string | null;
+  rotation_deg: Numeric | null;
+  camber_raw: string | null;
+  camber_mm: Numeric | null;
+  studs: number | null;
+  quantity: Generated<number>;
+  supported_by: Generated<string[]>;
+  connection_type: string | null;
+  connection_raw: string | null;
+  coating: string | null;
+  source_bbox: Json | null;
+  source_callout_ref: string | null;
+  field_sources: Json<Record<string, unknown>>;
+  field_confidence: Json<Record<string, number>>;
+  confidence: Numeric | null;
+  status_color: StatusColor | null;
+  status_reason: string | null;
+  review_status: ColumnType<ReviewStatus, ReviewStatus | undefined, ReviewStatus>;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export interface MemberEditsTable {
+  id: Generated<string>;
+  member_id: string;
+  field_name: string;
+  original_value: Json | null;
+  corrected_value: Json | null;
+  review_status: Exclude<ReviewStatus, 'unreviewed'>;
+  reviewer: string;
+  reason: string | null;
+  created_at: Timestamp;
+}
+
+export interface RateTableTable {
+  id: Generated<string>;
+  key: string;
+  category: string;
+  value: Numeric;
+  unit: string;
+  is_placeholder: Generated<boolean>;
+  notes: string | null;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export interface CatalogShapesTable {
+  id: Generated<string>;
+  edition: string;
+  shape_name: string;
+  family: string;
+  weight_kg_per_m: Numeric;
+  weight_lb_per_ft: Numeric | null;
+  properties: Json<Record<string, unknown>>;
+  created_at: Timestamp;
+}
+
+export type JobStatus = 'pending' | 'processing' | 'completed' | 'failed';
+
+export interface JobsTable {
+  id: Generated<string>;
+  type: string;
+  status: ColumnType<JobStatus, JobStatus | undefined, JobStatus>;
+  payload: Json<Record<string, unknown>>;
+  result: Json | null;
+  attempts: Generated<number>;
+  max_attempts: Generated<number>;
+  locked_at: Timestamp | null;
+  locked_by: string | null;
+  error: string | null;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export interface Database {
+  projects: ProjectsTable;
+  sheets: SheetsTable;
+  members: MembersTable;
+  member_edits: MemberEditsTable;
+  rate_table: RateTableTable;
+  catalog_shapes: CatalogShapesTable;
+  jobs: JobsTable;
+}

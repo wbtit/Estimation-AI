@@ -1,0 +1,31 @@
+"""Worker configuration from environment variables (root .env is loaded by load_config)."""
+
+import os
+from dataclasses import dataclass
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+ROOT_ENV = Path(__file__).resolve().parents[2] / ".env"
+
+
+@dataclass(frozen=True)
+class WorkerConfig:
+    database_url: str
+    poll_interval_seconds: float
+    lock_timeout_seconds: float
+    worker_id: str
+
+
+def load_config() -> WorkerConfig:
+    """Read config. Fails fast if DATABASE_URL is missing; there are no credential defaults."""
+    load_dotenv(ROOT_ENV)
+    database_url = os.environ.get("DATABASE_URL")
+    if not database_url:
+        raise RuntimeError("DATABASE_URL is not set (see .env.example)")
+    return WorkerConfig(
+        database_url=database_url,
+        poll_interval_seconds=float(os.environ.get("WORKER_POLL_INTERVAL_SECONDS", "2")),
+        lock_timeout_seconds=float(os.environ.get("WORKER_LOCK_TIMEOUT_SECONDS", "600")),
+        worker_id=os.environ.get("WORKER_ID", f"worker-{os.uname().nodename}-{os.getpid()}"),
+    )

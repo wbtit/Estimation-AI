@@ -1,30 +1,28 @@
-# Node.js
-api/node_modules/
-api/dist/
-api/.env
+# Secrets: only .env.example (placeholders) is committed
+.env
+.env.*
+!.env.example
+
+# Node
+node_modules/
+dist/
+*.tsbuildinfo
 
 # Python
-python-service/__pycache__/
-python-service/venv/
-python-service/.pytest_cache/
-*.pyc
-*.pyo
-*.pyd
-.Python
-env/
+__pycache__/
+*.py[cod]
+.venv/
 venv/
-pip-log.txt
-pip-delete-this-directory.txt
+.pytest_cache/
+.ruff_cache/
 
-# Application Specific
-jobs/
-models/
+# Client data: drawings and uploads are never committed
+uploads/
+fixtures/**/*.pdf
+fixtures/**/*.PDF
 
-# OS/IDE
+# OS / editor
 .DS_Store
-.vscode/
 .idea/
+.vscode/
 *.swp
-*.swo
-CLAUDE.md
-docs/

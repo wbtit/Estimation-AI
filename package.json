@@ -1,0 +1,19 @@
+{
+  "name": "estimation-ai",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "migrate": "tsx db/migrate.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "@types/pg": "^8.11.10",
+    "dotenv": "^16.4.5",
+    "pg": "^8.13.1",
+    "tsx": "^4.19.2"
+  }
+}
