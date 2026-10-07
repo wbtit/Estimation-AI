@@ -87,3 +87,5 @@ make glyph-import REVIEWER="your name" DRY=--dry-run        # check first; drop 
 ```
 Only `confirmed` labels decode text; unknown shapes stay `?` and are counted. Optional OCR cross-check (off by default, local, no network): `make setup-ocr`, set `OCR_CROSSCHECK_ENABLED=true`, and `python -m src.text_reader.cli vote --pdf <file> --font-id <id>` to propose labels by majority vote. Accuracy against your own ground truth (private): `python -m src.text_reader.cli truth-template --pdf <file>`, fill `truth_text` in `fixtures/private/ground_truth_text.csv`, then `python -m src.text_reader.cli evaluate --pdf <file> --font-id <id>`. Details: [docs/PHASE4B_PLAN.md](docs/PHASE4B_PLAN.md), [docs/OCR_DEPENDENCY_REVIEW.md](docs/OCR_DEPENDENCY_REVIEW.md), [docs/SCHEMA_CHANGE_PROPOSAL.md](docs/SCHEMA_CHANGE_PROPOSAL.md) (awaiting your approval).
 
+Review helpers: `contact-sheets --no-guess --limit 200` (shape only), `revoke-labels --who NAME --dry-run` (undo one reviewer's labels), `truth-accept` (copy reviewed `draft_text` / typed `correction` into `truth_text`; the report says `draft source: AI, verified by human`).
+

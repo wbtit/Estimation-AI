@@ -25,7 +25,8 @@ from src.text_reader.structure import categorize_lines, page_geometry
 from src.text_reader.targets import CATEGORIES, categorize
 
 TRUTH_FIELDS = [
-    "line_id", "page", "x0", "y0", "x1", "y1", "crop_file", "category", "truth_text", "notes",
+    "line_id", "page", "x0", "y0", "x1", "y1", "crop_file", "category", "draft_text", "review",
+    "correction", "truth_text", "truth_source", "notes",
 ]  # fmt: skip
 SAMPLE_CATEGORIES = ("random", *STRUCTURE_CATEGORIES)
 DEFAULT_TRUTH = Path("fixtures/private/ground_truth_text.csv")
@@ -79,13 +80,17 @@ def sample_lines(
 
 
 def _truth_filled(path: Path) -> int:
-    """Filled truth_text rows; a file that is not a template counts as everything filled."""
+    """Rows with any truth, draft or correction; a file that is not a template counts as all."""
     with path.open(newline="", encoding="utf-8") as fh:
         reader = csv.DictReader(fh)
         if "truth_text" not in [(f or "").strip() for f in reader.fieldnames or []]:
             return 10**9
         rows = [{(k or "").strip(): (v or "") for k, v in r.items()} for r in reader]
-    return sum(1 for r in rows if r.get("truth_text", "").strip())
+    return sum(
+        1
+        for r in rows
+        if any(r.get(k, "").strip() for k in ("truth_text", "draft_text", "correction"))
+    )
 
 
 def write_template(
@@ -125,6 +130,73 @@ def write_template(
                 }
             )  # fmt: skip
     return {"total": len(lines), "per_category": dict(counts), "shortfall": shortfall}
+
+
+def _read_rows(path: Path) -> list[dict[str, str]]:
+    with path.open(newline="", encoding="utf-8") as fh:
+        raw = list(csv.DictReader(fh))
+    return [{(k or "").strip(): (v or "").strip() for k, v in r.items()} for r in raw]
+
+
+def _write_rows(path: Path, rows: list[dict[str, str]]) -> None:
+    with path.open("w", newline="", encoding="utf-8") as fh:
+        w = csv.DictWriter(fh, fieldnames=TRUTH_FIELDS, extrasaction="ignore", restval="")
+        w.writeheader()
+        w.writerows(rows)
+
+
+def set_drafts(path: Path, drafts: dict[str, str], notes: dict[str, str] | None = None) -> int:
+    """Write an AI draft reading into draft_text (and optional notes). Never touches truth_text.
+
+    Refuses to replace a draft on a row that already has truth_text or a review mark.
+    """
+    rows = _read_rows(path)
+    n = 0
+    for r in rows:
+        if r["line_id"] not in drafts:
+            continue
+        if r.get("truth_text") or r.get("review") or r.get("correction"):
+            raise ValueError(f"{r['line_id']} already has truth or a review; not overwriting")
+        r["draft_text"] = drafts[r["line_id"]]
+        if notes and r["line_id"] in notes:
+            r["notes"] = notes[r["line_id"]]
+        n += 1
+    _write_rows(path, rows)
+    return n
+
+
+SOURCE_ACCEPTED = "ai_draft_accepted"
+SOURCE_CORRECTED = "ai_draft_corrected"
+
+
+def truth_accept(path: Path) -> dict[str, int]:
+    """Turn the owner's review into truth_text.
+
+    review == 'ok'  -> draft_text is copied into truth_text (accepted as is)
+    correction text -> the correction becomes truth_text (it wins over 'ok')
+    neither         -> the row is left as it is and stays out of scoring when truth_text is empty
+    A truth_text that is already filled is only replaced by a typed correction.
+    """
+    rows = _read_rows(path)
+    counts = {"accepted": 0, "corrected": 0, "left_empty": 0, "already_filled": 0}
+    for r in rows:
+        correction = r.get("correction", "")
+        ok = r.get("review", "").lower() == "ok"
+        if correction:
+            r["truth_text"], r["truth_source"] = correction, SOURCE_CORRECTED
+            counts["corrected"] += 1
+        elif ok and r.get("draft_text"):
+            if r.get("truth_text"):
+                counts["already_filled"] += 1
+                continue
+            r["truth_text"], r["truth_source"] = r["draft_text"], SOURCE_ACCEPTED
+            counts["accepted"] += 1
+        elif not r.get("truth_text"):
+            counts["left_empty"] += 1
+    backup = path.with_suffix(path.suffix + ".bak")
+    backup.write_bytes(path.read_bytes())
+    _write_rows(path, rows)
+    return counts
 
 
 def read_truth(path: Path) -> list[dict[str, Any]]:
@@ -212,11 +284,17 @@ def evaluate(
             stats["ocr_exact_vs_truth"] += _norm(best.ocr_text) == truth
     n = len(labeled)
     m = stats["matched"]
+    sources = Counter(r.get("truth_source", "") for r in labeled)
+    ai_rows = sources[SOURCE_ACCEPTED] + sources[SOURCE_CORRECTED]
 
     def rate(a: int, b: int) -> float | None:
         return round(a / b, 4) if b else None
 
     return {
+        "draft_source": "AI, verified by human" if ai_rows else "human",
+        "rows_accepted_as_is": sources[SOURCE_ACCEPTED],
+        "rows_corrected": sources[SOURCE_CORRECTED],
+        "rows_typed_by_owner": n - ai_rows,
         "rows_in_file": len(rows),
         "rows_labeled": n,
         "rows_blank": len(rows) - n,

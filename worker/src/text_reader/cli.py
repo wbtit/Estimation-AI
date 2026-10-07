@@ -3,9 +3,11 @@
 python -m src.text_reader.cli contact-sheets --font-id F [--out DIR]
 python -m src.text_reader.cli export-csv --font-id F --out FILE [--all]
 python -m src.text_reader.cli import-csv --file FILE --reviewer NAME [--dry-run]
+python -m src.text_reader.cli revoke-labels --who NAME [--font-id F] [--dry-run]
 python -m src.text_reader.cli summary --font-id F
 python -m src.text_reader.cli vote --pdf FILE --font-id F [--ground-truth FILE]   (needs OCR extra)
 python -m src.text_reader.cli truth-template --pdf FILE [--out FILE]
+python -m src.text_reader.cli truth-accept [--truth FILE]
 python -m src.text_reader.cli evaluate --pdf FILE --font-id F [--truth FILE] [--ocr]
 """
 
@@ -30,6 +32,13 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--out", type=Path, default=PRIVATE / "glyph_sheets")
     p.add_argument("--per-sheet", type=int, default=48)
     p.add_argument("--limit", type=int)
+    p.add_argument("--no-guess", action="store_true", help="hide the OCR guess (shape only)")
+    p.add_argument("--dpi", type=int, default=100)
+
+    p = sub.add_parser("revoke-labels", help="un-confirm all labels confirmed by one reviewer")
+    p.add_argument("--who", required=True)
+    p.add_argument("--font-id")
+    p.add_argument("--dry-run", action="store_true")
 
     p = sub.add_parser("export-csv", help="write the review CSV (OCR proposals pre-filled)")
     p.add_argument("--font-id", required=True)
@@ -56,6 +65,9 @@ def main(argv: list[str] | None = None) -> int:
         "--regenerate", action="store_true", help="replace a template with no truth filled"
     )
 
+    p = sub.add_parser("truth-accept", help="copy reviewed drafts and corrections into truth_text")
+    p.add_argument("--truth", type=Path, default=harness.DEFAULT_TRUTH)
+
     p = sub.add_parser("evaluate", help="accuracy against your ground truth")
     p.add_argument("--pdf", type=Path, required=True)
     p.add_argument("--font-id", required=True)
@@ -76,12 +88,33 @@ def main(argv: list[str] | None = None) -> int:
         print(f"shortfall (filled with random lines): {res['shortfall'] or 'none'}")
         return 0
 
+    if args.cmd == "truth-accept":
+        if not args.truth.exists():
+            print(f"{args.truth} does not exist", file=sys.stderr)
+            return 1
+        c = harness.truth_accept(args.truth)
+        print(
+            f"accepted as is: {c['accepted']}, corrected: {c['corrected']}, "
+            f"left empty (excluded from scoring): {c['left_empty']}, "
+            f"already filled (unchanged): {c['already_filled']}"
+        )
+        return 0
+
     with connect(config.database_url) as conn:
         if args.cmd == "contact-sheets":
             paths = glyph_admin.contact_sheets(
-                conn, args.font_id, args.out, args.per_sheet, args.limit
+                conn,
+                args.font_id,
+                args.out,
+                args.per_sheet,
+                args.limit,
+                show_guess=not args.no_guess,
+                dpi=args.dpi,
             )
             print(f"wrote {len(paths)} sheet(s) to {args.out}")
+        elif args.cmd == "revoke-labels":
+            n = glyph_admin.revoke_labels(conn, args.who, args.font_id, args.dry_run)
+            print(f"{'would revoke' if args.dry_run else 'revoked'} {n} label(s) by {args.who}")
         elif args.cmd == "export-csv":
             n = glyph_admin.export_csv(conn, args.font_id, args.out, only_unconfirmed=not args.all)
             print(f"wrote {n} rows to {args.out}")

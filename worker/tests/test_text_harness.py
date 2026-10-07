@@ -318,3 +318,96 @@ def test_cli_contact_sheets_and_summary(
     assert f"wrote {-(-n // 8)} sheet(s)" in capsys.readouterr().out
     assert main(["summary", "--font-id", dbp.font_id]) == 0
     assert f"'proposed_groups': {n}" in capsys.readouterr().out
+
+
+# --- AI draft, human review, truth-accept ---------------------------------------------------------
+def _read(path: Path) -> list[dict]:
+    return list(csv.DictReader(path.open(newline="", encoding="utf-8")))
+
+
+def _write(path: Path, rows: list[dict]) -> None:
+    with path.open("w", newline="", encoding="utf-8") as fh:
+        w = csv.DictWriter(fh, fieldnames=harness.TRUTH_FIELDS, restval="")
+        w.writeheader()
+        w.writerows(rows)
+
+
+def _template(tmp_path: Path) -> Path:
+    pdf = tmp_path / "x.pdf"
+    structured_pdf(pdf)
+    out = tmp_path / "ground_truth_text.csv"
+    harness.write_template(pdf, out)
+    return out
+
+
+def test_drafts_go_into_draft_text_and_never_into_truth(tmp_path: Path) -> None:
+    out = _template(tmp_path)
+    ids = [r["line_id"] for r in _read(out)][:3]
+    assert harness.set_drafts(out, {ids[0]: "A", ids[1]: "B"}, {ids[1]: "unclear"}) == 2
+    rows = {r["line_id"]: r for r in _read(out)}
+    assert rows[ids[0]]["draft_text"] == "A" and rows[ids[1]]["notes"] == "unclear"
+    assert all(r["truth_text"] == "" and r["review"] == "" for r in rows.values())
+    with pytest.raises(FileExistsError):  # a template with drafts is protected from regeneration
+        harness.write_template(tmp_path / "x.pdf", out, regenerate=True)
+
+
+def test_truth_accept_copies_ok_rows_and_takes_corrections(tmp_path: Path) -> None:
+    out = _template(tmp_path)
+    ids = [r["line_id"] for r in _read(out)][:5]
+    harness.set_drafts(out, {i: f"D{k}" for k, i in enumerate(ids)})
+    rows = _read(out)
+    rows[0]["review"] = "OK"  # case does not matter
+    rows[1]["correction"] = "FIXED"
+    rows[2].update(review="ok", correction="BOTH")  # a typed correction wins
+    rows[3]["review"] = "no"  # anything but ok accepts nothing
+    _write(out, rows)  # row 4 has neither
+    counts = harness.truth_accept(out)
+    assert counts == {
+        "accepted": 1, "corrected": 2, "left_empty": len(rows) - 3, "already_filled": 0
+    }  # fmt: skip
+    got = _read(out)
+    assert [(r["truth_text"], r["truth_source"]) for r in got[:5]] == [
+        ("D0", "ai_draft_accepted"),
+        ("FIXED", "ai_draft_corrected"),
+        ("BOTH", "ai_draft_corrected"),
+        ("", ""),
+        ("", ""),
+    ]
+    assert out.with_suffix(".csv.bak").exists()
+
+
+def test_the_report_names_its_draft_source_and_counts_accepted_and_corrected(
+    tmp_path: Path,
+) -> None:
+    pdf = tmp_path / "x.pdf"
+    boxes = make_pdf(pdf)
+    truth = tmp_path / "truth.csv"
+    write_truth(truth, boxes, ["", "", *LINES[2:]], ["mark", "mark", "random", "random"])
+    rows = _read(truth)
+    rows[0].update(draft_text="B2", review="ok")
+    rows[1].update(draft_text="S4.1", correction="S4.1")
+    _write(truth, rows)
+    harness.truth_accept(truth)
+    report = harness.evaluate(pdf, truth, confirmed_library(FONT), FONT)
+    assert report["draft_source"] == "AI, verified by human"
+    assert report["rows_accepted_as_is"] == 1 and report["rows_corrected"] == 1
+    assert report["rows_typed_by_owner"] == 2 and report["rows_labeled"] == 4
+
+
+def test_a_report_without_ai_rows_says_human(tmp_path: Path) -> None:
+    pdf = tmp_path / "x.pdf"
+    boxes = make_pdf(pdf)
+    truth = tmp_path / "truth.csv"
+    write_truth(truth, boxes, LINES)
+    report = harness.evaluate(pdf, truth, confirmed_library(FONT), FONT)
+    assert report["draft_source"] == "human" and report["rows_typed_by_owner"] == 4
+
+
+def test_cli_truth_accept_reports_counts(tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
+    out = _template(tmp_path)
+    rows = _read(out)
+    rows[0].update(draft_text="X", review="ok")
+    _write(out, rows)
+    assert main(["truth-accept", "--truth", str(out)]) == 0
+    assert "accepted as is: 1, corrected: 0" in capsys.readouterr().out
+    assert main(["truth-accept", "--truth", str(tmp_path / "missing.csv")]) == 1

@@ -45,6 +45,8 @@ def contact_sheets(
     out_dir: Path,
     per_sheet: int = 48,
     limit: int | None = None,
+    show_guess: bool = True,
+    dpi: int = 100,
 ) -> list[Path]:
     """PNG sheets of the glyph groups that have no confirmed label, most frequent first."""
     rows = conn.execute(
@@ -75,16 +77,19 @@ def contact_sheets(
                 page.draw_polyline(pts, color=(0, 0, 0), width=1.4)
             purity = vote_purity(r["votes"])
             page.insert_text(
-                (ox + 4, oy + 95), f"{r['signature_hash'][:8]}  n={r['seen_count']}", fontsize=7
+                (ox + 4, oy + 95),
+                f"#{start + k + 1} {r['signature_hash'][:8]} n={r['seen_count']}",
+                fontsize=7,
             )
             guess = (
                 f"ocr: {r['proposed_label']} {purity:.0%}"
                 if r["proposed_label"] and purity
                 else "ocr: -"
             )
-            page.insert_text((ox + 4, oy + 106), guess, fontsize=7, color=(0.7, 0, 0))
+            if show_guess:
+                page.insert_text((ox + 4, oy + 106), guess, fontsize=7, color=(0.7, 0, 0))
         path = out_dir / f"unlabeled_{font_id}_{sheet_no:03d}.png"
-        page.get_pixmap(dpi=100, alpha=False).save(str(path))
+        page.get_pixmap(dpi=dpi, alpha=False).save(str(path))
         doc.close()
         paths.append(path)
     return paths
@@ -232,3 +237,26 @@ def summarize(conn: psycopg.Connection, font_id: str) -> dict[str, int]:
 def dump_json(obj: object, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(obj, indent=1, default=str))
+
+
+# --- revoking a reviewer's labels --------------------------------------------------------------
+def revoke_labels(
+    conn: psycopg.Connection, who: str, font_id: str | None = None, dry_run: bool = False
+) -> int:
+    """Un-confirm every label confirmed by `who`: back to proposed, label and review cleared.
+
+    OCR votes and the proposed label are kept. Returns how many groups were (or would be) revoked.
+    """
+    if not who.strip():
+        raise ValueError("who is required")
+    where = "status = 'confirmed' AND reviewed_by = %s" + (" AND font_id = %s" if font_id else "")
+    args: tuple = (who.strip(), font_id) if font_id else (who.strip(),)
+    n = conn.execute(f"SELECT count(*) AS n FROM glyph_library WHERE {where}", args).fetchone()["n"]
+    if not dry_run and n:
+        conn.execute(
+            "UPDATE glyph_library SET status = 'proposed', label = NULL, reviewed_by = NULL,"
+            f" reviewed_at = NULL, source = 'ocr_vote' WHERE {where}",
+            args,
+        )
+        conn.commit()
+    return int(n)

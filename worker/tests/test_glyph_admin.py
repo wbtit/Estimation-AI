@@ -207,3 +207,48 @@ def test_summary_counts_groups_and_instances(dbp: DbProject) -> None:
     confirm_by_font(dbp)
     s = glyph_admin.summarize(dbp.conn, dbp.font_id)
     assert s["confirmed_groups"] + s.get("proposed_groups", 0) == n
+
+
+# --- revoking one reviewer's labels --------------------------------------------------------------
+def test_revoke_undoes_only_the_named_reviewers_labels(dbp: DbProject, tmp_path: Path) -> None:
+    seed(dbp)
+    out = tmp_path / "review.csv"
+    glyph_admin.export_csv(dbp.conn, dbp.font_id, out)
+    rows = read_rows(out)[:4]
+    for r in rows:
+        r.update(label="A", status="confirmed")
+    write_rows(tmp_path / "a.csv", rows[:2])
+    write_rows(tmp_path / "b.csv", rows[2:])
+    assert (
+        glyph_admin.import_csv(dbp.conn, tmp_path / "a.csv", "claude-code-visual-review").applied
+        == 2
+    )
+    assert glyph_admin.import_csv(dbp.conn, tmp_path / "b.csv", "alice").applied == 2
+    before = len(dbp.library())
+
+    assert (
+        glyph_admin.revoke_labels(dbp.conn, "claude-code-visual-review", dbp.font_id, dry_run=True)
+        == 2
+    )
+    assert sum(r["status"] == "confirmed" for r in dbp.library()) == 4  # dry run changes nothing
+
+    assert glyph_admin.revoke_labels(dbp.conn, "claude-code-visual-review", dbp.font_id) == 2
+    after = dbp.library()
+    assert len(after) == before
+    confirmed = [r for r in after if r["status"] == "confirmed"]
+    assert len(confirmed) == 2 and all(r["reviewed_by"] == "alice" for r in confirmed)
+    revoked = [r for r in after if r["reviewed_by"] is None and r["label"] is None]
+    assert len(revoked) >= 2
+    assert glyph_admin.revoke_labels(dbp.conn, "claude-code-visual-review", dbp.font_id) == 0
+    with pytest.raises(ValueError):
+        glyph_admin.revoke_labels(dbp.conn, " ")
+
+
+def test_contact_sheets_can_hide_the_ocr_guess(dbp: DbProject, tmp_path: Path) -> None:
+    seed(dbp)
+    shown = glyph_admin.contact_sheets(dbp.conn, dbp.font_id, tmp_path / "a", per_sheet=50)
+    hidden = glyph_admin.contact_sheets(
+        dbp.conn, dbp.font_id, tmp_path / "b", per_sheet=50, show_guess=False
+    )
+    assert len(shown) == len(hidden) == 1
+    assert shown[0].read_bytes() != hidden[0].read_bytes()  # the guess text is not drawn
