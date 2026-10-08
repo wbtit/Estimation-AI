@@ -6,6 +6,7 @@ import { memberRoutes } from './routes/members.js';
 import { projectRoutes } from './routes/projects.js';
 import { reviewRoutes } from './routes/review.js';
 import { sheetRoutes } from './routes/sheets.js';
+import { takeoffRoutes } from './routes/takeoff.js';
 import { textItemRoutes } from './routes/text-items.js';
 import { viewRoutes } from './routes/views.js';
 
@@ -34,5 +35,6 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
   app.register(reviewRoutes, {});
   app.register(memberRoutes, {});
   app.register(memberActionRoutes, {});
+  app.register(takeoffRoutes, {});
   return app;
 }

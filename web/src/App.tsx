@@ -16,6 +16,7 @@ import { MemberOverlay } from "./components/MemberOverlay";
 import { MembersPanel } from "./components/MembersPanel";
 import { NotesPanel } from "./components/NotesPanel";
 import { SheetHeader } from "./components/SheetHeader";
+import { TakeoffPanel } from "./components/TakeoffPanel";
 import { ViewsPanel } from "./components/ViewsPanel";
 import { api, getWho, send, setWho } from "./lib/api";
 import { fitZoom, normaliseBox, type Box, type Pt } from "./lib/geometry";
@@ -58,9 +59,9 @@ export const App: React.FC = () => {
   const [zoom, setZoom] = useState(0.4);
   const [who, setWhoState] = useState(getWho());
   const [message, setMessage] = useState<string | null>(null);
-  const [tab, setTab] = useState<"views" | "members" | "labels" | "notes">(
-    "views",
-  );
+  const [tab, setTab] = useState<
+    "views" | "members" | "labels" | "notes" | "takeoff"
+  >("views");
   const [addingColumn, setAddingColumn] = useState(false);
   const [addingBeam, setAddingBeam] = useState(false);
   const [pendingBeam, setPendingBeam] = useState<{
@@ -76,6 +77,8 @@ export const App: React.FC = () => {
   const [legend, setLegend] = useState<LegendRow[]>([]);
   // a pick click must not also select the member or view under it (pointerdown ends the mode before the click event)
   const pickedClick = useRef(false);
+  // a takeoff row jump: open the sheet, then select the member once its sheet has loaded
+  const jumpTo = useRef<string | null>(null);
   const [pendingColumn, setPendingColumn] = useState<{
     viewId: string;
     point: Pt;
@@ -218,6 +221,14 @@ export const App: React.FC = () => {
     act,
     undo,
   } = useMembers(projectId, sheetId, who, fail, loadViews);
+
+  useEffect(() => {
+    const id = jumpTo.current;
+    if (id && members.some((m) => m.id === id)) {
+      jumpTo.current = null;
+      setMemberId(id);
+    }
+  }, [members, setMemberId]);
 
   const selectedMember =
     members.find((m) => m.id === memberId && !m.deleted) ?? null;
@@ -670,17 +681,19 @@ export const App: React.FC = () => {
         </main>
         <aside className="right">
           <div className="tabs" role="tablist">
-            {(["views", "members", "labels", "notes"] as const).map((t) => (
-              <button
-                key={t}
-                role="tab"
-                aria-selected={tab === t}
-                className={tab === t ? "tab on" : "tab"}
-                onClick={() => setTab(t)}
-              >
-                {t}
-              </button>
-            ))}
+            {(["views", "members", "labels", "notes", "takeoff"] as const).map(
+              (t) => (
+                <button
+                  key={t}
+                  role="tab"
+                  aria-selected={tab === t}
+                  className={tab === t ? "tab on" : "tab"}
+                  onClick={() => setTab(t)}
+                >
+                  {t}
+                </button>
+              ),
+            )}
           </div>
           {tab === "labels" && (
             <LabelsPanel
@@ -698,6 +711,23 @@ export const App: React.FC = () => {
             />
           )}
           {tab === "notes" && <NotesPanel sheets={notes} />}
+          {tab === "takeoff" && projectId && (
+            <TakeoffPanel
+              projectId={projectId}
+              version={members}
+              onError={fail}
+              onJump={(row) => {
+                if (!row.source.sheet_id) return;
+                if (row.source.sheet_id === sheetId) {
+                  setMemberId(row.source.member_id);
+                } else {
+                  jumpTo.current = row.source.member_id;
+                  setSheetId(row.source.sheet_id);
+                }
+                setTab("members");
+              }}
+            />
+          )}
           {tab === "members" && (
             <>
               {pendingColumn && (

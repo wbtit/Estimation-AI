@@ -354,3 +354,32 @@ mark {
   max-height: 200px;
   overflow-y: auto;
 }
+
+.takeoff-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.takeoff-table th,
+.takeoff-table td {
+  border-bottom: 1px solid #ddd;
+  padding: 2px 4px;
+  text-align: left;
+}
+.takeoff-table tbody tr {
+  cursor: pointer;
+}
+.takeoff-table tbody tr:hover,
+.takeoff-table tbody tr:focus {
+  background: #eef4ff;
+}
+.takeoff-table .num {
+  text-align: right;
+}
+.takeoff-table tr.excluded {
+  color: #8a1f1f;
+}
+.totals {
+  padding-left: 16px;
+  margin: 4px 0;
+}

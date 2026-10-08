@@ -153,3 +153,44 @@ export interface ClassStat {
   lines: number;
   length_pt: number;
 }
+
+export interface TakeoffRow {
+  key: string;
+  mark: string | null;
+  profile_raw: string | null;
+  profile: string | null;
+  level: string | null;
+  quantity: number;
+  members: number;
+  total_length_mm: number | null;
+  total_length_ft_in: string | null;
+  unmeasured: number;
+  unit_lengths_mm: number[];
+  sheets: number[];
+  color: Color;
+  confirmed: boolean;
+  excluded: boolean;
+  reasons: string[];
+  source: {
+    member_id: string;
+    sheet_id: string | null;
+    page_number: number | null;
+    bbox: Box | null;
+  };
+  member_ids: string[];
+}
+
+export interface TakeoffTotals {
+  pieces: number;
+  members: number;
+  total_length_mm: number;
+  total_length_ft_in: string;
+  unmeasured: number;
+}
+
+export interface TakeoffData {
+  rows: TakeoffRow[];
+  by_level: { level: string | null; totals: TakeoffTotals }[];
+  totals: TakeoffTotals;
+  excluded_red: TakeoffTotals;
+}
