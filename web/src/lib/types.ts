@@ -165,6 +165,7 @@ export interface MemberView {
     number: string;
   } | null;
   shared_line: SharedLine | null;
+  length_shared: boolean;
   merged_into: string | null;
   not_member: { reason: string } | null;
 }
@@ -175,6 +176,7 @@ export interface SharedLine {
   best: boolean;
   resolution: "separate" | null;
   resolved: boolean;
+  duplicate_of: string | null;
 }
 
 export interface ClassStat {
@@ -196,6 +198,7 @@ export interface TakeoffRow {
   total_length_mm: number | null;
   total_length_ft_in: string | null;
   unmeasured: number;
+  length_shared_pieces: number;
   unit_lengths_mm: number[];
   sheets: number[];
   color: Color;
@@ -218,6 +221,7 @@ export interface TakeoffTotals {
   total_length_mm: number;
   total_length_ft_in: string;
   unmeasured: number;
+  length_shared_pieces: number;
 }
 
 export interface TakeoffSection {

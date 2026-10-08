@@ -124,8 +124,8 @@ export function deleteEntries(m: MemberView): EditEntry[] {
 
 /**
  * A person's answer for a group of members on one line: "separate members" (every member of the
- * group is kept) or a merge (the others become part of `keep`, default the best-scoring member).
- * One action, so one undo. Nothing is deleted.
+ * group is kept) or a merge (THIS member becomes part of `keep`; the other members of the line are
+ * separate members and are not touched). One action, so one undo. Nothing is deleted.
  */
 export function sharedLineEntries(
   target: MemberView,
@@ -145,17 +145,23 @@ export function sharedLineEntries(
         status: 'edited' as const,
       }));
   }
-  const keep = choice.keep ? group.find((m) => m.id === choice.keep) : group[0];
-  if (!keep) throw new OpError(400, 'the member to keep is not in this group');
-  return group
-    .filter((m) => m.id !== keep.id)
-    .map((m) => ({
-      memberId: m.id,
+  // a merge moves THIS member into another one (default: the member it duplicates, else the best of
+  // the line); the other members of a shared line are separate members and are not touched
+  const keep = choice.keep
+    ? group.find((m) => m.id === choice.keep)
+    : (group.find((m) => m.id === target.shared_line?.duplicate_of) ??
+      group.find((m) => m.id !== target.id));
+  if (!keep || keep.id === target.id)
+    throw new OpError(400, 'the member to keep is not in this group');
+  return [
+    {
+      memberId: target.id,
       field: 'merged_into',
-      before: m.merged_into,
+      before: target.merged_into,
       after: keep.id,
       status: 'edited' as const,
-    }));
+    },
+  ];
 }
 
 export const NOT_MEMBER_REASONS = ['existing', 'misc_steel', 'detail', 'other'] as const;

@@ -44,6 +44,7 @@ function member(id: string, over: Partial<MemberView> = {}): MemberView {
     human: 'unreviewed',
     joist_series: null,
     shared_line: null,
+    length_shared: false,
     shared_resolution: null,
     merged_into: null,
     not_member: null,
@@ -58,8 +59,9 @@ describe('shared line grouping', () => {
     expect(lineKey('s1', LINE)).not.toBe(lineKey('s2', LINE));
   });
 
-  it('flags every member of a shared line amber and keeps the best-scoring one in the total', () => {
+  it('flags every member of a shared line amber, ranks one best, and does not call them duplicates', () => {
     const worse = member('b', {
+      profile: 'W10X12',
       link: {
         ...member('b').link,
         candidates: [{ rank: 1, ...LINE, score: 30, dist: 30, rel_angle: 0, length_mm: 1 }],
@@ -70,13 +72,68 @@ describe('shared line grouping', () => {
       link: { ...member('c').link, line: { p: [0, 0], q: [10, 0] } },
     });
     const all = annotateSharedLines([worse, better, lone]);
-    expect(better.shared_line).toMatchObject({ size: 2, best: true, resolved: false });
-    expect(worse.shared_line).toMatchObject({ size: 2, best: false });
+    expect(better.shared_line).toMatchObject({
+      size: 2,
+      best: true,
+      resolved: false,
+      duplicate_of: null,
+    });
+    expect(worse.shared_line).toMatchObject({ size: 2, best: false, duplicate_of: null });
     expect(better.status.color).toBe('amber');
     expect(better.status.reasons).toContain(REASONS.sharedLine);
     expect(lone.shared_line).toBeNull();
     expect(lone.status.color).toBe('green');
-    expect(all.filter(isPossibleDuplicate).map((m) => m.id)).toEqual(['b']);
+    // different profiles on one line are separate members: nobody is held out of the total
+    expect(all.filter(isPossibleDuplicate)).toEqual([]);
+  });
+
+  it('the length of a member on a shared line is not trusted, unless a person typed it', () => {
+    const a = member('a');
+    const b = member('b', { profile: 'W10X12' });
+    const typed = member('t', { profile: 'W8X10', length_source: 'manual' });
+    const lone = member('c', { link: { ...member('c').link, line: { p: [0, 0], q: [10, 0] } } });
+    annotateSharedLines([a, b, typed, lone]);
+    expect([a.length_shared, b.length_shared, typed.length_shared, lone.length_shared]).toEqual([
+      true,
+      true,
+      false,
+      false,
+    ]);
+  });
+
+  describe('true duplicate candidates: same line, same profile, labels at one spot', () => {
+    const box = (x0: number, y0 = 100) => ({ x0, y0, x1: x0 + 40, y1: y0 + 8 }); // label height 8
+    const pair = (a: object, b: object) => {
+      const first = member('a', a);
+      const second = member('b', b);
+      annotateSharedLines([first, second]);
+      return second.shared_line?.duplicate_of ?? null;
+    };
+
+    it('overlapping labels with the same profile', () => {
+      expect(pair({ bbox: box(100) }, { bbox: box(110) })).toBe('a');
+    });
+
+    it('closer than 2 label heights (16 pt here) but not overlapping', () => {
+      expect(pair({ bbox: box(100) }, { bbox: box(155) })).toBe('a'); // 15 pt gap
+    });
+
+    it('not when the gap is 2 label heights or more', () => {
+      expect(pair({ bbox: box(100) }, { bbox: box(156) })).toBeNull(); // 16 pt gap
+      expect(pair({ bbox: box(100) }, { bbox: box(400) })).toBeNull();
+    });
+
+    it('not with another profile, however close', () => {
+      expect(pair({ bbox: box(100) }, { bbox: box(110), profile: 'W10X12' })).toBeNull();
+    });
+
+    it('a person saying "separate members" lifts it', () => {
+      const a = member('a', { bbox: box(100), shared_resolution: 'separate' });
+      const b = member('b', { bbox: box(110), shared_resolution: 'separate' });
+      annotateSharedLines([a, b]);
+      expect(b.shared_line?.duplicate_of).toBeNull();
+      expect(isPossibleDuplicate(b)).toBe(false);
+    });
   });
 
   it('a person link beats a rule link; high confidence beats medium', () => {
@@ -124,19 +181,29 @@ describe('shared line grouping', () => {
     expect(a.shared_line).toBeNull();
   });
 
-  it('takeoff: duplicates are held out of the main total on their own line, not deleted', () => {
-    const a = member('a');
-    const b = member('b', {
-      link: {
-        ...member('b').link,
-        candidates: [{ rank: 1, ...LINE, score: 30, dist: 30, rel_angle: 0, length_mm: 1 }],
-      },
-    });
+  it('takeoff: shared-line pieces stay in the total, their length is left out and counted apart', () => {
+    const a = member('a', { quantity: 2 });
+    const b = member('b', { profile: 'W10X12' });
+    const lone = member('c', { link: { ...member('c').link, line: { p: [0, 0], q: [10, 0] } } });
+    annotateSharedLines([a, b, lone]);
+    const t = buildTakeoff([a, b, lone], new Map([['s1', 3]]));
+    expect(t.totals.pieces).toBe(4);
+    expect(t.totals.length_shared_pieces).toBe(3);
+    expect(t.totals.total_length_mm).toBe(3000); // only the member alone on its line
+    expect(t.possible_duplicates.pieces).toBe(0);
+    const shared = t.rows.find((r) => r.profile === 'W10X12')!;
+    expect(shared).toMatchObject({ quantity: 1, total_length_mm: null, length_shared_pieces: 1 });
+    expect(shared.unit_lengths_mm).toEqual([]);
+  });
+
+  it('takeoff: a true duplicate candidate is held out of the main total on its own line, not deleted', () => {
+    const bbox = { x0: 100, y0: 100, x1: 140, y1: 108 };
+    const a = member('a', { bbox });
+    const b = member('b', { bbox: { ...bbox, x0: 105, x1: 145 } });
     annotateSharedLines([a, b]);
     const t = buildTakeoff([a, b], new Map([['s1', 3]]));
     expect(t.totals.pieces).toBe(1);
     expect(t.possible_duplicates.pieces).toBe(1);
-    expect(t.possible_duplicates.total_length_mm).toBe(3000);
     expect(t.excluded_red.pieces).toBe(0);
     expect(t.rows.map((r) => r.kind)).toEqual(['main', 'duplicate']);
   });
@@ -206,33 +273,37 @@ describe('shared line routes', () => {
 
   afterAll(async () => {
     await deleteProject(db, projectId);
-    await closeDatabaseConnection();
   });
 
-  it('two members on one line are grouped and the second is a possible duplicate', async () => {
+  it('two members on one line are grouped; both pieces count, their length does not', async () => {
     const ms = await members();
     expect(ms.map((m) => m.shared_line?.size)).toEqual([2, 2]);
-    expect(ms.every((m) => m.status.color === 'amber')).toBe(true);
-    const t = await takeoff();
-    expect(t.totals.pieces).toBe(1);
-    expect(t.possible_duplicates.pieces).toBe(1);
+    expect(ms.every((m) => m.status.color === 'amber' && m.length_shared)).toBe(true);
     expect(ms.filter((m) => m.shared_line?.best)).toHaveLength(1);
+    const t = await takeoff();
+    expect(t.totals.pieces).toBe(2);
+    expect(t.totals.length_shared_pieces).toBe(2);
+    expect(t.totals.total_length_mm).toBe(0);
+    expect(t.possible_duplicates.pieces).toBe(0);
   });
 
-  it('"separate members" resolves the group for everybody, and an undo re-opens it', async () => {
+  it('"separate members" lifts the amber flag for everybody (the length stays untrusted); undo re-opens it', async () => {
     expect((await post(ids[0], { resolution: 'separate' })).statusCode).toBe(200);
+    let ms = await members();
+    expect(ms.every((m) => m.shared_line?.resolved && m.status.color === 'green')).toBe(true);
+    expect(ms.every((m) => m.length_shared)).toBe(true);
     expect((await takeoff()).totals.pieces).toBe(2);
-    expect((await members()).every((m) => m.shared_line?.resolved)).toBe(true);
     const undo = await app.inject({
       method: 'POST',
       url: `/api/projects/${projectId}/undo`,
       payload: { who: 'alice' },
     });
     expect(undo.statusCode).toBe(200);
-    expect((await takeoff()).totals.pieces).toBe(1);
+    ms = await members();
+    expect(ms.every((m) => m.status.color === 'amber')).toBe(true);
   });
 
-  it('a merge keeps one member and takes the other out of the takeoff; undo brings it back', async () => {
+  it('a merge keeps one member and takes the other out of the takeoff; the kept length is trusted; undo brings it back', async () => {
     const ms = await members();
     const best = ms.find((m) => m.shared_line?.best)!;
     const other = ms.find((m) => !m.shared_line?.best)!;
@@ -241,15 +312,17 @@ describe('shared line routes', () => {
     const after = await members();
     expect(after.find((m) => m.id === other.id)!.merged_into).toBe(best.id);
     expect(after.find((m) => m.id === best.id)!.shared_line).toBeNull();
+    expect(after.find((m) => m.id === best.id)!.length_shared).toBe(false);
     const t = await takeoff();
     expect(t.totals.pieces).toBe(1);
-    expect(t.possible_duplicates.pieces).toBe(0);
+    expect(t.totals.length_shared_pieces).toBe(0);
+    expect(t.totals.total_length_mm).toBeGreaterThan(0);
     await app.inject({
       method: 'POST',
       url: `/api/projects/${projectId}/undo`,
       payload: { who: 'alice' },
     });
-    expect((await takeoff()).possible_duplicates.pieces).toBe(1);
+    expect((await takeoff()).totals.pieces).toBe(2);
   });
 
   it('refuses a member that is not in a group, and an unknown member to keep', async () => {
@@ -259,4 +332,117 @@ describe('shared line routes', () => {
     });
     expect(bad.statusCode).toBe(400);
   });
+});
+
+describe('true duplicate candidates through the routes', () => {
+  const app = buildApp();
+  const db = getDb();
+  let projectId: string;
+  const ids: Record<string, string> = {};
+  const cand = [{ rank: 1, p: [100, 400], q: [700, 400], score: 5, dist: 5, rel_angle: 0 }];
+
+  const insert = async (
+    key: string,
+    sheetId: string,
+    viewId: string,
+    x0: number,
+    profile: string,
+  ) => {
+    const row = await db
+      .insertInto('members')
+      .values({
+        project_id: projectId,
+        sheet_id: sheetId,
+        view_id: viewId,
+        member_id: `M-${key}`,
+        origin: 'extracted',
+        type: 'beam',
+        profile_raw: profile,
+        profile: profile.toUpperCase(),
+        field_sources: '{}',
+        field_confidence: '{}',
+        source_bbox: JSON.stringify({ x0, y0: 380, x1: x0 + 40, y1: 388 }),
+        link_confidence: 'high',
+        link_candidates: JSON.stringify(cand),
+      } as never)
+      .returning('id')
+      .executeTakeFirstOrThrow();
+    ids[key] = row.id;
+  };
+  const takeoff = async () =>
+    (await app.inject({ method: 'GET', url: `/api/projects/${projectId}/takeoff` })).json();
+  const post = (id: string, body: object) =>
+    app.inject({
+      method: 'POST',
+      url: `/api/projects/${projectId}/members/${id}/shared-line`,
+      payload: { who: 'alice', ...body },
+    });
+  const undo = () =>
+    app.inject({
+      method: 'POST',
+      url: `/api/projects/${projectId}/undo`,
+      payload: { who: 'alice' },
+    });
+
+  beforeAll(async () => {
+    projectId = await insertProject(db);
+    const sheetId = await insertSheet(db, projectId, {
+      page_index: 0,
+      page_type_guess: 'framing_plan',
+      width_pt: 1200,
+      height_pt: 800,
+    });
+    const viewId = (
+      await db
+        .insertInto('sheet_views')
+        .values({
+          sheet_id: sheetId,
+          box: JSON.stringify({ x0: 0, y0: 0, x1: 1200, y1: 800 }),
+          scale_ratio: 96,
+          scale_source: 'user_confirmed',
+          scale_confirmed: true,
+        })
+        .returning('id')
+        .executeTakeFirstOrThrow()
+    ).id;
+    await insert('a', sheetId, viewId, 300, 'W12x26');
+    await insert('twin', sheetId, viewId, 310, 'W12x26'); // same line, same profile, overlapping label
+    await insert('far', sheetId, viewId, 600, 'W12x26'); // same profile, far along the line
+    await insert('other', sheetId, viewId, 305, 'W10x12'); // other profile at the same spot
+  });
+  afterAll(async () => {
+    await deleteProject(db, projectId);
+  });
+
+  it('only the twin is held out of the main total; the other three count as pieces', async () => {
+    const t = await takeoff();
+    expect(t.totals.pieces).toBe(3);
+    expect(t.possible_duplicates.pieces).toBe(1);
+    expect(t.totals.length_shared_pieces).toBe(3);
+    const twin = t.rows.find((r: { kind: string }) => r.kind === 'duplicate');
+    expect(twin.member_ids).toEqual([ids.twin]);
+  });
+
+  it('"separate members" brings the twin into the total; an undo holds it out again', async () => {
+    expect((await post(ids.twin, { resolution: 'separate' })).statusCode).toBe(200);
+    let t = await takeoff();
+    expect(t.totals.pieces).toBe(4);
+    expect(t.possible_duplicates.pieces).toBe(0);
+    expect((await undo()).statusCode).toBe(200);
+    t = await takeoff();
+    expect(t.possible_duplicates.pieces).toBe(1);
+  });
+
+  it('a merge takes the twin out of the takeoff altogether', async () => {
+    expect((await post(ids.twin, { resolution: 'merge', keep: ids.a })).statusCode).toBe(200);
+    const t = await takeoff();
+    expect(t.possible_duplicates.pieces).toBe(0);
+    expect(t.totals.pieces).toBe(3);
+    expect((await undo()).statusCode).toBe(200);
+    expect((await takeoff()).possible_duplicates.pieces).toBe(1);
+  });
+});
+
+afterAll(async () => {
+  await closeDatabaseConnection();
 });

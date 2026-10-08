@@ -110,21 +110,38 @@ export const MemberActions: React.FC<{
           matched to the AISC catalog).
         </div>
       )}
-      {member.shared_line && !member.shared_line.resolved && (
-        <div className="shared-box warn">
+      {member.shared_line && (
+        <div
+          className={
+            member.shared_line.resolved ? "shared-box" : "shared-box warn"
+          }
+        >
           {member.shared_line.size} members share this line
-          {member.shared_line.best
-            ? " (this one stays in the total)"
-            : " (this one is held out of the total as a possible duplicate)"}
-          .
-          <div className="row">
-            <button onClick={() => onSharedLine("separate")}>
-              Separate members
-            </button>
-            <button onClick={() => onSharedLine("merge")}>
-              Merge into the best
-            </button>
-          </div>
+          {member.shared_line.resolved
+            ? " (you said: separate members)"
+            : ", probably different beams on one long line"}
+          . Their pieces count; the length of this member is <b>not trusted</b>{" "}
+          (it is the whole line)
+          {member.length_shared ? "" : " (a typed length is trusted)"}.
+          {member.shared_line.duplicate_of && (
+            <div>
+              This label looks like a duplicate of another label on the same
+              line (same profile, labels at one spot). It is held out of the
+              total until you decide.
+            </div>
+          )}
+          {!member.shared_line.resolved && (
+            <div className="row">
+              <button onClick={() => onSharedLine("separate")}>
+                Separate members
+              </button>
+              {member.shared_line.duplicate_of && (
+                <button onClick={() => onSharedLine("merge")}>
+                  Merge into the other label
+                </button>
+              )}
+            </div>
+          )}
         </div>
       )}
       {member.type !== "column" && (

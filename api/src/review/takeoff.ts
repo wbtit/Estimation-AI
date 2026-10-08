@@ -31,11 +31,13 @@ export interface TakeoffRow {
   grade: string;
   quantity: number;
   members: number;
-  /** Sum of quantity x unit length over the members that have a length; null when none has one. */
+  /** Sum of quantity x unit length over the members with a TRUSTED length; null when none has one. */
   total_length_mm: number | null;
   total_length_ft_in: string | null;
   /** Number of pieces that have no length. */
   unmeasured: number;
+  /** Pieces on a shared line: counted, but their length is not in total_length_mm. */
+  length_shared_pieces: number;
   unit_lengths_mm: number[];
   sheets: number[];
   /** The worst color of the members in the row (red rows hold red members only). */
@@ -57,9 +59,13 @@ export interface TakeoffRow {
 export interface TakeoffTotals {
   pieces: number;
   members: number;
+  /** Length of the pieces whose length is trusted (a line shared with other members is not). */
   total_length_mm: number;
   total_length_ft_in: string;
+  /** Pieces with no length at all. */
   unmeasured: number;
+  /** Pieces on a line shared with other members: counted as pieces, their length is NOT in the length. */
+  length_shared_pieces: number;
 }
 
 /** One section of the takeoff: its rows and its totals. */
@@ -68,7 +74,7 @@ export interface TakeoffSection {
   by_level: { level: string | null; totals: TakeoffTotals }[];
   totals: TakeoffTotals;
   excluded_red: TakeoffTotals;
-  /** Members that share a line with a better-scoring member and nobody has decided yet. */
+  /** True duplicate candidates (same line, same profile, labels at one spot): out of the main total until a person decides. */
   possible_duplicates: TakeoffTotals;
 }
 
@@ -115,6 +121,7 @@ function emptyTotals(): TakeoffTotals {
     total_length_mm: 0,
     total_length_ft_in: mmToFeetInches(0),
     unmeasured: 0,
+    length_shared_pieces: 0,
   };
 }
 
@@ -128,6 +135,7 @@ function add(t: TakeoffTotals, row: TakeoffRow): void {
   t.members += row.members;
   t.total_length_mm += row.total_length_mm ?? 0;
   t.unmeasured += row.unmeasured;
+  t.length_shared_pieces += row.length_shared_pieces;
 }
 
 /** Natural order, rows without a value last. */
@@ -199,7 +207,7 @@ function reviewSummary(members: MemberView[]): ReviewSummary {
   );
   const sum = (list: MemberView[], f: (m: MemberView) => number) =>
     list.reduce((n, m) => n + f(m), 0);
-  const length = (m: MemberView) => (m.length_mm ?? 0) * m.quantity;
+  const length = (m: MemberView) => (m.length_shared ? 0 : (m.length_mm ?? 0)) * m.quantity;
   const open = inMain.filter((m) => m.human === 'unreviewed');
   const r1 = (v: number) => Math.round(v * 10) / 10;
   return {
@@ -239,7 +247,8 @@ function section(
   const rows: TakeoffRow[] = [];
   for (const [key, list] of groups) {
     const first = list[0];
-    const measured = list.filter((m) => m.length_mm !== null);
+    // a length on a line shared with other members is the whole line: not trusted, not added up
+    const measured = list.filter((m) => m.length_mm !== null && !m.length_shared);
     const total = measured.reduce((sum, m) => sum + (m.length_mm as number) * m.quantity, 0);
     const color = list.reduce<TakeoffColor>((worst, m) => {
       const c = m.status.color as TakeoffColor;
@@ -265,7 +274,10 @@ function section(
       members: list.length,
       total_length_mm: measured.length ? Math.round(total * 10) / 10 : null,
       total_length_ft_in: measured.length ? mmToFeetInches(total) : null,
-      unmeasured: list.filter((m) => m.length_mm === null).reduce((n, m) => n + m.quantity, 0),
+      unmeasured: list
+        .filter((m) => m.length_mm === null && !m.length_shared)
+        .reduce((n, m) => n + m.quantity, 0),
+      length_shared_pieces: list.filter((m) => m.length_shared).reduce((n, m) => n + m.quantity, 0),
       unit_lengths_mm: [
         ...new Set(measured.map((m) => Math.round((m.length_mm as number) * 10) / 10)),
       ].sort((a, b) => a - b),

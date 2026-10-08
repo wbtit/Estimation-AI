@@ -9,8 +9,12 @@ import type {
 } from "../lib/types";
 
 const totalsLine = (t: TakeoffTotals) =>
-  `${t.pieces} pieces, ${t.total_length_ft_in} (${Math.round(t.total_length_mm)} mm)${
+  `${t.pieces} pieces, trusted length ${t.total_length_ft_in} (${Math.round(t.total_length_mm)} mm)${
     t.unmeasured ? `, ${t.unmeasured} without length` : ""
+  }${
+    t.length_shared_pieces
+      ? `, ${t.length_shared_pieces} pieces on a shared line: counted, length NOT in this total`
+      : ""
   }`;
 
 /** The rows and totals of one takeoff section (steel, or joists). */
@@ -37,9 +41,15 @@ const Section: React.FC<{
       <td>{r.profile ?? "?"}</td>
       <td className="num">{r.quantity}</td>
       <td className="num">
-        {r.total_length_ft_in ?? "-"}
+        {r.total_length_ft_in ?? (r.length_shared_pieces ? "not trusted" : "-")}
         {r.total_length_mm !== null && (
           <small> ({Math.round(r.total_length_mm)} mm)</small>
+        )}
+        {r.length_shared_pieces > 0 && r.total_length_mm !== null && (
+          <small title="pieces on a shared line: counted, their length is not in this number">
+            {" "}
+            +{r.length_shared_pieces} shared
+          </small>
         )}
       </td>
       <td>{r.grade}</td>
@@ -99,8 +109,11 @@ const Section: React.FC<{
         </table>
       )}
       <p>
-        <b>Possible duplicates (shared line), not in the totals</b>:{" "}
-        {totalsLine(section.possible_duplicates)}
+        <b>
+          Possible duplicates (same line, same profile, labels at one spot), not
+          in the totals
+        </b>
+        : {totalsLine(section.possible_duplicates)}
       </p>
       {duplicates.length > 0 && (
         <table className="takeoff-table">

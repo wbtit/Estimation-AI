@@ -99,6 +99,8 @@ export interface MemberView {
   } | null;
   /** Set by annotateSharedLines: members that share a chosen line. */
   shared_line: SharedLine | null;
+  /** The length is the whole line it shares with other members: not trusted, left out of length totals. */
+  length_shared: boolean;
   /** The person's own answer for this member's shared line (an edit). */
   shared_resolution: 'separate' | null;
   /** A person merged this member into another one (it leaves the takeoff). */
@@ -312,6 +314,7 @@ export function memberView(
         }
       : null,
     shared_line: null,
+    length_shared: false,
     shared_resolution: (e.get('shared_line') as 'separate' | null | undefined) ?? null,
     merged_into: (e.get('merged_into') as string | null | undefined) ?? null,
     not_member: (e.get('not_member') as { reason: string } | null | undefined) ?? null,

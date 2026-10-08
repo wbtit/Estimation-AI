@@ -38,6 +38,7 @@ function member(over: Partial<MemberView> & { color?: 'green' | 'amber' | 'red' 
     human: 'unreviewed',
     joist_series: null,
     shared_line: null,
+    length_shared: false,
     shared_resolution: null,
     merged_into: null,
     not_member: null,

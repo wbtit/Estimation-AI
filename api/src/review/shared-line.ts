@@ -1,8 +1,14 @@
-// Members that share the same chosen line (Phase 5b item 1). One drawn line often carries several
-// labels (a long line with a beam label for each of several beams), and the takeoff counts members,
-// so a shared line is flagged for a person to decide. Nothing is merged or deleted automatically:
-// the best-scoring member stays in the main takeoff total, the others are held out as "possible
-// duplicates" until a person says "separate members" or merges them (both are edits with undo).
+// Members that share the same chosen line. Phase 5b held every member but the best of a shared line
+// out of the main total; Phase 5c measured that this was wrong (on job-005 111 of the 113 members on
+// shared lines have different profiles, so they are separate members, and 113 of 113 lines are ONE
+// drawn segment, so the merge of segments is not the cause). Now:
+//   - pieces: every member of a shared line stays in the main total (amber, shown grouped);
+//   - length: the whole line is not the length of each member, so a member on a shared line has
+//     length_shared and its length is left out of the length totals (a typed length is trusted);
+//   - duplicates: only a true duplicate candidate (same line, same canonical profile, labels
+//     overlapping or closer than DUPLICATE_LABEL_HEIGHTS label heights) is held out of the main
+//     total, until a person says "separate members" or merges it (both are edits with undo).
+// Nothing is merged or deleted automatically.
 import type { MemberView, Line } from './members.js';
 import { withSharedLine } from './status.js';
 
@@ -11,13 +17,23 @@ export interface SharedLine {
   group: string;
   /** Members in the group (merged, deleted and not-a-member ones do not count). */
   size: number;
-  /** The best-scoring member of the group: the one that stays in the main total. */
+  /** The best-ranked member of the group (a person's link first, then confidence, then score). */
   best: boolean;
   /** What a person decided for this member. */
   resolution: 'separate' | null;
-  /** The whole group is resolved (every member is "separate"). Nothing is flagged then. */
+  /** The whole group is resolved (every member is "separate"). The amber flag is lifted then. */
   resolved: boolean;
+  /**
+   * Set when this member looks like a DUPLICATE of a better-ranked member of the group: same line,
+   * same canonical profile, and the two labels overlap or are closer than DUPLICATE_LABEL_HEIGHTS
+   * label heights. The id is that better member. Only these stay out of the main total, until a
+   * person says "separate members" or merges them.
+   */
+  duplicate_of: string | null;
 }
+
+/** Two labels closer than this many label heights (or overlapping) are the same label drawn twice. */
+export const DUPLICATE_LABEL_HEIGHTS = 2;
 
 const CONF_RANK = { high: 0, medium: 1, low: 2 } as const;
 
@@ -53,6 +69,7 @@ export function annotateSharedLines(members: MemberView[]): MemberView[] {
   const groups = new Map<string, { m: MemberView; order: number }[]>();
   members.forEach((m, order) => {
     m.shared_line = null;
+    m.length_shared = false;
     if (!counts(m)) return;
     const k = lineKey(m.sheet_id, m.link.line as Line);
     const list = groups.get(k) ?? [];
@@ -63,23 +80,54 @@ export function annotateSharedLines(members: MemberView[]): MemberView[] {
     if (list.length < 2) continue;
     const sorted = [...list].sort((a, b) => before(rank(a.m, a.order), rank(b.m, b.order)));
     const resolved = list.every((x) => x.m.shared_resolution === 'separate');
-    for (const { m } of list) {
+    sorted.forEach(({ m }, i) => {
+      // a duplicate of a better-ranked member of this line, unless a person said "separate"
+      const twin =
+        m.shared_resolution === 'separate'
+          ? undefined
+          : sorted.slice(0, i).find((e) => looksLikeSameLabel(e.m, m));
       m.shared_line = {
         group,
         size: list.length,
-        best: m === sorted[0].m,
+        best: i === 0,
         resolution: m.shared_resolution,
         resolved,
+        duplicate_of: twin ? twin.m.id : null,
       };
       if (!resolved) m.status = withSharedLine(m.status);
-    }
+    });
+  }
+  for (const m of members) {
+    // the whole line is not this member's length, unless a person typed the length
+    m.length_shared = m.shared_line !== null && m.length_source !== 'manual';
   }
   return members;
 }
 
-/** Members that are held out of the main total until a person decides (not the best of the group). */
+/** A true duplicate candidate: held out of the main total until a person decides. */
 export function isPossibleDuplicate(m: MemberView): boolean {
-  return m.shared_line !== null && !m.shared_line.resolved && !m.shared_line.best;
+  return m.shared_line !== null && m.shared_line.duplicate_of !== null;
+}
+
+function profileKey(m: MemberView): string | null {
+  if (m.type === 'joist') return m.joist_series?.canonical ?? null;
+  return m.profile ?? null;
+}
+
+/** The text height of a label: the thin side of its box. */
+function labelHeight(m: MemberView): number {
+  const b = m.bbox;
+  return b ? Math.min(b.x1 - b.x0, b.y1 - b.y0) : 0;
+}
+
+/** Same canonical profile, and the two label boxes overlap or are closer than 2 label heights. */
+export function looksLikeSameLabel(a: MemberView, b: MemberView): boolean {
+  const ka = profileKey(a);
+  if (ka === null || ka !== profileKey(b) || !a.bbox || !b.bbox) return false;
+  const gapX = Math.max(0, a.bbox.x0 - b.bbox.x1, b.bbox.x0 - a.bbox.x1);
+  const gapY = Math.max(0, a.bbox.y0 - b.bbox.y1, b.bbox.y0 - a.bbox.y1);
+  const height = Math.max(labelHeight(a), labelHeight(b));
+  return Math.hypot(gapX, gapY) < DUPLICATE_LABEL_HEIGHTS * height || (gapX === 0 && gapY === 0);
 }
 
 /** The other members of a member's group, best first. */

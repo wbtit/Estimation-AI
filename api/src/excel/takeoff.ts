@@ -48,6 +48,7 @@ export const TAKEOFF_HEADERS = [
   'In totals',
   'Grade (user-set)',
   'Notes',
+  'Pieces with length not trusted (shared line)',
 ] as const;
 
 const bold = (row: ExcelJS.Row): void => {
@@ -78,9 +79,14 @@ export async function buildTakeoffWorkbook(input: TakeoffExportInput): Promise<B
       r.sheets.join(', '),
       r.color,
       r.confirmed ? 'Yes' : 'No',
-      r.kind === 'main' ? 'Yes' : r.kind === 'red' ? 'No (red)' : 'No (possible duplicate)',
+      r.kind === 'main'
+        ? 'Yes'
+        : r.kind === 'red'
+          ? 'No (red)'
+          : 'No (possible duplicate: same line, same profile, labels at one spot)',
       r.grade,
       r.reasons.join('; '),
+      r.length_shared_pieces,
     ]);
     row.getCell(11).fill = {
       type: 'pattern',
@@ -99,6 +105,12 @@ export async function buildTakeoffWorkbook(input: TakeoffExportInput): Promise<B
       t.total_length_mm,
     ]),
   );
+  ws.addRow([
+    'of which LENGTH NOT TRUSTED (shared line): pieces counted, length left out of the total',
+    null,
+    null,
+    t.length_shared_pieces,
+  ]);
   const x = takeoff.excluded_red;
   ws.addRow([
     'EXCLUDED (red), not in totals',
@@ -110,7 +122,7 @@ export async function buildTakeoffWorkbook(input: TakeoffExportInput): Promise<B
   ]);
   const d = takeoff.possible_duplicates;
   ws.addRow([
-    'POSSIBLE DUPLICATES (shared line), not in totals',
+    'POSSIBLE DUPLICATES (same line, same profile, labels at one spot), not in totals',
     null,
     null,
     d.pieces,
@@ -137,6 +149,7 @@ export async function buildTakeoffWorkbook(input: TakeoffExportInput): Promise<B
       'Total length (ft-in)',
       'Total length (mm)',
       'Pieces without length',
+      'Pieces with length not trusted (shared line)',
     ]),
   );
   for (const l of takeoff.by_level) {
@@ -147,6 +160,7 @@ export async function buildTakeoffWorkbook(input: TakeoffExportInput): Promise<B
       l.totals.total_length_ft_in,
       l.totals.total_length_mm,
       l.totals.unmeasured,
+      l.totals.length_shared_pieces,
     ]);
   }
   bold(
@@ -157,6 +171,7 @@ export async function buildTakeoffWorkbook(input: TakeoffExportInput): Promise<B
       t.total_length_ft_in,
       t.total_length_mm,
       t.unmeasured,
+      t.length_shared_pieces,
     ]),
   );
   sum.addRow([
@@ -166,14 +181,16 @@ export async function buildTakeoffWorkbook(input: TakeoffExportInput): Promise<B
     x.total_length_ft_in,
     x.total_length_mm,
     x.unmeasured,
+    x.length_shared_pieces,
   ]);
   sum.addRow([
-    'POSSIBLE DUPLICATES (shared line), not in totals',
+    'POSSIBLE DUPLICATES (same line, same profile, labels at one spot), not in totals',
     d.members,
     d.pieces,
     d.total_length_ft_in,
     d.total_length_mm,
     d.unmeasured,
+    d.length_shared_pieces,
   ]);
   const rv = takeoff.review;
   sum.addRow([]);
@@ -207,6 +224,7 @@ export async function buildTakeoffWorkbook(input: TakeoffExportInput): Promise<B
       'Total length (ft-in)',
       'Total length (mm)',
       'Pieces without length',
+      'Pieces with length not trusted (shared line)',
     ]),
   );
   sum.addRow([
@@ -216,6 +234,7 @@ export async function buildTakeoffWorkbook(input: TakeoffExportInput): Promise<B
     jt.total_length_ft_in,
     jt.total_length_mm,
     jt.unmeasured,
+    jt.length_shared_pieces,
   ]);
   sum.addRow([
     'Joists excluded (red)',
@@ -224,14 +243,16 @@ export async function buildTakeoffWorkbook(input: TakeoffExportInput): Promise<B
     jx.total_length_ft_in,
     jx.total_length_mm,
     jx.unmeasured,
+    jx.length_shared_pieces,
   ]);
   sum.addRow([
-    'Joists possible duplicates (shared line)',
+    'Joists possible duplicates (same line, same profile, labels at one spot)',
     jd.members,
     jd.pieces,
     jd.total_length_ft_in,
     jd.total_length_mm,
     jd.unmeasured,
+    jd.length_shared_pieces,
   ]);
   sum.addRow([]);
   bold(sum.addRow(['Unlinked labels (profile labels with no line; not members, in no total)']));
@@ -259,6 +280,7 @@ export async function buildTakeoffWorkbook(input: TakeoffExportInput): Promise<B
       'In totals',
       'Grade (user-set)',
       'Notes',
+      'Pieces with length not trusted (shared line)',
     ]),
   );
   for (const r of takeoff.joists.rows) {
@@ -272,9 +294,14 @@ export async function buildTakeoffWorkbook(input: TakeoffExportInput): Promise<B
       r.level,
       r.sheets.join(', '),
       r.color,
-      r.kind === 'main' ? 'Yes' : r.kind === 'red' ? 'No (red)' : 'No (possible duplicate)',
+      r.kind === 'main'
+        ? 'Yes'
+        : r.kind === 'red'
+          ? 'No (red)'
+          : 'No (possible duplicate: same line, same profile, labels at one spot)',
       r.grade,
       r.reasons.join('; '),
+      r.length_shared_pieces,
     ]);
     row.getCell(9).fill = {
       type: 'pattern',
@@ -292,6 +319,11 @@ export async function buildTakeoffWorkbook(input: TakeoffExportInput): Promise<B
     ]),
   );
   jw.addRow([
+    'of which LENGTH NOT TRUSTED (shared line): pieces counted, length left out of the total',
+    null,
+    jt.length_shared_pieces,
+  ]);
+  jw.addRow([
     'EXCLUDED (red), not in totals',
     null,
     jx.pieces,
@@ -299,7 +331,7 @@ export async function buildTakeoffWorkbook(input: TakeoffExportInput): Promise<B
     jx.total_length_mm,
   ]);
   jw.addRow([
-    'POSSIBLE DUPLICATES (shared line), not in totals',
+    'POSSIBLE DUPLICATES (same line, same profile, labels at one spot), not in totals',
     null,
     jd.pieces,
     jd.total_length_ft_in,

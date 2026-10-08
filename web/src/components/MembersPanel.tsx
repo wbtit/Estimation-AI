@@ -71,7 +71,7 @@ export const MembersPanel: React.FC<{
                 >
                   {" "}
                   ⇄{m.shared_line.size}
-                  {m.shared_line.best ? "" : " possible duplicate"}
+                  {m.shared_line.duplicate_of ? " possible duplicate" : ""}
                 </span>
               )}
             </button>
