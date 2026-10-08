@@ -1,7 +1,8 @@
 """The `link_view` job: propose members and links for one view of a sheet.
 
 Payload: {"view_id": "<uuid>"}. The view must have a confirmed scale AND line classes confirmed by a
-person (the `classes_view` job only suggests them). Steps: reconstruct the page lines, tabulate
+person (the `classes_view` job only suggests them), and its sheet must be explicitly included in
+the takeoff by a person. Steps: reconstruct the page lines, tabulate
 the stroke classes inside the view, take profile labels and legend-linked mark labels inside the
 view, and propose for each the best of its nearest structural lines with the frozen Phase 4e rule.
 Members are upserted by label key; a member a person has touched (reviewed, edited, or with any
@@ -90,6 +91,13 @@ def link_view(conn: psycopg.Connection, config: WorkerConfig, view_id: str) -> d
         raise LinkError("view not found")
     if not row["scale_confirmed"] or row["scale_ratio"] is None:
         raise LinkError("the scale of this view is not confirmed")
+    decision = conn.execute(
+        "SELECT corrected_value FROM sheet_edits WHERE sheet_id = %s AND field_name = 'takeoff'"
+        " ORDER BY created_at DESC, id DESC LIMIT 1",
+        (row["sheet_id"],),
+    ).fetchone()
+    if decision is None or decision["corrected_value"] != "include":
+        raise LinkError("the sheet has no explicit decision to include it in the takeoff")
     if not row["classes_confirmed"] or not row["structural_classes"]:
         raise LinkError("the line classes of this view are not confirmed by a person")
     ratio = float(row["scale_ratio"])

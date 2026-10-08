@@ -1,32 +1,54 @@
-// Which sheets take part in the takeoff (Phase 5b item 4). Only framing plans are included by
-// default, because the page type is a guess and the other types (foundation plans, elevations,
-// details, schedules, notes, other) hold repeated or non-framing labels. A person can switch any
-// sheet to "include" (or a framing plan to "exclude"); that is a sheet_edits row, latest wins.
+// Which sheets take part in the takeoff. Every sheet needs ONE EXPLICIT DECISION, include or exclude
+// (Phase 5c). Until a person decides, a sheet is `undecided`: it is not in the totals, the link job
+// refuses to run on it, and the takeoff lists it. The page type guess is only a suggestion shown
+// pre-selected in the control (it was wrong on 6 of 24 pages, and hiding real steel is the costly
+// silent error). A decision is a sheet_edits row with who and when; the latest one wins and an undo
+// appends the previous value (nothing is deleted).
 import type { Kysely } from 'kysely';
 import type { Database } from '../db/types.js';
 import { loadSheetOverrides } from './overrides.js';
 
-export type TakeoffOverride = 'include' | 'exclude' | null;
+export type Decision = 'include' | 'exclude' | 'undecided';
 
-export const DEFAULT_INCLUDED_PAGE_TYPE = 'framing_plan';
+/** What the page type guess would suggest. Never a decision. */
+export const SUGGESTED_INCLUDE_PAGE_TYPE = 'framing_plan';
 
 export interface SheetInclusion {
   sheet_id: string;
   page_number: number;
   sheet_number: string | null;
   page_type: string | null;
+  decision: Decision;
+  /** True only after a person said include. */
   included: boolean;
-  /** `default` = the page type decides, `person` = a person switched it. */
-  source: 'default' | 'person';
+  /** The suggestion from the page type guess (shown as a guess). */
+  suggestion: 'include' | 'exclude';
+  decided_by: string | null;
+  decided_at: string | null;
+}
+
+export function decisionOf(value: string | null | undefined): Decision {
+  return value === 'include' || value === 'exclude' ? value : 'undecided';
+}
+
+export function suggestionOf(pageType: string | null): 'include' | 'exclude' {
+  return pageType === SUGGESTED_INCLUDE_PAGE_TYPE ? 'include' : 'exclude';
 }
 
 export function inclusionOf(
   pageType: string | null,
   override: string | null | undefined,
-): { included: boolean; source: 'default' | 'person' } {
-  if (override === 'include') return { included: true, source: 'person' };
-  if (override === 'exclude') return { included: false, source: 'person' };
-  return { included: pageType === DEFAULT_INCLUDED_PAGE_TYPE, source: 'default' };
+  by: string | null = null,
+  at: string | null = null,
+) {
+  const decision = decisionOf(override);
+  return {
+    decision,
+    included: decision === 'include',
+    suggestion: suggestionOf(pageType),
+    decided_by: decision === 'undecided' ? null : by,
+    decided_at: decision === 'undecided' ? null : at,
+  };
 }
 
 export async function loadSheetInclusions(
@@ -51,7 +73,7 @@ export async function loadSheetInclusions(
       page_number: s.page_index + 1,
       sheet_number: s.sheet_number,
       page_type: pageType,
-      ...inclusionOf(pageType, o?.takeoff),
+      ...inclusionOf(pageType, o?.takeoff, o?.takeoff_by ?? null, o?.takeoff_at ?? null),
     };
   });
 }

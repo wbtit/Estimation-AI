@@ -49,8 +49,20 @@ export const PageList: React.FC<{
               {pageTypeLabel(s)}
               {s.page_type && !s.page_type.overridden ? " (guess)" : ""}
             </small>
-            {s.takeoff?.included && (
+            {s.takeoff?.decision === "include" && (
               <span className="dot green" title="in the takeoff" />
+            )}
+            {s.takeoff?.decision === "exclude" && (
+              <span
+                className="dot unlinked"
+                title="excluded from the takeoff"
+              />
+            )}
+            {s.takeoff?.decision === "undecided" && (
+              <span
+                className="dot amber"
+                title="not decided yet: not in the takeoff"
+              />
             )}
             {s.needs_review && (
               <span className="dot amber" title="needs review" />

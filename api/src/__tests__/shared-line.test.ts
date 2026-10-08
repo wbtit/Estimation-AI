@@ -251,6 +251,7 @@ describe('shared line routes', () => {
     const sheetId = await insertSheet(db, projectId, {
       page_index: 0,
       page_type_guess: 'framing_plan',
+      decided: 'include',
       width_pt: 1200,
       height_pt: 800,
     });
@@ -389,6 +390,7 @@ describe('true duplicate candidates through the routes', () => {
     const sheetId = await insertSheet(db, projectId, {
       page_index: 0,
       page_type_guess: 'framing_plan',
+      decided: 'include',
       width_pt: 1200,
       height_pt: 800,
     });

@@ -99,6 +99,8 @@ export interface SheetSeed {
   width_pt?: number | null;
   height_pt?: number | null;
   page_type_guess?: string | null;
+  /** An explicit takeoff decision a person made for this sheet (a sheet_edits row). */
+  decided?: 'include' | 'exclude';
 }
 
 /** Inserts a sheet row as the scan job would have written it. */
@@ -128,6 +130,19 @@ export async function insertSheet(
     })
     .returning('id')
     .executeTakeFirstOrThrow();
+  if (seed.decided) {
+    await db
+      .insertInto('sheet_edits')
+      .values({
+        sheet_id: row.id,
+        field_name: 'takeoff',
+        original_value: JSON.stringify(null),
+        corrected_value: JSON.stringify(seed.decided),
+        editor: 'test',
+        reason: null,
+      })
+      .execute();
+  }
   return row.id;
 }
 

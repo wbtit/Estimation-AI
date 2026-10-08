@@ -48,6 +48,7 @@ beforeAll(async () => {
     width_pt: 1200,
     height_pt: 800,
     page_type_guess: 'framing_plan',
+    decided: 'include',
   });
   await db
     .updateTable('sheets')

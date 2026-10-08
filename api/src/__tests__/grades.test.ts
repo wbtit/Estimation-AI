@@ -63,6 +63,7 @@ describe('grade routes and the takeoff', () => {
     const sheetId = await insertSheet(db, projectId, {
       page_index: 0,
       page_type_guess: 'framing_plan',
+      decided: 'include',
       width_pt: 1200,
       height_pt: 800,
     });

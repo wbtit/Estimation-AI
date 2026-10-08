@@ -165,6 +165,71 @@ export const reviewRoutes: FastifyPluginAsync<ReviewRouteOptions> = async (app, 
       ),
   );
 
+  /**
+   * Undo the latest takeoff decision of a sheet. Nothing is deleted: the previous value is appended
+   * as a new edit (reason `undo:<id of the edit it undoes>`), so who and when stay in the history.
+   * Undoing again goes one decision further back.
+   */
+  app.post<{ Params: { projectId: string; sheetId: string }; Body: { editor: string } }>(
+    '/api/projects/:projectId/sheets/:sheetId/takeoff/undo',
+    {
+      schema: {
+        params: sheetParams,
+        body: {
+          type: 'object',
+          required: ['editor'],
+          additionalProperties: false,
+          properties: { editor: { type: 'string', minLength: 1, maxLength: 100 } },
+        },
+      },
+    },
+    async (request) => {
+      const { projectId, sheetId } = request.params;
+      const who = request.body.editor.trim();
+      if (who === '') throw new HttpError(400, { error: 'editor must not be blank' });
+      const sheet = await db()
+        .selectFrom('sheets')
+        .select('id')
+        .where('id', '=', sheetId)
+        .where('project_id', '=', projectId)
+        .executeTakeFirst();
+      if (!sheet) throw new HttpError(404, { error: 'sheet not found' });
+      const edits = await db()
+        .selectFrom('sheet_edits')
+        .select(['id', 'original_value', 'corrected_value', 'reason'])
+        .where('sheet_id', '=', sheetId)
+        .where('field_name', '=', 'takeoff')
+        .orderBy('created_at')
+        .orderBy('id')
+        .execute();
+      const active: typeof edits = [];
+      for (const e of edits) {
+        const undone = /^undo:(.+)$/.exec(e.reason ?? '');
+        if (undone) {
+          const k = active.findIndex((a) => a.id === undone[1]);
+          if (k >= 0) active.splice(k, 1);
+        } else {
+          active.push(e);
+        }
+      }
+      const target = active.at(-1);
+      if (!target) throw new HttpError(409, { error: 'nothing to undo' });
+      await db()
+        .insertInto('sheet_edits')
+        .values({
+          sheet_id: sheetId,
+          field_name: 'takeoff',
+          original_value: JSON.stringify(target.corrected_value ?? null),
+          corrected_value: JSON.stringify(target.original_value ?? null),
+          editor: who,
+          reason: `undo:${target.id}`,
+        })
+        .execute();
+      const now = (await loadSheetOverrides(db(), [sheetId])).get(sheetId)?.takeoff ?? null;
+      return { sheet_id: sheetId, undone: target.id, now };
+    },
+  );
+
   app.get<{ Params: { projectId: string } }>(
     '/api/projects/:projectId/notes',
     { schema: { params: projectParams } },

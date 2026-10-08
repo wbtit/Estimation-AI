@@ -205,9 +205,13 @@ def prepare_pages(pid: str, job: str, data: dict) -> dict:
     for pg in pages:
         sh = sheets[pg]
         entry: dict = {"page_type": sh["page_type"]["effective"]}
-        if not sh["takeoff"]["included"]:
+        # every sheet needs an explicit decision (Phase 5c): the harness decides "include" for the gold pages
+        # and records whether that went against the page type guess
+        if sh["takeoff"]["decision"] != "include":
             call("PATCH", f"/api/projects/{pid}/sheets/{sh['id']}/takeoff", {"value": "include", "editor": WHO})
-            entry["switched_to_include"] = True
+            entry["explicit_decision"] = "include"
+            if sh["takeoff"]["suggestion"] != "include":
+                entry["switched_to_include"] = True  # against the guess
         views = call("GET", f"/api/projects/{pid}/sheets/{sh['id']}/views")["views"]
         if views:
             v = views[0]

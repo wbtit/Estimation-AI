@@ -179,19 +179,33 @@ export const TakeoffPanel: React.FC<{
           Download Excel
         </a>
       </div>
+      {data.undecided_sheets && data.undecided_sheets.count > 0 && (
+        <p className="warn">
+          {data.undecided_sheets.count} sheets undecided (pages{" "}
+          {data.undecided_sheets.pages.join(", ")}): they are not in the totals.
+          Decide include or exclude for each one in the sheet header.
+        </p>
+      )}
       {data.sheets && (
-        <details>
+        <details open={(data.undecided_sheets?.count ?? 0) > 0}>
           <summary>
             Sheets in the takeoff:{" "}
             {data.sheets.filter((s) => s.included).length} of{" "}
-            {data.sheets.length} (only framing plans by default)
+            {data.sheets.length} (every sheet needs a decision)
           </summary>
           <ul className="sheet-inclusion">
             {data.sheets.map((s) => (
               <li key={s.sheet_id}>
                 page {s.page_number} {s.sheet_number ?? ""} (
-                {s.page_type ?? "no type"}): <b>{s.included ? "in" : "out"}</b>
-                {s.source === "person" ? " (set by a person)" : ""}
+                {s.page_type ?? "no type"} - a guess):{" "}
+                <b>
+                  {s.decision === "include"
+                    ? "in"
+                    : s.decision === "exclude"
+                      ? "excluded"
+                      : "UNDECIDED"}
+                </b>
+                {s.decided_by ? ` (${s.decided_by})` : ""}
                 {s.members_not_counted > 0
                   ? `, ${s.members_not_counted} members stored but not counted`
                   : ""}

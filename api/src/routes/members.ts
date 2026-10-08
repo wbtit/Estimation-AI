@@ -192,7 +192,10 @@ export const memberRoutes: FastifyPluginAsync<MemberRouteOptions> = async (app, 
       );
       if (inclusion && !inclusion.included) {
         throw new HttpError(409, {
-          error: `this sheet is not for takeoff (page type: ${inclusion.page_type ?? 'unknown'}); switch it to "include in takeoff" first`,
+          error:
+            inclusion.decision === 'exclude'
+              ? 'this sheet is excluded from the takeoff; include it first'
+              : `this sheet is not decided yet (page type guess: ${inclusion.page_type ?? 'unknown'}); decide "include in takeoff" first`,
         });
       }
       const file = await db()

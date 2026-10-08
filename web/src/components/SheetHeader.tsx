@@ -19,6 +19,7 @@ export const SheetHeader: React.FC<{
   /** Views of this sheet whose line classes nobody confirmed yet (no members can be found there). */
   waitingViews?: number;
   onTakeoff?: (value: "include" | "exclude" | null) => void;
+  onTakeoffUndo?: () => void;
 }> = ({
   sheet,
   onPageType,
@@ -26,6 +27,7 @@ export const SheetHeader: React.FC<{
   unlinkedCount = 0,
   waitingViews = 0,
   onTakeoff,
+  onTakeoffUndo,
 }) => {
   const level = sheet.level?.effective ?? "";
   const [text, setText] = useState(level);
@@ -83,25 +85,12 @@ export const SheetHeader: React.FC<{
         <span className="hint">(suggested)</span>
       )}
       {sheet.takeoff && onTakeoff && (
-        <label title="Only framing plans are in the takeoff by default">
-          <input
-            type="checkbox"
-            checked={sheet.takeoff.included}
-            onChange={(e) => {
-              const defaultIncluded = type?.effective === "framing_plan";
-              onTakeoff(
-                e.target.checked === defaultIncluded
-                  ? null
-                  : e.target.checked
-                    ? "include"
-                    : "exclude",
-              );
-            }}
-            aria-label="include in takeoff"
-          />{" "}
-          in takeoff
-          {sheet.takeoff.source === "person" ? " (set by a person)" : ""}
-        </label>
+        <TakeoffDecision
+          key={sheet.id}
+          takeoff={sheet.takeoff}
+          onDecide={onTakeoff}
+          onUndo={onTakeoffUndo}
+        />
       )}
       {waitingViews > 0 && (
         <span
@@ -118,5 +107,61 @@ export const SheetHeader: React.FC<{
         </span>
       )}
     </div>
+  );
+};
+
+/**
+ * The explicit decision of a sheet: include it in the takeoff or exclude it. The page type guess is
+ * preselected as a GUESS, nothing counts until a person presses the button.
+ */
+const TakeoffDecision: React.FC<{
+  takeoff: NonNullable<Sheet["takeoff"]>;
+  onDecide: (value: "include" | "exclude" | null) => void;
+  onUndo?: () => void;
+}> = ({ takeoff, onDecide, onUndo }) => {
+  const [choice, setChoice] = useState<"include" | "exclude">(
+    takeoff.decision === "undecided" ? takeoff.suggestion : takeoff.decision,
+  );
+  const undecided = takeoff.decision === "undecided";
+  return (
+    <span className={undecided ? "decision warn" : "decision"}>
+      <label>
+        in the takeoff?{" "}
+        <select
+          value={choice}
+          onChange={(e) => setChoice(e.target.value as "include" | "exclude")}
+          aria-label="takeoff decision"
+        >
+          <option value="include">include</option>
+          <option value="exclude">exclude</option>
+        </select>
+      </label>{" "}
+      {undecided && (
+        <small className="hint">
+          not decided: this sheet is not in the totals. Preselected:{" "}
+          {takeoff.suggestion} (a guess from the page type)
+        </small>
+      )}
+      {(undecided || choice !== takeoff.decision) && (
+        <button className="primary" onClick={() => onDecide(choice)}>
+          Decide: {choice}
+        </button>
+      )}
+      {!undecided && choice === takeoff.decision && (
+        <small>
+          {takeoff.decision === "include" ? "in the takeoff" : "excluded"} (
+          {takeoff.decided_by}
+          {takeoff.decided_at
+            ? `, ${takeoff.decided_at.slice(0, 16).replace("T", " ")}`
+            : ""}
+          )
+        </small>
+      )}
+      {!undecided && onUndo && (
+        <button onClick={onUndo} title="go back to the previous decision">
+          Undo the decision
+        </button>
+      )}
+    </span>
   );
 };

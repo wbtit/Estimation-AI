@@ -225,6 +225,7 @@ describe('takeoff routes', () => {
     const sheetId = await insertSheet(db, projectId, {
       page_index: 13,
       page_type_guess: 'framing_plan',
+      decided: 'include',
       width_pt: 1200,
       height_pt: 800,
     });
@@ -358,6 +359,7 @@ describe('joists through the routes', () => {
     const sheetId = await insertSheet(db, projectId, {
       page_index: 3,
       page_type_guess: 'framing_plan',
+      decided: 'include',
       width_pt: 1200,
       height_pt: 800,
     });

@@ -43,6 +43,7 @@ def make_view(
     confirmed: bool = True,
     box: dict | None = None,
     classes: list[str] | None = None,
+    decided: str | None = "include",
 ) -> str:
     """A view as a person leaves it: scale confirmed and, by default, the beam class confirmed."""
     sheet_id = dbp.conn.execute(
@@ -65,6 +66,13 @@ def make_view(
             classes != [],
         ),
     ).fetchone()
+    if decided:
+        dbp.conn.execute(
+            "INSERT INTO sheet_edits"
+            " (sheet_id, field_name, original_value, corrected_value, editor)"
+            " VALUES (%s, 'takeoff', 'null', %s, 'tester')",
+            (sheet_id, json.dumps(decided)),
+        )
     dbp.conn.commit()
     return str(row["id"])
 
@@ -132,6 +140,20 @@ def test_the_proposed_line_gives_plan_geometry_in_the_view_frame(prepared: DbPro
     assert float(m["plan_scale_ratio"]) == 96 and m["plan_method"] == "pdf_geometry"
     assert m["length_source"] == "plan_geometry" and str(m["plan_sheet_id"]) == str(m["sheet_id"])
     assert set(m["plan_bbox"]) == {"x0", "y0", "x1", "y1"}
+
+
+def test_the_link_job_waits_for_an_explicit_include_decision_of_the_sheet(
+    prepared: DbProject,
+) -> None:
+    for decided in (None, "exclude"):
+        view = make_view(prepared, decided=decided)
+        with pytest.raises(LinkError, match="decision to include"):
+            link_view(prepared.conn, prepared.config, view)
+        prepared.conn.execute("DELETE FROM sheet_views WHERE id = %s", (view,))
+        prepared.conn.commit()
+    assert members(prepared) == []
+    result = link_view(prepared.conn, prepared.config, make_view(prepared))
+    assert result["created"] > 0
 
 
 def test_the_classes_are_suggested_by_their_own_job_and_the_link_job_waits_for_a_person(

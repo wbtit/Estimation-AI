@@ -186,6 +186,22 @@ export const App: React.FC = () => {
     }
   };
 
+  const undoTakeoff = async () => {
+    const w = who.trim();
+    if (!w) return setMessage("Type your name at the top first.");
+    try {
+      await send(
+        "POST",
+        `/api/projects/${projectId}/sheets/${sheetId}/takeoff/undo`,
+        { editor: w },
+      );
+      await reloadSheets();
+      setMessage(null);
+    } catch (err) {
+      fail(err);
+    }
+  };
+
   const labels = useMemo(() => labelsOf(items), [items]);
   const counts = useMemo(() => countByCategory(labels), [labels]);
 
@@ -577,6 +593,7 @@ export const App: React.FC = () => {
           onPageType={(v) => void override("page-type", v)}
           onLevel={(v) => void override("level", v)}
           onTakeoff={(v) => void override("takeoff", v)}
+          onTakeoffUndo={() => void undoTakeoff()}
           waitingViews={views.filter((v) => !v.classes_confirmed).length}
           unlinkedCount={
             members.filter((m) => !m.deleted && m.status.color === "unlinked")

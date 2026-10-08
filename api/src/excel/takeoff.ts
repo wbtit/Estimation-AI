@@ -9,8 +9,9 @@ export interface SheetListRow {
   page_number: number;
   sheet_number: string | null;
   page_type: string | null;
-  included: boolean;
-  source: 'default' | 'person';
+  decision: 'include' | 'exclude' | 'undecided';
+  decided_by: string | null;
+  decided_at: string | null;
   members_not_counted: number;
 }
 
@@ -192,6 +193,10 @@ export async function buildTakeoffWorkbook(input: TakeoffExportInput): Promise<B
     d.unmeasured,
     d.length_shared_pieces,
   ]);
+  const und = (takeoff.sheets ?? []).filter((s) => s.decision === 'undecided');
+  sum.addRow([]);
+  bold(sum.addRow(['Sheets not decided yet (not in the totals)', und.length]));
+  sum.addRow([`${und.length} sheets undecided`, und.map((s) => s.page_number).join(', ')]);
   const rv = takeoff.review;
   sum.addRow([]);
   bold(
@@ -366,9 +371,10 @@ export async function buildTakeoffWorkbook(input: TakeoffExportInput): Promise<B
       sh.addRow([
         'Page',
         'Sheet number',
-        'Page type',
-        'In takeoff',
+        'Page type (a guess)',
+        'Decision',
         'Decided by',
+        'Decided at',
         'Members stored but not counted',
       ]),
     );
@@ -377,13 +383,18 @@ export async function buildTakeoffWorkbook(input: TakeoffExportInput): Promise<B
         s.page_number,
         s.sheet_number,
         s.page_type,
-        s.included ? 'Yes' : 'No',
-        s.source === 'person' ? 'person' : 'page type guess',
+        s.decision === 'include'
+          ? 'in the takeoff'
+          : s.decision === 'exclude'
+            ? 'excluded'
+            : 'UNDECIDED (not in the totals)',
+        s.decided_by,
+        s.decided_at,
         s.members_not_counted,
       ]);
     }
     sh.columns.forEach((col, i) => {
-      col.width = i === 5 ? 30 : 16;
+      col.width = i === 6 ? 30 : i === 3 ? 28 : 18;
     });
   }
   return Buffer.from(await wb.xlsx.writeBuffer());

@@ -100,6 +100,7 @@ export const takeoffRoutes: FastifyPluginAsync<TakeoffRouteOptions> = async (app
     const grades = await loadGrades(db(), projectId);
     const inclusions = await loadSheetInclusions(db(), projectId);
     const included = new Set(inclusions.filter((s) => s.included).map((s) => s.sheet_id));
+    const undecided = inclusions.filter((s) => s.decision === 'undecided');
     const all = await loadMemberViews(db(), projectId);
     // members of sheets that are not for takeoff stay stored but are not counted
     const members = all.filter((m) => m.sheet_id !== null && included.has(m.sheet_id));
@@ -118,6 +119,7 @@ export const takeoffRoutes: FastifyPluginAsync<TakeoffRouteOptions> = async (app
           new Map([...grades].map(([f, r]) => [f, r.grade] as const)),
         ),
         grades: [...grades.values()],
+        undecided_sheets: { count: undecided.length, pages: undecided.map((s) => s.page_number) },
         sheets: inclusions.map((s) => ({ ...s, members_not_counted: held.get(s.sheet_id) ?? 0 })),
       },
     };

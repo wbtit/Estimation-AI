@@ -30,9 +30,12 @@ export interface Sheet {
   };
   scale: { effective: { raw: string; ratio: number | null } | null };
   takeoff?: {
+    decision: "include" | "exclude" | "undecided";
     included: boolean;
-    source: "default" | "person";
-    override: "include" | "exclude" | null;
+    /** What the page type guess suggests; never a decision. */
+    suggestion: "include" | "exclude";
+    decided_by: string | null;
+    decided_at: string | null;
   };
   whole_sheet?: {
     available: boolean;
@@ -257,6 +260,7 @@ export interface ReviewSummary {
 
 export interface TakeoffData extends TakeoffSection {
   review: ReviewSummary;
+  undecided_sheets?: { count: number; pages: number[] };
   joists: TakeoffSection;
   grades?: { family: string; grade: string; set_by: string; set_at: string }[];
   sheets?: {
@@ -264,8 +268,11 @@ export interface TakeoffData extends TakeoffSection {
     page_number: number;
     sheet_number: string | null;
     page_type: string | null;
+    decision: "include" | "exclude" | "undecided";
     included: boolean;
-    source: "default" | "person";
+    suggestion: "include" | "exclude";
+    decided_by: string | null;
+    decided_at: string | null;
     members_not_counted: number;
   }[];
   unlinked_labels: {

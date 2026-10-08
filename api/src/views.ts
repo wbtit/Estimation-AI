@@ -58,6 +58,9 @@ export interface SheetOverrides {
   level?: string | null;
   /** "include" or "exclude" a sheet from the takeoff (null = back to the page type default). */
   takeoff?: string | null;
+  /** Who made the latest takeoff decision, and when. */
+  takeoff_by?: string;
+  takeoff_at?: string;
 }
 
 /** One click "whole sheet" view: offered only when the sheet has exactly one distinct scale. */
@@ -69,12 +72,10 @@ export function wholeSheetOffer(sheet: Selectable<SheetsTable>) {
   return { available: true, scale, box: wholeSheetBox(w, h) };
 }
 
-/** Whether the sheet is in the takeoff, why, and what a switch would change. */
+/** The explicit decision of the sheet (include, exclude, or undecided) and what the guess suggests. */
 export function takeoffOf(sheet: Selectable<SheetsTable>, overrides: SheetOverrides) {
   const pageType = overrides.page_type ?? sheet.page_type_guess;
-  const o =
-    overrides.takeoff === 'include' || overrides.takeoff === 'exclude' ? overrides.takeoff : null;
-  return { ...inclusionOf(pageType, o), override: o };
+  return inclusionOf(pageType, overrides.takeoff, overrides.takeoff_by, overrides.takeoff_at);
 }
 
 export function sheetView(sheet: Selectable<SheetsTable>, overrides: SheetOverrides = {}) {
