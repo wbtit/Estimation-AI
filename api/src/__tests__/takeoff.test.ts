@@ -156,6 +156,7 @@ describe('takeoff routes', () => {
     projectId = await insertProject(db);
     const sheetId = await insertSheet(db, projectId, {
       page_index: 13,
+      page_type_guess: 'framing_plan',
       width_pt: 1200,
       height_pt: 800,
     });
@@ -242,7 +243,7 @@ describe('takeoff routes', () => {
     expect(res.statusCode).toBe(200);
     expect(res.headers['content-type']).toContain('spreadsheetml');
     const wb = await loadWorkbook(res.rawPayload);
-    expect(wb.worksheets.map((w) => w.name)).toEqual(['Takeoff', 'Summary']);
+    expect(wb.worksheets.map((w) => w.name)).toEqual(['Takeoff', 'Summary', 'Sheets']);
     const ws = wb.getWorksheet('Takeoff')!;
     const header = (ws.getRow(1).values as unknown[]).slice(1).map(String);
     expect(header).toContain('Mark');

@@ -98,6 +98,7 @@ export interface SheetSeed {
   thumbnail_path?: string | null;
   width_pt?: number | null;
   height_pt?: number | null;
+  page_type_guess?: string | null;
 }
 
 /** Inserts a sheet row as the scan job would have written it. */
@@ -123,6 +124,7 @@ export async function insertSheet(
       thumbnail_path: seed.thumbnail_path ?? null,
       width_pt: seed.width_pt ?? null,
       height_pt: seed.height_pt ?? null,
+      page_type_guess: (seed.page_type_guess ?? null) as never,
     })
     .returning('id')
     .executeTakeFirstOrThrow();

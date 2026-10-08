@@ -1,6 +1,7 @@
 // Review screen endpoints that are not about views or members.
 //   PATCH /api/projects/:projectId/sheets/:sheetId/page-type  { value|null, editor, reason? }
 //   PATCH /api/projects/:projectId/sheets/:sheetId/level      { value|null, editor, reason? }
+//   PATCH /api/projects/:projectId/sheets/:sheetId/takeoff    { value: include|exclude|null, editor }  (only framing plans are in by default)
 //   GET   /api/projects/:projectId/notes                      text lines of the general-notes pages
 //   POST  /api/projects/:projectId/rescan                     re-run the scan (guesses refresh; overrides stay)
 //
@@ -61,7 +62,7 @@ export const reviewRoutes: FastifyPluginAsync<ReviewRouteOptions> = async (app, 
   async function setOverride(
     projectId: string,
     sheetId: string,
-    field: 'page_type' | 'level',
+    field: 'page_type' | 'level' | 'takeoff',
     value: string | null,
     editor: string,
     reason: string | null | undefined,
@@ -76,7 +77,8 @@ export const reviewRoutes: FastifyPluginAsync<ReviewRouteOptions> = async (app, 
     const who = editor.trim();
     if (who === '') throw new HttpError(400, { error: 'editor must not be blank' });
     const overrides = (await loadSheetOverrides(db(), [sheetId])).get(sheetId) ?? {};
-    const guess = field === 'page_type' ? sheet.page_type_guess : sheet.level_guess;
+    const guess =
+      field === 'page_type' ? sheet.page_type_guess : field === 'level' ? sheet.level_guess : null;
     const before = overrides[field] ?? guess ?? null;
     const after = value ?? guess ?? null;
     await db()
@@ -139,6 +141,28 @@ export const reviewRoutes: FastifyPluginAsync<ReviewRouteOptions> = async (app, 
         request.body.reason,
       );
     },
+  );
+
+  app.patch<{
+    Params: { projectId: string; sheetId: string };
+    Body: { value: 'include' | 'exclude' | null; editor: string; reason?: string | null };
+  }>(
+    '/api/projects/:projectId/sheets/:sheetId/takeoff',
+    {
+      schema: {
+        params: sheetParams,
+        body: overrideBody({ anyOf: [{ enum: ['include', 'exclude'] }, { type: 'null' }] }),
+      },
+    },
+    async (request) =>
+      setOverride(
+        request.params.projectId,
+        request.params.sheetId,
+        'takeoff',
+        request.body.value,
+        request.body.editor,
+        request.body.reason,
+      ),
   );
 
   app.get<{ Params: { projectId: string } }>(

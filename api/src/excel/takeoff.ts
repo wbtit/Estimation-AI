@@ -5,9 +5,18 @@ import ExcelJS from 'exceljs';
 import { mmToFeetInches } from '../units/index.js';
 import type { Takeoff } from '../review/takeoff.js';
 
+export interface SheetListRow {
+  page_number: number;
+  sheet_number: string | null;
+  page_type: string | null;
+  included: boolean;
+  source: 'default' | 'person';
+  members_not_counted: number;
+}
+
 export interface TakeoffExportInput {
   project: { project_id: string; name: string; number: string | null };
-  takeoff: Takeoff;
+  takeoff: Takeoff & { sheets?: SheetListRow[] };
 }
 
 const STATUS_FILL: Record<string, string> = {
@@ -164,5 +173,31 @@ export async function buildTakeoffWorkbook(input: TakeoffExportInput): Promise<B
     col.width = i === 0 ? 34 : 20;
   });
 
+  if (takeoff.sheets) {
+    const sh = wb.addWorksheet('Sheets');
+    bold(
+      sh.addRow([
+        'Page',
+        'Sheet number',
+        'Page type',
+        'In takeoff',
+        'Decided by',
+        'Members stored but not counted',
+      ]),
+    );
+    for (const s of takeoff.sheets) {
+      sh.addRow([
+        s.page_number,
+        s.sheet_number,
+        s.page_type,
+        s.included ? 'Yes' : 'No',
+        s.source === 'person' ? 'person' : 'page type guess',
+        s.members_not_counted,
+      ]);
+    }
+    sh.columns.forEach((col, i) => {
+      col.width = i === 5 ? 30 : 16;
+    });
+  }
   return Buffer.from(await wb.xlsx.writeBuffer());
 }

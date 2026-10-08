@@ -16,7 +16,8 @@ export const SheetHeader: React.FC<{
   onPageType: (value: string | null) => void;
   onLevel: (value: string | null) => void;
   unlinkedCount?: number;
-}> = ({ sheet, onPageType, onLevel, unlinkedCount = 0 }) => {
+  onTakeoff?: (value: "include" | "exclude" | null) => void;
+}> = ({ sheet, onPageType, onLevel, unlinkedCount = 0, onTakeoff }) => {
   const level = sheet.level?.effective ?? "";
   const [text, setText] = useState(level);
   useEffect(() => setText(level), [level, sheet.id]);
@@ -71,6 +72,27 @@ export const SheetHeader: React.FC<{
       </label>
       {sheet.level && !sheet.level.overridden && sheet.level.guess && (
         <span className="hint">(suggested)</span>
+      )}
+      {sheet.takeoff && onTakeoff && (
+        <label title="Only framing plans are in the takeoff by default">
+          <input
+            type="checkbox"
+            checked={sheet.takeoff.included}
+            onChange={(e) => {
+              const defaultIncluded = type?.effective === "framing_plan";
+              onTakeoff(
+                e.target.checked === defaultIncluded
+                  ? null
+                  : e.target.checked
+                    ? "include"
+                    : "exclude",
+              );
+            }}
+            aria-label="include in takeoff"
+          />{" "}
+          in takeoff
+          {sheet.takeoff.source === "person" ? " (set by a person)" : ""}
+        </label>
       )}
       {unlinkedCount > 0 && (
         <span className="warn" title="profile labels with no line near them">

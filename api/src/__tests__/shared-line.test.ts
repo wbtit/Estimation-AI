@@ -180,6 +180,7 @@ describe('shared line routes', () => {
     projectId = await insertProject(db);
     const sheetId = await insertSheet(db, projectId, {
       page_index: 0,
+      page_type_guess: 'framing_plan',
       width_pt: 1200,
       height_pt: 800,
     });

@@ -42,7 +42,12 @@ async function member(key: string, over: Record<string, unknown>) {
 
 beforeAll(async () => {
   projectId = await insertProject(db);
-  sheetId = await insertSheet(db, projectId, { page_index: 0, width_pt: 1200, height_pt: 800 });
+  sheetId = await insertSheet(db, projectId, {
+    page_index: 0,
+    width_pt: 1200,
+    height_pt: 800,
+    page_type_guess: 'framing_plan',
+  });
   await db
     .updateTable('sheets')
     .set({ level_guess: 'Second floor' })

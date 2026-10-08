@@ -1,6 +1,7 @@
 // JSON shapes returned by the project and sheet endpoints. NUMERIC columns arrive from pg as
 // strings and are converted to numbers here.
 import type { Selectable } from 'kysely';
+import { inclusionOf } from './review/takeoff-sheets.js';
 import { singleSheetScale, wholeSheetBox } from './review/geometry.js';
 import type { ProjectFilesTable, ProjectsTable, SheetsTable } from './db/types.js';
 
@@ -55,6 +56,8 @@ export function effectiveScale(sheet: Selectable<SheetsTable>): EffectiveScale |
 export interface SheetOverrides {
   page_type?: string | null;
   level?: string | null;
+  /** "include" or "exclude" a sheet from the takeoff (null = back to the page type default). */
+  takeoff?: string | null;
 }
 
 /** One click "whole sheet" view: offered only when the sheet has exactly one distinct scale. */
@@ -64,6 +67,14 @@ export function wholeSheetOffer(sheet: Selectable<SheetsTable>) {
   const h = num(sheet.height_pt);
   if (!scale || w === null || h === null) return { available: false, scale: null, box: null };
   return { available: true, scale, box: wholeSheetBox(w, h) };
+}
+
+/** Whether the sheet is in the takeoff, why, and what a switch would change. */
+export function takeoffOf(sheet: Selectable<SheetsTable>, overrides: SheetOverrides) {
+  const pageType = overrides.page_type ?? sheet.page_type_guess;
+  const o =
+    overrides.takeoff === 'include' || overrides.takeoff === 'exclude' ? overrides.takeoff : null;
+  return { ...inclusionOf(pageType, o), override: o };
 }
 
 export function sheetView(sheet: Selectable<SheetsTable>, overrides: SheetOverrides = {}) {
@@ -114,6 +125,7 @@ export function sheetView(sheet: Selectable<SheetsTable>, overrides: SheetOverri
       guess: sheet.level_guess,
       overridden: levelOverridden,
     },
+    takeoff: takeoffOf(sheet, overrides),
     needs_review: sheet.needs_review,
     review_reasons: sheet.review_reasons,
     thumbnail_url: sheet.thumbnail_path

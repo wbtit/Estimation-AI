@@ -49,6 +49,9 @@ export const PageList: React.FC<{
               {pageTypeLabel(s)}
               {s.page_type && !s.page_type.overridden ? " (guess)" : ""}
             </small>
+            {s.takeoff?.included && (
+              <span className="dot green" title="in the takeoff" />
+            )}
             {s.needs_review && (
               <span className="dot amber" title="needs review" />
             )}

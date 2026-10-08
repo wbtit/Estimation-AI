@@ -95,6 +95,27 @@ export const TakeoffPanel: React.FC<{
           )}
         </tbody>
       </table>
+      {data.sheets && (
+        <details>
+          <summary>
+            Sheets in the takeoff:{" "}
+            {data.sheets.filter((s) => s.included).length} of{" "}
+            {data.sheets.length} (only framing plans by default)
+          </summary>
+          <ul className="sheet-inclusion">
+            {data.sheets.map((s) => (
+              <li key={s.sheet_id}>
+                page {s.page_number} {s.sheet_number ?? ""} (
+                {s.page_type ?? "no type"}): <b>{s.included ? "in" : "out"}</b>
+                {s.source === "person" ? " (set by a person)" : ""}
+                {s.members_not_counted > 0
+                  ? `, ${s.members_not_counted} members stored but not counted`
+                  : ""}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
       <h4>Totals</h4>
       <ul className="totals">
         {data.by_level.map((l) => (

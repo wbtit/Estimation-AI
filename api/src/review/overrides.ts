@@ -5,7 +5,7 @@ import type { Kysely } from 'kysely';
 import type { Database } from '../db/types.js';
 import type { SheetOverrides } from '../views.js';
 
-export const OVERRIDE_FIELDS = ['page_type', 'level'] as const;
+export const OVERRIDE_FIELDS = ['page_type', 'level', 'takeoff'] as const;
 export type OverrideField = (typeof OVERRIDE_FIELDS)[number];
 
 export async function loadSheetOverrides(

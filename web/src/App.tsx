@@ -164,7 +164,7 @@ export const App: React.FC = () => {
   }, [projectId]);
 
   const override = async (
-    field: "page-type" | "level",
+    field: "page-type" | "level" | "takeoff",
     value: string | null,
   ) => {
     const w = who.trim();
@@ -565,6 +565,7 @@ export const App: React.FC = () => {
           sheet={sheet}
           onPageType={(v) => void override("page-type", v)}
           onLevel={(v) => void override("level", v)}
+          onTakeoff={(v) => void override("takeoff", v)}
           unlinkedCount={
             members.filter((m) => !m.deleted && m.status.color === "unlinked")
               .length

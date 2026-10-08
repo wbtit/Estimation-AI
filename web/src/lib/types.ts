@@ -29,6 +29,11 @@ export interface Sheet {
     has_text_layer: boolean | null;
   };
   scale: { effective: { raw: string; ratio: number | null } | null };
+  takeoff?: {
+    included: boolean;
+    source: "default" | "person";
+    override: "include" | "exclude" | null;
+  };
   whole_sheet?: {
     available: boolean;
     scale: { raw: string; ratio: number } | null;
@@ -211,6 +216,15 @@ export interface TakeoffData {
   totals: TakeoffTotals;
   excluded_red: TakeoffTotals;
   possible_duplicates: TakeoffTotals;
+  sheets?: {
+    sheet_id: string;
+    page_number: number;
+    sheet_number: string | null;
+    page_type: string | null;
+    included: boolean;
+    source: "default" | "person";
+    members_not_counted: number;
+  }[];
   unlinked_labels: {
     count: number;
     by_sheet: { sheet_id: string; page_number: number | null; count: number }[];

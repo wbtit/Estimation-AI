@@ -9,6 +9,7 @@ import type { Database } from '../db/types.js';
 import { buildTakeoffWorkbook } from '../excel/takeoff.js';
 import { XLSX_MIME } from '../excel/index.js';
 import { buildTakeoff } from '../review/takeoff.js';
+import { loadSheetInclusions } from '../review/takeoff-sheets.js';
 import { HttpError } from './http-error.js';
 import { loadMemberViews } from './members.js';
 
@@ -37,16 +38,23 @@ export const takeoffRoutes: FastifyPluginAsync<TakeoffRouteOptions> = async (app
       .where('id', '=', projectId)
       .executeTakeFirst();
     if (!project) throw new HttpError(404, { error: 'project not found' });
-    const members = await loadMemberViews(db(), projectId);
-    const sheets = await db()
-      .selectFrom('sheets')
-      .select(['id', 'page_index'])
-      .where('project_id', '=', projectId)
-      .execute();
-    const pageOf = new Map(sheets.map((s) => [s.id, s.page_index + 1] as const));
+    const inclusions = await loadSheetInclusions(db(), projectId);
+    const included = new Set(inclusions.filter((s) => s.included).map((s) => s.sheet_id));
+    const all = await loadMemberViews(db(), projectId);
+    // members of sheets that are not for takeoff stay stored but are not counted
+    const members = all.filter((m) => m.sheet_id !== null && included.has(m.sheet_id));
+    const pageOf = new Map(inclusions.map((s) => [s.sheet_id, s.page_number] as const));
+    const held = new Map<string, number>();
+    for (const m of all) {
+      if (m.deleted || !m.sheet_id || included.has(m.sheet_id)) continue;
+      held.set(m.sheet_id, (held.get(m.sheet_id) ?? 0) + 1);
+    }
     return {
       project: { project_id: project.id, name: project.name, number: project.number },
-      takeoff: buildTakeoff(members, pageOf),
+      takeoff: {
+        ...buildTakeoff(members, pageOf),
+        sheets: inclusions.map((s) => ({ ...s, members_not_counted: held.get(s.sheet_id) ?? 0 })),
+      },
     };
   }
 

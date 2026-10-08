@@ -8,6 +8,7 @@ import { getDb } from '../db/client.js';
 import type { Database, ViewBox } from '../db/types.js';
 import { annotateSharedLines } from '../review/shared-line.js';
 import { memberView, type EditRow, type ViewContext } from '../review/members.js';
+import { loadSheetInclusions } from '../review/takeoff-sheets.js';
 import { loadSheetOverrides } from '../review/overrides.js';
 import { HttpError } from './http-error.js';
 
@@ -158,7 +159,7 @@ export const memberRoutes: FastifyPluginAsync<MemberRouteOptions> = async (app, 
     const view = await db()
       .selectFrom('sheet_views as v')
       .innerJoin('sheets as s', 's.id', 'v.sheet_id')
-      .select(['v.id', 'v.scale_confirmed', 's.project_id'])
+      .select(['v.id', 'v.sheet_id', 'v.scale_confirmed', 's.project_id'])
       .where('v.id', '=', viewId)
       .where('s.project_id', '=', projectId)
       .executeTakeFirst();
@@ -175,6 +176,14 @@ export const memberRoutes: FastifyPluginAsync<MemberRouteOptions> = async (app, 
       if (!view.scale_confirmed) {
         throw new HttpError(409, {
           error: 'confirm the scale of this view before finding members',
+        });
+      }
+      const inclusion = (await loadSheetInclusions(db(), projectId)).find(
+        (s) => s.sheet_id === view.sheet_id,
+      );
+      if (inclusion && !inclusion.included) {
+        throw new HttpError(409, {
+          error: `this sheet is not for takeoff (page type: ${inclusion.page_type ?? 'unknown'}); switch it to "include in takeoff" first`,
         });
       }
       const file = await db()
