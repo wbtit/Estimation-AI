@@ -96,6 +96,8 @@ export interface SheetSeed {
   scale_parsed_ratio?: number | null;
   review_reasons?: string[];
   thumbnail_path?: string | null;
+  width_pt?: number | null;
+  height_pt?: number | null;
 }
 
 /** Inserts a sheet row as the scan job would have written it. */
@@ -119,6 +121,8 @@ export async function insertSheet(
       review_reasons: seed.review_reasons ?? [],
       needs_review: (seed.review_reasons ?? []).length > 0,
       thumbnail_path: seed.thumbnail_path ?? null,
+      width_pt: seed.width_pt ?? null,
+      height_pt: seed.height_pt ?? null,
     })
     .returning('id')
     .executeTakeFirstOrThrow();

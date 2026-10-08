@@ -1,4 +1,4 @@
-// Kysely table types for db/migrations/001_initial_schema.sql. Keep in sync with migrations.
+// Kysely table types for db/migrations/001 to 005. Keep in sync with migrations.
 // NUMERIC columns come back from pg as strings, so they are typed as string here.
 import type { ColumnType, Generated } from 'kysely';
 
@@ -64,7 +64,56 @@ export interface SheetsTable {
   text_source: 'pdf_text' | 'glyph' | 'none' | null;
   text_quality: Numeric | null;
   scan_evidence: Json | null;
+  // Phase 5 (migration 005)
+  page_type_guess: PageType | null;
+  page_type_reason: string | null;
+  level_guess: string | null;
+  plan_frame: Json | null;
   scanned_at: Timestamp | null;
+}
+
+export type PageType =
+  | 'framing_plan'
+  | 'foundation_plan'
+  | 'elevation'
+  | 'detail'
+  | 'schedule_legend'
+  | 'general_notes'
+  | 'other';
+
+export interface ViewBox {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+
+export interface SheetViewsTable {
+  id: Generated<string>;
+  sheet_id: string;
+  name: string | null;
+  box: Json<ViewBox>;
+  scale_ratio: Numeric | null;
+  scale_source: 'detected_text' | 'user_confirmed' | null;
+  scale_text: string | null;
+  scale_confirmed: Generated<boolean>;
+  structural_classes: Generated<string[]>;
+  plan_frame: Json | null;
+  created_by: string | null;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export interface LegendRowsTable {
+  id: Generated<string>;
+  project_id: string;
+  sheet_id: string;
+  mark: string;
+  designation_raw: string;
+  profile: string | null;
+  remarks_raw: string | null;
+  source: Json;
+  created_at: Timestamp;
 }
 
 export type PageKind = 'vector' | 'scanned' | 'unknown';
@@ -186,6 +235,24 @@ export interface MembersTable {
   status_color: StatusColor | null;
   status_reason: string | null;
   review_status: ColumnType<ReviewStatus, ReviewStatus | undefined, ReviewStatus>;
+  // Phase 5 (migration 005)
+  view_id: string | null;
+  label_key: string | null;
+  mark_ref_status: 'linked' | 'no_legend_row' | 'ambiguous' | null;
+  legend_row_id: string | null;
+  length_source: 'plan_geometry' | 'manual' | null;
+  plan_sheet_id: string | null;
+  plan_start_x_mm: Numeric | null;
+  plan_start_y_mm: Numeric | null;
+  plan_end_x_mm: Numeric | null;
+  plan_end_y_mm: Numeric | null;
+  plan_bbox: Json | null;
+  plan_scale_ratio: Numeric | null;
+  plan_method: 'pdf_geometry' | 'manual' | null;
+  link_candidates: Json | null;
+  link_confidence: 'high' | 'medium' | 'low' | null;
+  link_margin: Numeric | null;
+  link_rule: string | null;
   created_at: Timestamp;
   updated_at: Timestamp;
 }
@@ -199,6 +266,8 @@ export interface MemberEditsTable {
   review_status: Exclude<ReviewStatus, 'unreviewed'>;
   reviewer: string;
   reason: string | null;
+  action_id: string | null;
+  undo_of_action_id: string | null;
   created_at: Timestamp;
 }
 
@@ -253,4 +322,6 @@ export interface Database {
   project_files: ProjectFilesTable;
   sheet_edits: SheetEditsTable;
   text_items: TextItemsTable;
+  sheet_views: SheetViewsTable;
+  legend_rows: LegendRowsTable;
 }

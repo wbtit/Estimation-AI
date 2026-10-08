@@ -4,6 +4,7 @@ import { healthRoutes, type HealthRouteOptions } from './routes/health.js';
 import { projectRoutes } from './routes/projects.js';
 import { sheetRoutes } from './routes/sheets.js';
 import { textItemRoutes } from './routes/text-items.js';
+import { viewRoutes } from './routes/views.js';
 
 export interface AppOptions {
   logger?: boolean;
@@ -26,5 +27,6 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
   });
   app.register(sheetRoutes, { uploadDir: options.uploadDir });
   app.register(textItemRoutes, {});
+  app.register(viewRoutes, { uploadDir: options.uploadDir });
   return app;
 }
