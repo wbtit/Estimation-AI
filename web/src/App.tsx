@@ -12,6 +12,7 @@ import { ClassPicker } from "./components/ClassPicker";
 import { ColumnForm } from "./components/ColumnForm";
 import { LabelsPanel } from "./components/LabelsPanel";
 import { MemberActions, type LegendRow } from "./components/MemberActions";
+import { NameGate } from "./components/NameGate";
 import { MemberOverlay } from "./components/MemberOverlay";
 import { MembersPanel } from "./components/MembersPanel";
 import { NotesPanel } from "./components/NotesPanel";
@@ -515,6 +516,14 @@ export const App: React.FC = () => {
 
   return (
     <div className="app">
+      {who.trim() === "" && (
+        <NameGate
+          onSubmit={(name) => {
+            setWhoState(name);
+            setWho(name);
+          }}
+        />
+      )}
       <header className="top">
         <b>Estimation AI: review</b>
         <select
@@ -891,7 +900,10 @@ export const App: React.FC = () => {
               onDelete={(id) => {
                 const w = requireWho();
                 if (!w || !projectId) return;
-                send("DELETE", `/api/projects/${projectId}/views/${id}`)
+                send(
+                  "DELETE",
+                  `/api/projects/${projectId}/views/${id}?who=${encodeURIComponent(w)}`,
+                )
                   .then(() => {
                     setViewId(null);
                     return loadViews();

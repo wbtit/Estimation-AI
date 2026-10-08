@@ -396,12 +396,24 @@ export const viewRoutes: FastifyPluginAsync<ViewRouteOptions> = async (app, opti
     },
   );
 
-  app.delete<{ Params: { projectId: string; viewId: string } }>(
+  app.delete<{ Params: { projectId: string; viewId: string }; Querystring: { who: string } }>(
     '/api/projects/:projectId/views/:viewId',
-    { schema: { params: viewParams } },
+    {
+      schema: {
+        params: viewParams,
+        querystring: {
+          type: 'object',
+          required: ['who'],
+          additionalProperties: false,
+          properties: { who: { type: 'string', minLength: 1, maxLength: 100 } },
+        },
+      },
+    },
     async (request, reply) => {
       const { projectId, viewId } = request.params;
-      await loadView(projectId, viewId);
+      const who = request.query.who.trim();
+      if (who === '') throw new HttpError(400, { error: 'who must not be blank' });
+      const view = await loadView(projectId, viewId);
       const used = await db()
         .selectFrom('members')
         .select('id')
@@ -410,7 +422,29 @@ export const viewRoutes: FastifyPluginAsync<ViewRouteOptions> = async (app, opti
         .executeTakeFirst();
       if (used)
         throw new HttpError(409, { error: 'members use this view; delete or move them first' });
-      await db().deleteFrom('sheet_views').where('id', '=', viewId).execute();
+      // every edit stores who made it: the deleted view is kept in the sheet's edit history
+      await db()
+        .transaction()
+        .execute(async (trx) => {
+          await trx
+            .insertInto('sheet_edits')
+            .values({
+              sheet_id: view.sheet_id,
+              field_name: 'view_deleted',
+              original_value: JSON.stringify({
+                view_id: viewId,
+                name: view.name,
+                box: view.box,
+                scale_ratio: num(view.scale_ratio),
+                scale_confirmed: view.scale_confirmed,
+              }),
+              corrected_value: JSON.stringify(null),
+              editor: who,
+              reason: null,
+            })
+            .execute();
+          await trx.deleteFrom('sheet_views').where('id', '=', viewId).execute();
+        });
       return reply.status(204).send();
     },
   );

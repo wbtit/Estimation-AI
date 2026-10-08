@@ -414,3 +414,19 @@ mark {
   font-size: 11px;
   text-align: left;
 }
+
+.name-gate {
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 28, 44, 0.65);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+.name-gate .panel {
+  background: #fff;
+  padding: 16px 20px;
+  border-radius: 6px;
+  min-width: 320px;
+}

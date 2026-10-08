@@ -211,15 +211,32 @@ describe('views', () => {
       .execute();
     const blocked = await app.inject({
       method: 'DELETE',
-      url: `/api/projects/${projectId}/views/${v.id}`,
+      url: `/api/projects/${projectId}/views/${v.id}?who=alice`,
     });
     expect(blocked.statusCode).toBe(409);
     await db.deleteFrom('members').where('member_id', '=', 'M-view-test').execute();
-    const gone = await app.inject({
+    const noName = await app.inject({
       method: 'DELETE',
       url: `/api/projects/${projectId}/views/${v.id}`,
     });
+    expect(noName.statusCode).toBe(400);
+    const blank = await app.inject({
+      method: 'DELETE',
+      url: `/api/projects/${projectId}/views/${v.id}?who=%20%20`,
+    });
+    expect(blank.statusCode).toBe(400);
+    const gone = await app.inject({
+      method: 'DELETE',
+      url: `/api/projects/${projectId}/views/${v.id}?who=alice`,
+    });
     expect(gone.statusCode).toBe(204);
+    const audit = await db
+      .selectFrom('sheet_edits')
+      .select(['editor', 'field_name'])
+      .where('sheet_id', '=', sheetId)
+      .where('field_name', '=', 'view_deleted')
+      .execute();
+    expect(audit).toEqual([{ editor: 'alice', field_name: 'view_deleted' }]);
   });
 });
 
