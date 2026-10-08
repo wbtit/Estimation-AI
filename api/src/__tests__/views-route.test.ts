@@ -181,6 +181,12 @@ describe('views', () => {
     expect(moved.plan_frame.origin_pt).toEqual([50, 500]);
     expect(moved.scale.ratio).toBe(96);
     expect(moved.structural_classes).toEqual(['1.5-2.5|black|solid']);
+    // choosing the member line classes is a person's confirmation; the link job must keep it
+    expect(moved.classes_confirmed).toBe(true);
+    const back = (
+      await app.inject({ method: 'PATCH', url, payload: { who: 'c', structural_classes: [] } })
+    ).json();
+    expect(back.classes_confirmed).toBe(false);
     const list = (await app.inject({ method: 'GET', url: base() })).json();
     expect(list.views.length).toBeGreaterThanOrEqual(3);
     expect(list.views.find((x: { id: string }) => x.id === created.id).suggestion).toBeNull();

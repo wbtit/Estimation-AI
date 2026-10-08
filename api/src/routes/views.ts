@@ -308,8 +308,12 @@ export const viewRoutes: FastifyPluginAsync<ViewRouteOptions> = async (app, opti
         update.plan_frame = JSON.stringify(planFrameOf(box));
       }
       if (request.body.name !== undefined) update.name = request.body.name;
-      if (request.body.structural_classes)
+      if (request.body.structural_classes) {
+        // a person's choice of the member line classes; the link job keeps it instead of
+        // suggesting again. An empty list goes back to the suggestion.
         update.structural_classes = request.body.structural_classes;
+        update.classes_confirmed = request.body.structural_classes.length > 0;
+      }
 
       const scale = request.body.scale;
       let auditAfter: Record<string, unknown> | null = null;
