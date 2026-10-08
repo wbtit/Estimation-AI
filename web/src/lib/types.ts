@@ -156,6 +156,8 @@ export interface MemberView {
   length_source: string | null;
   status: { color: Color; confirmed: boolean; reasons: string[] };
   plan_point: { x_mm: number | null; y_mm: number | null } | null;
+  system: { color: Color; confirmed: boolean; reasons: string[] } | null;
+  human: "unreviewed" | "confirmed" | "edited" | "not_member" | "deleted";
   joist_series: {
     series: "K" | "LH" | "DLH";
     canonical: string;
@@ -226,7 +228,31 @@ export interface TakeoffSection {
   possible_duplicates: TakeoffTotals;
 }
 
+export interface ReviewSummary {
+  system: {
+    green: number;
+    amber: number;
+    red: number;
+    unlinked: number;
+    added_by_person: number;
+  };
+  human: {
+    unreviewed: number;
+    confirmed: number;
+    edited: number;
+    not_member: number;
+    deleted: number;
+  };
+  main_total_unreviewed: {
+    pieces: number;
+    of_pieces: number;
+    total_length_ft_in: string;
+    of_length_ft_in: string;
+  };
+}
+
 export interface TakeoffData extends TakeoffSection {
+  review: ReviewSummary;
   joists: TakeoffSection;
   grades?: { family: string; grade: string; set_by: string; set_at: string }[];
   sheets?: {

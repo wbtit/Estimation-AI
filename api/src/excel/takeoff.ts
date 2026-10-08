@@ -175,6 +175,29 @@ export async function buildTakeoffWorkbook(input: TakeoffExportInput): Promise<B
     d.total_length_mm,
     d.unmeasured,
   ]);
+  const rv = takeoff.review;
+  sum.addRow([]);
+  bold(
+    sum.addRow(["The system's own result per member (rule, before any human action)", 'Members']),
+  );
+  sum.addRow(['green', rv.system.green]);
+  sum.addRow(['amber', rv.system.amber]);
+  sum.addRow(['red', rv.system.red]);
+  sum.addRow(['unlinked label', rv.system.unlinked]);
+  sum.addRow(['added by a person (no system result)', rv.system.added_by_person]);
+  sum.addRow([]);
+  bold(sum.addRow(['What a person did', 'Members']));
+  sum.addRow(['unreviewed', rv.human.unreviewed]);
+  sum.addRow(['confirmed ("looks right")', rv.human.confirmed]);
+  sum.addRow(['edited or added by hand', rv.human.edited]);
+  sum.addRow(['not a member', rv.human.not_member]);
+  sum.addRow(['deleted', rv.human.deleted]);
+  sum.addRow([]);
+  const mu = rv.main_total_unreviewed;
+  sum.addRow([
+    'Unreviewed system output in the main total',
+    `${mu.pieces} of ${mu.of_pieces} pieces, ${mu.total_length_ft_in} of ${mu.of_length_ft_in}`,
+  ]);
   sum.addRow([]);
   bold(
     sum.addRow([

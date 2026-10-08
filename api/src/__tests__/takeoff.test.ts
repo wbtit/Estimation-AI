@@ -34,6 +34,8 @@ function member(over: Partial<MemberView> & { color?: 'green' | 'amber' | 'red' 
     length_mm: 3000,
     length_ft_in: null,
     status: { color, confirmed: false, reasons: [] },
+    system: null,
+    human: 'unreviewed',
     joist_series: null,
     shared_line: null,
     shared_resolution: null,
@@ -164,6 +166,44 @@ describe('takeoff grouping', () => {
     const l2 = t.joists.rows.find((r) => r.level === 'Level 2')!;
     expect(l2).toMatchObject({ profile: '24K7', quantity: 2, total_length_mm: 9000 });
     expect(t.joists.rows).toHaveLength(2);
+  });
+
+  it('keeps the system result and the human state apart, and counts unreviewed system output', () => {
+    const sys = (color: 'green' | 'amber' | 'red') => ({ color, confirmed: false, reasons: [] });
+    const t = buildTakeoff(
+      [
+        member({ system: sys('green'), human: 'unreviewed' }),
+        member({ system: sys('amber'), human: 'confirmed', color: 'green' } as never),
+        member({ system: sys('amber'), human: 'edited', length_mm: 1000 }),
+        member({ system: sys('red'), human: 'unreviewed', color: 'red' } as never),
+        member({ system: null, human: 'edited' }),
+        member({ system: sys('green'), human: 'not_member', not_member: { reason: 'existing' } }),
+        member({ system: sys('green'), human: 'deleted', deleted: true }),
+      ],
+      pages,
+    );
+    expect(t.review.system).toEqual({
+      green: 3,
+      amber: 2,
+      red: 1,
+      unlinked: 0,
+      added_by_person: 1,
+    });
+    expect(t.review.human).toEqual({
+      unreviewed: 2,
+      confirmed: 1,
+      edited: 2,
+      not_member: 1,
+      deleted: 1,
+    });
+    // main total: the green unreviewed, the confirmed, the edited, the added one (4 pieces); red held out
+    expect(t.totals.pieces).toBe(4);
+    expect(t.review.main_total_unreviewed).toMatchObject({
+      pieces: 1,
+      of_pieces: 4,
+      total_length_mm: 3000,
+      of_length_mm: 10000,
+    });
   });
 
   it('is empty and zero for a project without members', () => {

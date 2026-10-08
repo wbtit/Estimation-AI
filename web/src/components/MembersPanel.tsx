@@ -120,6 +120,15 @@ export const MembersPanel: React.FC<{
             />{" "}
             <b>{selected.status.color}</b>
             {selected.status.confirmed ? " (confirmed by a person)" : ""}
+            {selected.system &&
+              selected.system.color !== selected.status.color && (
+                <div className="hint">
+                  the system alone said {selected.system.color}
+                  {selected.system.reasons.length > 0
+                    ? ` (${selected.system.reasons.join("; ")})`
+                    : ""}
+                </div>
+              )}
             {selected.status.reasons.length > 0 && (
               <div className="warn">{selected.status.reasons.join("; ")}</div>
             )}

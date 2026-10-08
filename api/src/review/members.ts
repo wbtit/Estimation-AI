@@ -49,6 +49,9 @@ export interface ViewContext {
   scaleConfirmed: boolean;
 }
 
+/** What a person has done with a member. */
+export type HumanState = 'unreviewed' | 'confirmed' | 'edited' | 'not_member' | 'deleted';
+
 export interface MemberView {
   id: string;
   member_id: string;
@@ -79,6 +82,14 @@ export interface MemberView {
   base_elevation_mm: number | null;
   top_elevation_mm: number | null;
   status: Status;
+  /**
+   * What the system alone said (the rule's confidence and the checks, before any human action), kept
+   * beside the current status. A person's "looks right" or fix never hides it. Null for a member a
+   * person added by hand (there is no system result).
+   */
+  system: Status | null;
+  /** The human state: what a person has done with this member. */
+  human: HumanState;
   /** Joist (K, LH, DLH series) designation parsed from the profile text; a joist is never matched to AISC. */
   joist_series: {
     series: 'K' | 'LH' | 'DLH';
@@ -198,6 +209,65 @@ export function memberView(
     columnBaseKnown: baseElev !== null && topElev !== null,
   });
 
+  // the system's own result: the stored row alone, no edits
+  const storedType = row.type;
+  const storedLine = candidates.length > 0 ? { p: candidates[0].p, q: candidates[0].q } : null;
+  const storedBase = num(row.start_elevation_mm);
+  const storedTop = num(row.end_elevation_mm);
+  let storedLength: number | null = null;
+  if (storedType === 'column') {
+    if (storedBase !== null && storedTop !== null) storedLength = Math.abs(storedTop - storedBase);
+  } else if (storedLine && ratio) {
+    storedLength = lineLengthMm(storedLine, ratio);
+  }
+  const system: Status | null =
+    row.origin === 'manual'
+      ? null
+      : statusOf({
+          memberType: storedType,
+          linkConfidence: row.link_confidence,
+          hasLine: storedLine !== null,
+          humanConfirmed: false,
+          scaleConfirmed: storedType === 'column' ? true : (view?.scaleConfirmed ?? false),
+          lengthMm: storedLength,
+          profileParsed:
+            storedType === 'joist'
+              ? !!row.profile_raw && parseJoist(row.profile_raw) !== null
+              : row.profile !== null,
+          profileOnLabel,
+          markStatus: row.mark_ref_status,
+          columnBaseKnown: storedBase !== null && storedTop !== null,
+        });
+  const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+  const fieldEdited = (field: string, stored: unknown) =>
+    e.has(field) && !same(e.get(field), stored);
+  const edited =
+    row.origin === 'manual' ||
+    (linkEdit !== undefined && linkEdit !== null) ||
+    typedLength !== null ||
+    fieldEdited('profile_raw', row.profile_raw) ||
+    fieldEdited('profile', row.profile) ||
+    fieldEdited('mark', row.mark) ||
+    fieldEdited('type', row.type) ||
+    fieldEdited('quantity', row.quantity) ||
+    fieldEdited('level', null) ||
+    fieldEdited('mark_ref', { status: row.mark_ref_status, legend_row_id: row.legend_row_id }) ||
+    fieldEdited('start_elevation_mm', storedBase) ||
+    fieldEdited('end_elevation_mm', storedTop) ||
+    fieldEdited('shared_line', null) ||
+    fieldEdited('merged_into', null);
+  const notMember = (e.get('not_member') as { reason: string } | null | undefined) ?? null;
+  const human: HumanState =
+    reviewStatus === 'rejected'
+      ? 'deleted'
+      : notMember !== null
+        ? 'not_member'
+        : edited
+          ? 'edited'
+          : reviewStatus === 'approved'
+            ? 'confirmed'
+            : 'unreviewed';
+
   return {
     id: row.id,
     member_id: row.member_id,
@@ -231,6 +301,8 @@ export function memberView(
     base_elevation_mm: baseElev,
     top_elevation_mm: topElev,
     status,
+    system,
+    human,
     joist_series: joist
       ? {
           series: joist.series,

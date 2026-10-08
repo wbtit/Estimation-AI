@@ -72,7 +72,34 @@ export interface TakeoffSection {
   possible_duplicates: TakeoffTotals;
 }
 
+/**
+ * Two small tables that keep the system's own result apart from what a person did, and how much of
+ * the main total is still unreviewed system output. Counted over every member of the sheets in the
+ * takeoff (deleted and "not a member" included, so nothing a person did is hidden).
+ */
+export interface ReviewSummary {
+  /** The rule's own color before any human action; members a person added by hand have none. */
+  system: { green: number; amber: number; red: number; unlinked: number; added_by_person: number };
+  human: {
+    unreviewed: number;
+    confirmed: number;
+    edited: number;
+    not_member: number;
+    deleted: number;
+  };
+  /** Pieces and length in the MAIN totals (steel and joists) whose member nobody has reviewed. */
+  main_total_unreviewed: {
+    pieces: number;
+    of_pieces: number;
+    total_length_mm: number;
+    of_length_mm: number;
+    total_length_ft_in: string;
+    of_length_ft_in: string;
+  };
+}
+
 export interface Takeoff extends TakeoffSection {
+  review: ReviewSummary;
   /** Joists (K, LH, DLH series) are never matched to AISC and have their own section. */
   joists: TakeoffSection;
   unlinked_labels: UnlinkedSummary;
@@ -129,6 +156,7 @@ export function buildTakeoff(
   }
   const linked = live.filter((m) => m.status.color !== 'unlinked');
   return {
+    review: reviewSummary(members),
     ...section(
       linked.filter((m) => m.type !== 'joist'),
       pageOf,
@@ -148,6 +176,42 @@ export function buildTakeoff(
           count,
         }))
         .sort((a, b) => (a.page_number ?? 0) - (b.page_number ?? 0)),
+    },
+  };
+}
+
+function reviewSummary(members: MemberView[]): ReviewSummary {
+  const system = { green: 0, amber: 0, red: 0, unlinked: 0, added_by_person: 0 };
+  const human = { unreviewed: 0, confirmed: 0, edited: 0, not_member: 0, deleted: 0 };
+  for (const m of members) {
+    human[m.human] += 1;
+    if (m.system === null) system.added_by_person += 1;
+    else system[m.system.color] += 1;
+  }
+  // main totals = linked, live, not red, not a held-out duplicate (the same rule as the sections)
+  const inMain = members.filter(
+    (m) =>
+      !m.deleted &&
+      m.merged_into === null &&
+      m.not_member === null &&
+      m.status.color !== 'unlinked' &&
+      kindOf(m) === 'main',
+  );
+  const sum = (list: MemberView[], f: (m: MemberView) => number) =>
+    list.reduce((n, m) => n + f(m), 0);
+  const length = (m: MemberView) => (m.length_mm ?? 0) * m.quantity;
+  const open = inMain.filter((m) => m.human === 'unreviewed');
+  const r1 = (v: number) => Math.round(v * 10) / 10;
+  return {
+    system,
+    human,
+    main_total_unreviewed: {
+      pieces: sum(open, (m) => m.quantity),
+      of_pieces: sum(inMain, (m) => m.quantity),
+      total_length_mm: r1(sum(open, length)),
+      of_length_mm: r1(sum(inMain, length)),
+      total_length_ft_in: mmToFeetInches(sum(open, length)),
+      of_length_ft_in: mmToFeetInches(sum(inMain, length)),
     },
   };
 }

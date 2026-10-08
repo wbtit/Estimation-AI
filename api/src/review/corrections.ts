@@ -91,6 +91,9 @@ export async function correctionLines(db: Kysely<Database>, projectId: string) {
         shared_line_resolution: v.shared_resolution,
         confirmed: v.status.confirmed,
       },
+      // what the system said before any human action stays next to what the person did
+      system: v.system,
+      human: v.human,
       link_changed:
         !!v.link.line && !!proposed ? !sameLine(v.link.line, proposed) : v.link.line !== proposed,
       who: last?.reviewer ?? null,

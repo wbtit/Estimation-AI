@@ -311,3 +311,50 @@ describe('an unlinked label and a typed length', () => {
     expect(after.length_mm).toBeNull();
   });
 });
+
+describe('confirmed versus system color', () => {
+  it('"looks right" turns the color green but never hides the system confidence', async () => {
+    await member('sys', {
+      view_id: viewId,
+      link_confidence: 'medium',
+      profile_raw: 'W12x26',
+      profile: 'W12X26',
+      link_candidates: JSON.stringify([cand(1, 170, 6), cand(2, 190, 20)]),
+    });
+    const before = byKey((await list()).members, 'sys');
+    expect(before).toMatchObject({ human: 'unreviewed' });
+    expect(before.system).toMatchObject({ color: 'amber' });
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/projects/${projectId}/members/${ids.sys}/confirm`,
+      payload: { who: 'alice' },
+    });
+    expect(res.statusCode).toBe(200);
+    const after = byKey((await list()).members, 'sys');
+    expect(after.status).toMatchObject({ color: 'green', confirmed: true });
+    expect(after.human).toBe('confirmed');
+    expect(after.system).toMatchObject({ color: 'amber', reasons: ['link confidence medium'] });
+    expect(after.link.confidence).toBe('medium');
+    const lines = (
+      await app.inject({ method: 'GET', url: `/api/projects/${projectId}/corrections.jsonl` })
+    ).body
+      .trim()
+      .split('\n')
+      .map((l) => JSON.parse(l));
+    const mine = lines.find((l) => l.member_id === 'M-sys');
+    expect(mine.proposed.confidence).toBe('medium');
+    expect(mine.system.color).toBe('amber');
+    expect(mine.human).toBe('confirmed');
+    expect(mine.final.color).toBe('green');
+  });
+
+  it('a link or field change is "edited", not just confirmed', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/projects/${projectId}/members/${ids.sys}/link`,
+      payload: { who: 'alice', rank: 2 },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(byKey((await list()).members, 'sys').human).toBe('edited');
+  });
+});

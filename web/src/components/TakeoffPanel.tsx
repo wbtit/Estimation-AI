@@ -216,6 +216,70 @@ export const TakeoffPanel: React.FC<{
           ))}
         </details>
       )}
+      <div className="review-tables">
+        <table className="takeoff-table">
+          <caption>
+            The system's own result (rule, before any human action)
+          </caption>
+          <tbody>
+            <tr>
+              <td>green</td>
+              <td className="num">{data.review.system.green}</td>
+            </tr>
+            <tr>
+              <td>amber</td>
+              <td className="num">{data.review.system.amber}</td>
+            </tr>
+            <tr>
+              <td>red</td>
+              <td className="num">{data.review.system.red}</td>
+            </tr>
+            <tr>
+              <td>unlinked label</td>
+              <td className="num">{data.review.system.unlinked}</td>
+            </tr>
+            <tr>
+              <td>added by a person</td>
+              <td className="num">{data.review.system.added_by_person}</td>
+            </tr>
+          </tbody>
+        </table>
+        <table className="takeoff-table">
+          <caption>What a person did</caption>
+          <tbody>
+            <tr>
+              <td>unreviewed</td>
+              <td className="num">{data.review.human.unreviewed}</td>
+            </tr>
+            <tr>
+              <td>confirmed</td>
+              <td className="num">{data.review.human.confirmed}</td>
+            </tr>
+            <tr>
+              <td>edited or added</td>
+              <td className="num">{data.review.human.edited}</td>
+            </tr>
+            <tr>
+              <td>not a member</td>
+              <td className="num">{data.review.human.not_member}</td>
+            </tr>
+            <tr>
+              <td>deleted</td>
+              <td className="num">{data.review.human.deleted}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p className="warn">
+        Unreviewed system output in the main total:{" "}
+        <b>
+          {data.review.main_total_unreviewed.pieces} of{" "}
+          {data.review.main_total_unreviewed.of_pieces} pieces,{" "}
+          {data.review.main_total_unreviewed.total_length_ft_in} of{" "}
+          {data.review.main_total_unreviewed.of_length_ft_in}
+        </b>
+        .
+      </p>
       <Section
         title="Steel shapes"
         section={data}
