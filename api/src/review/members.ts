@@ -50,7 +50,8 @@ export interface ViewContext {
 }
 
 /** What a person has done with a member. */
-export type HumanState = 'unreviewed' | 'confirmed' | 'edited' | 'not_member' | 'deleted';
+export type HumanState =
+  'unreviewed' | 'confirmed' | 'edited' | 'existing' | 'not_member' | 'deleted';
 
 export interface MemberView {
   id: string;
@@ -107,6 +108,8 @@ export interface MemberView {
   merged_into: string | null;
   /** A person said this is not a member (see item 5b). */
   not_member: { reason: string } | null;
+  /** A person said this is EXISTING steel: it keeps its profile and length but is not counted. */
+  existing: boolean;
   plan_point: { x_mm: number | null; y_mm: number | null } | null;
 }
 
@@ -259,16 +262,19 @@ export function memberView(
     fieldEdited('shared_line', null) ||
     fieldEdited('merged_into', null);
   const notMember = (e.get('not_member') as { reason: string } | null | undefined) ?? null;
+  const existing = e.get('existing') === true;
   const human: HumanState =
     reviewStatus === 'rejected'
       ? 'deleted'
       : notMember !== null
         ? 'not_member'
-        : edited
-          ? 'edited'
-          : reviewStatus === 'approved'
-            ? 'confirmed'
-            : 'unreviewed';
+        : existing
+          ? 'existing'
+          : edited
+            ? 'edited'
+            : reviewStatus === 'approved'
+              ? 'confirmed'
+              : 'unreviewed';
 
   return {
     id: row.id,
@@ -318,6 +324,7 @@ export function memberView(
     shared_resolution: (e.get('shared_line') as 'separate' | null | undefined) ?? null,
     merged_into: (e.get('merged_into') as string | null | undefined) ?? null,
     not_member: (e.get('not_member') as { reason: string } | null | undefined) ?? null,
+    existing,
     plan_point:
       row.origin === 'manual' && row.plan_start_x_mm !== null
         ? { x_mm: num(row.plan_start_x_mm), y_mm: num(row.plan_start_y_mm) }

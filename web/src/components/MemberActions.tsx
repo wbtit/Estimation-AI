@@ -31,6 +31,7 @@ export const MemberActions: React.FC<{
   onLegend: (rowId: string) => void;
   onSharedLine: (resolution: "separate" | "merge") => void;
   onNotMember: (reason: string) => void;
+  onExisting: (value: boolean) => void;
 }> = ({
   member,
   legend,
@@ -43,6 +44,7 @@ export const MemberActions: React.FC<{
   onLegend,
   onSharedLine,
   onNotMember,
+  onExisting,
 }) => {
   const [profile, setProfile] = useState(member.profile_raw ?? "");
   const [mark, setMark] = useState(member.mark ?? "");
@@ -179,6 +181,14 @@ export const MemberActions: React.FC<{
             member.length_source === "manual" ? member.length_ft_in : null,
           ),
         )}
+      <button
+        onClick={() => onExisting(!member.existing)}
+        title="A real member that is already there: listed with its profile and length, not counted"
+      >
+        {member.existing
+          ? "Not existing after all (undo)"
+          : "Existing steel (listed, not counted)"}
+      </button>
       <label className="field">
         not a member
         <select

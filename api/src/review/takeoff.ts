@@ -90,6 +90,7 @@ export interface ReviewSummary {
     unreviewed: number;
     confirmed: number;
     edited: number;
+    existing: number;
     not_member: number;
     deleted: number;
   };
@@ -104,7 +105,26 @@ export interface ReviewSummary {
   };
 }
 
+/** Existing steel: listed, not counted. Its length is the trusted length only. */
+export interface ExistingBlock {
+  rows: TakeoffRow[];
+  totals: TakeoffTotals;
+  by_sheet: { sheet_id: string | null; page_number: number | null; totals: TakeoffTotals }[];
+}
+
+/** How many labels were marked "not a member", per reason (labels only, no lengths). */
+export interface NotMemberReasons {
+  existing: number;
+  misc_steel: number;
+  detail: number;
+  other: number;
+  total: number;
+}
+
 export interface Takeoff extends TakeoffSection {
+  /** Existing steel (a member state, not a reason): by sheet, outside every total above. */
+  existing: ExistingBlock;
+  not_member_reasons: NotMemberReasons;
   review: ReviewSummary;
   /** Joists (K, LH, DLH series) are never matched to AISC and have their own section. */
   joists: TakeoffSection;
@@ -156,15 +176,20 @@ export function buildTakeoff(
   grades: Map<string, string> = new Map(),
 ): Takeoff {
   const live = members.filter((m) => !m.deleted && m.merged_into === null && m.not_member === null);
+  // existing steel is listed in its own block and is not counted anywhere else
+  const existing = live.filter((m) => m.existing);
+  const counted = live.filter((m) => !m.existing);
   const unlinked = new Map<string, number>();
-  for (const m of live) {
+  for (const m of counted) {
     if (m.status.color !== 'unlinked') continue;
     const sid = m.sheet_id ?? '';
     unlinked.set(sid, (unlinked.get(sid) ?? 0) + 1);
   }
-  const linked = live.filter((m) => m.status.color !== 'unlinked');
+  const linked = counted.filter((m) => m.status.color !== 'unlinked');
   return {
     review: reviewSummary(members),
+    existing: existingBlock(existing, pageOf, grades),
+    not_member_reasons: notMemberReasons(members),
     ...section(
       linked.filter((m) => m.type !== 'joist'),
       pageOf,
@@ -188,9 +213,58 @@ export function buildTakeoff(
   };
 }
 
+function existingBlock(
+  members: MemberView[],
+  pageOf: Map<string, number>,
+  grades: Map<string, string>,
+): ExistingBlock {
+  const sec = section(
+    members.filter((m) => m.status.color !== 'unlinked' || m.profile !== null),
+    pageOf,
+    grades,
+    true,
+  );
+  const totals = emptyTotals();
+  const sheets = new Map<string | null, TakeoffTotals>();
+  for (const row of sec.rows) {
+    add(totals, row);
+    const sid = row.source.sheet_id;
+    const t = sheets.get(sid) ?? emptyTotals();
+    add(t, row);
+    sheets.set(sid, t);
+  }
+  const rows = [...sec.rows].sort(
+    (x, y) =>
+      (x.source.page_number ?? 0) - (y.source.page_number ?? 0) ||
+      compare(x.profile ?? x.profile_raw, y.profile ?? y.profile_raw),
+  );
+  return {
+    rows,
+    totals: finish(totals),
+    by_sheet: [...sheets.entries()]
+      .map(([sheet_id, t]) => ({
+        sheet_id,
+        page_number: sheet_id ? (pageOf.get(sheet_id) ?? null) : null,
+        totals: finish(t),
+      }))
+      .sort((a, b) => (a.page_number ?? 0) - (b.page_number ?? 0)),
+  };
+}
+
+function notMemberReasons(members: MemberView[]): NotMemberReasons {
+  const out = { existing: 0, misc_steel: 0, detail: 0, other: 0, total: 0 };
+  for (const m of members) {
+    if (m.deleted || m.not_member === null) continue;
+    const r = m.not_member.reason as keyof typeof out;
+    if (r in out && r !== 'total') out[r] += 1;
+    out.total += 1;
+  }
+  return out;
+}
+
 function reviewSummary(members: MemberView[]): ReviewSummary {
   const system = { green: 0, amber: 0, red: 0, unlinked: 0, added_by_person: 0 };
-  const human = { unreviewed: 0, confirmed: 0, edited: 0, not_member: 0, deleted: 0 };
+  const human = { unreviewed: 0, confirmed: 0, edited: 0, existing: 0, not_member: 0, deleted: 0 };
   for (const m of members) {
     human[m.human] += 1;
     if (m.system === null) system.added_by_person += 1;
@@ -202,6 +276,7 @@ function reviewSummary(members: MemberView[]): ReviewSummary {
       !m.deleted &&
       m.merged_into === null &&
       m.not_member === null &&
+      !m.existing &&
       m.status.color !== 'unlinked' &&
       kindOf(m) === 'main',
   );
@@ -228,16 +303,20 @@ function section(
   members: MemberView[],
   pageOf: Map<string, number>,
   grades: Map<string, string>,
+  /** Existing steel: one row per sheet, and no red or duplicate split (it is not counted at all). */
+  bySheet = false,
 ): TakeoffSection {
+  const kindIn = (m: MemberView): TakeoffKind => (bySheet ? 'main' : kindOf(m));
   const groups = new Map<string, MemberView[]>();
   for (const m of members) {
     const key = JSON.stringify([
+      bySheet ? m.sheet_id : null,
       m.level,
       m.mark,
       m.type === 'joist'
         ? (m.joist_series?.canonical ?? m.profile_raw)
         : (m.profile ?? m.profile_raw),
-      kindOf(m),
+      kindIn(m),
     ]);
     const list = groups.get(key) ?? [];
     list.push(m);
@@ -284,8 +363,8 @@ function section(
       sheets: pages,
       color,
       confirmed: list.every((m) => m.status.confirmed),
-      kind: kindOf(first),
-      excluded: kindOf(first) !== 'main',
+      kind: kindIn(first),
+      excluded: kindIn(first) !== 'main',
       reasons: [...new Set(list.flatMap((m) => m.status.reasons))],
       source: {
         member_id: first.id,

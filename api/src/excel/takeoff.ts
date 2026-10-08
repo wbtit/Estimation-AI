@@ -198,6 +198,17 @@ export async function buildTakeoffWorkbook(input: TakeoffExportInput): Promise<B
   bold(sum.addRow(['Sheets not decided yet (not in the totals)', und.length]));
   sum.addRow([`${und.length} sheets undecided`, und.map((s) => s.page_number).join(', ')]);
   const rv = takeoff.review;
+  const nm = takeoff.not_member_reasons;
+  sum.addRow([]);
+  bold(sum.addRow(['Existing steel (listed on its own sheet, not counted)', 'Members', 'Pieces']));
+  sum.addRow(['existing steel', takeoff.existing.totals.members, takeoff.existing.totals.pieces]);
+  sum.addRow([]);
+  bold(sum.addRow(['Labels marked "not a member", by reason (labels only)', 'Labels']));
+  sum.addRow(['existing', nm.existing]);
+  sum.addRow(['misc steel', nm.misc_steel]);
+  sum.addRow(['detail, not this plan', nm.detail]);
+  sum.addRow(['other', nm.other]);
+  sum.addRow(['all', nm.total]);
   sum.addRow([]);
   bold(
     sum.addRow(["The system's own result per member (rule, before any human action)", 'Members']),
@@ -212,6 +223,7 @@ export async function buildTakeoffWorkbook(input: TakeoffExportInput): Promise<B
   sum.addRow(['unreviewed', rv.human.unreviewed]);
   sum.addRow(['confirmed ("looks right")', rv.human.confirmed]);
   sum.addRow(['edited or added by hand', rv.human.edited]);
+  sum.addRow(['existing steel', rv.human.existing]);
   sum.addRow(['not a member', rv.human.not_member]);
   sum.addRow(['deleted', rv.human.deleted]);
   sum.addRow([]);
@@ -345,6 +357,51 @@ export async function buildTakeoffWorkbook(input: TakeoffExportInput): Promise<B
   jw.getColumn(5).numFmt = '#,##0.0';
   jw.columns.forEach((col, i) => {
     col.width = i === 11 ? 60 : i === 0 ? 26 : 18;
+  });
+
+  // Existing steel: listed, never counted in the totals. Lengths are the trusted ones only.
+  const ew = wb.addWorksheet('Existing (not counted)', { views: [{ state: 'frozen', ySplit: 1 }] });
+  bold(
+    ew.addRow([
+      'Sheet (page number)',
+      'Mark',
+      'Profile (as read)',
+      'Profile',
+      'Qty',
+      'Trusted length (ft-in)',
+      'Trusted length (mm)',
+      'Pieces with length not trusted (shared line)',
+      'Level',
+    ]),
+  );
+  for (const r of takeoff.existing.rows) {
+    ew.addRow([
+      r.source.page_number,
+      r.mark,
+      r.profile_raw,
+      r.profile,
+      r.quantity,
+      r.total_length_ft_in,
+      r.total_length_mm,
+      r.length_shared_pieces,
+      r.level,
+    ]);
+  }
+  const et = takeoff.existing.totals;
+  bold(
+    ew.addRow([
+      'EXISTING TOTAL (not counted anywhere else)',
+      null,
+      null,
+      null,
+      et.pieces,
+      et.total_length_ft_in,
+      et.total_length_mm,
+      et.length_shared_pieces,
+    ]),
+  );
+  ew.columns.forEach((col, i) => {
+    col.width = i === 0 ? 24 : 20;
   });
 
   // Grades are typed by a person per shape family; the system never fills one in.

@@ -7,6 +7,7 @@
 //   POST  /api/projects/:projectId/members/:memberId/delete
 //   POST  /api/projects/:projectId/members/:memberId/mark-ref { legend_row_id } or { status }
 //   POST  /api/projects/:projectId/members/:memberId/shared-line { resolution: separate|merge, keep? }
+//   POST  /api/projects/:projectId/members/:memberId/existing   { value: true|false }  existing steel (listed, not counted)
 //   POST  /api/projects/:projectId/members/:memberId/not-member { reason: existing|misc_steel|detail|other|null }
 //   POST  /api/projects/:projectId/undo                       undo the last action of this person
 //   GET   /api/projects/:projectId/legend?mark=               legend rows
@@ -27,6 +28,7 @@ import {
   linkEntries,
   markRefEntries,
   NOT_MEMBER_REASONS,
+  existingEntries,
   notMemberEntries,
   type NotMemberReason,
   sharedLineEntries,
@@ -111,6 +113,15 @@ const notMemberBody = {
   properties: {
     who: { type: 'string', minLength: 1, maxLength: 100 },
     reason: { anyOf: [{ enum: [...NOT_MEMBER_REASONS] }, { type: 'null' }] },
+  },
+} as const;
+const existingBody = {
+  type: 'object',
+  required: ['who', 'value'],
+  additionalProperties: false,
+  properties: {
+    who: { type: 'string', minLength: 1, maxLength: 100 },
+    value: { type: 'boolean' },
   },
 } as const;
 const sharedLineBody = {
@@ -424,6 +435,18 @@ export const memberActionRoutes: FastifyPluginAsync<MemberActionOptions> = async
         return markRefEntries(m, { status });
       });
     },
+  );
+
+  app.post<{
+    Params: { projectId: string; memberId: string };
+    Body: { who: string; value: boolean };
+  }>(
+    '/api/projects/:projectId/members/:memberId/existing',
+    { schema: { params: memberParams, body: existingBody } },
+    async (request) =>
+      act(request.params.projectId, request.params.memberId, request.body.who, (m) =>
+        existingEntries(m, request.body.value),
+      ),
   );
 
   app.post<{

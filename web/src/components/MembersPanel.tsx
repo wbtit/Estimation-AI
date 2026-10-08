@@ -64,6 +64,7 @@ export const MembersPanel: React.FC<{
               <b>{memberTitle(m)}</b> {m.length_ft_in ?? "no length"}
               {m.status.confirmed && " ✓"}
               {m.merged_into && " (merged)"}
+              {m.existing && " (existing, not counted)"}
               {m.shared_line && !m.shared_line.resolved && (
                 <span
                   className="shared-tag"

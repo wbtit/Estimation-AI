@@ -873,6 +873,9 @@ export const App: React.FC = () => {
                     onPick={(rank) => void act(m.id, "/link", "POST", { rank })}
                     onRelink={() => void startRelink()}
                     onPatch={(patch) => void act(m.id, "", "PATCH", patch)}
+                    onExisting={(value) =>
+                      void act(m.id, "/existing", "POST", { value })
+                    }
                     onNotMember={(reason) =>
                       void act(m.id, "/not-member", "POST", { reason })
                     }

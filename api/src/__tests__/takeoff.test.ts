@@ -42,6 +42,7 @@ function member(over: Partial<MemberView> & { color?: 'green' | 'amber' | 'red' 
     shared_resolution: null,
     merged_into: null,
     not_member: null,
+    existing: false,
     ...rest,
   } as MemberView;
 }
@@ -194,6 +195,7 @@ describe('takeoff grouping', () => {
       unreviewed: 2,
       confirmed: 1,
       edited: 2,
+      existing: 0,
       not_member: 1,
       deleted: 1,
     });
@@ -315,6 +317,7 @@ describe('takeoff routes', () => {
       'Takeoff',
       'Summary',
       'Joists',
+      'Existing (not counted)',
       'Grades',
       'Sheets',
     ]);

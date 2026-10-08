@@ -283,6 +283,10 @@ export const TakeoffPanel: React.FC<{
               <td className="num">{data.review.human.confirmed}</td>
             </tr>
             <tr>
+              <td>existing steel</td>
+              <td className="num">{data.review.human.existing}</td>
+            </tr>
+            <tr>
               <td>edited or added</td>
               <td className="num">{data.review.human.edited}</td>
             </tr>
@@ -313,6 +317,64 @@ export const TakeoffPanel: React.FC<{
         nameHeader="profile"
         onJump={onJump}
       />
+      <section>
+        <h4>Existing (not counted)</h4>
+        <p>
+          {totalsLine(data.existing.totals)} in {data.existing.by_sheet.length}{" "}
+          sheet{data.existing.by_sheet.length === 1 ? "" : "s"}. Existing steel
+          keeps its profile and its trusted length but is in no total.
+        </p>
+        {data.existing.rows.length > 0 && (
+          <table className="takeoff-table">
+            <thead>
+              <tr>
+                <th>sheet</th>
+                <th>mark</th>
+                <th>profile</th>
+                <th>qty</th>
+                <th>length</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.existing.rows.map((r) => (
+                <tr key={r.key} onClick={() => onJump(r)} tabIndex={0}>
+                  <td>{r.source.page_number}</td>
+                  <td>{r.mark ?? ""}</td>
+                  <td>{r.profile ?? r.profile_raw}</td>
+                  <td className="num">{r.quantity}</td>
+                  <td className="num">
+                    {r.total_length_ft_in ??
+                      (r.length_shared_pieces ? "not trusted" : "-")}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        <table className="takeoff-table">
+          <caption>
+            Labels marked "not a member", by reason (labels only)
+          </caption>
+          <tbody>
+            <tr>
+              <td>existing</td>
+              <td className="num">{data.not_member_reasons.existing}</td>
+            </tr>
+            <tr>
+              <td>misc steel</td>
+              <td className="num">{data.not_member_reasons.misc_steel}</td>
+            </tr>
+            <tr>
+              <td>detail, not this plan</td>
+              <td className="num">{data.not_member_reasons.detail}</td>
+            </tr>
+            <tr>
+              <td>other</td>
+              <td className="num">{data.not_member_reasons.other}</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
       <Section
         title="Joists (K, LH, DLH; not matched to AISC)"
         section={data.joists}

@@ -164,6 +164,24 @@ export function sharedLineEntries(
   ];
 }
 
+/**
+ * "Existing steel": a real member that is already there. It keeps its profile and its length (if
+ * the length is trusted) but is outside the main total, in its own takeoff block. Different from
+ * "not a member" (a label that is not a member at all). An undo takes the flag off again.
+ */
+export function existingEntries(m: MemberView, value: boolean): EditEntry[] {
+  if (m.existing === value) return [];
+  return [
+    {
+      memberId: m.id,
+      field: 'existing',
+      before: m.existing ? true : null,
+      after: value ? true : null,
+      status: 'edited',
+    },
+  ];
+}
+
 export const NOT_MEMBER_REASONS = ['existing', 'misc_steel', 'detail', 'other'] as const;
 export type NotMemberReason = (typeof NOT_MEMBER_REASONS)[number];
 

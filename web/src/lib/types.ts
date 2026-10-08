@@ -160,7 +160,14 @@ export interface MemberView {
   status: { color: Color; confirmed: boolean; reasons: string[] };
   plan_point: { x_mm: number | null; y_mm: number | null } | null;
   system: { color: Color; confirmed: boolean; reasons: string[] } | null;
-  human: "unreviewed" | "confirmed" | "edited" | "not_member" | "deleted";
+  human:
+    | "unreviewed"
+    | "confirmed"
+    | "edited"
+    | "existing"
+    | "not_member"
+    | "deleted";
+  existing: boolean;
   joist_series: {
     series: "K" | "LH" | "DLH";
     canonical: string;
@@ -247,6 +254,7 @@ export interface ReviewSummary {
     unreviewed: number;
     confirmed: number;
     edited: number;
+    existing: number;
     not_member: number;
     deleted: number;
   };
@@ -258,7 +266,25 @@ export interface ReviewSummary {
   };
 }
 
+export interface ExistingBlock {
+  rows: TakeoffRow[];
+  totals: TakeoffTotals;
+  by_sheet: {
+    sheet_id: string | null;
+    page_number: number | null;
+    totals: TakeoffTotals;
+  }[];
+}
+
 export interface TakeoffData extends TakeoffSection {
+  existing: ExistingBlock;
+  not_member_reasons: {
+    existing: number;
+    misc_steel: number;
+    detail: number;
+    other: number;
+    total: number;
+  };
   review: ReviewSummary;
   undecided_sheets?: { count: number; pages: number[] };
   joists: TakeoffSection;

@@ -48,6 +48,7 @@ function member(id: string, over: Partial<MemberView> = {}): MemberView {
     shared_resolution: null,
     merged_into: null,
     not_member: null,
+    existing: false,
     plan_point: null,
     ...over,
   } as MemberView;
