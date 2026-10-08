@@ -14,9 +14,16 @@ export interface SheetListRow {
   members_not_counted: number;
 }
 
+export interface GradeRuleRow {
+  family: string;
+  grade: string;
+  set_by: string;
+  set_at: string;
+}
+
 export interface TakeoffExportInput {
   project: { project_id: string; name: string; number: string | null };
-  takeoff: Takeoff & { sheets?: SheetListRow[] };
+  takeoff: Takeoff & { sheets?: SheetListRow[]; grades?: GradeRuleRow[] };
 }
 
 const STATUS_FILL: Record<string, string> = {
@@ -39,6 +46,7 @@ export const TAKEOFF_HEADERS = [
   'Status',
   'Checked by a person',
   'In totals',
+  'Grade (user-set)',
   'Notes',
 ] as const;
 
@@ -71,6 +79,7 @@ export async function buildTakeoffWorkbook(input: TakeoffExportInput): Promise<B
       r.color,
       r.confirmed ? 'Yes' : 'No',
       r.kind === 'main' ? 'Yes' : r.kind === 'red' ? 'No (red)' : 'No (possible duplicate)',
+      r.grade,
       r.reasons.join('; '),
     ]);
     row.getCell(11).fill = {
@@ -110,7 +119,7 @@ export async function buildTakeoffWorkbook(input: TakeoffExportInput): Promise<B
   ]);
   ws.getColumn(6).numFmt = '#,##0.0';
   ws.columns.forEach((col, i) => {
-    col.width = i === 13 ? 60 : i === 0 ? 26 : 18;
+    col.width = i === 14 ? 60 : i === 0 ? 26 : 18;
   });
 
   const sum = wb.addWorksheet('Summary');
@@ -225,6 +234,7 @@ export async function buildTakeoffWorkbook(input: TakeoffExportInput): Promise<B
       'Sheets (page numbers)',
       'Status',
       'In totals',
+      'Grade (user-set)',
       'Notes',
     ]),
   );
@@ -240,6 +250,7 @@ export async function buildTakeoffWorkbook(input: TakeoffExportInput): Promise<B
       r.sheets.join(', '),
       r.color,
       r.kind === 'main' ? 'Yes' : r.kind === 'red' ? 'No (red)' : 'No (possible duplicate)',
+      r.grade,
       r.reasons.join('; '),
     ]);
     row.getCell(9).fill = {
@@ -273,7 +284,25 @@ export async function buildTakeoffWorkbook(input: TakeoffExportInput): Promise<B
   ]);
   jw.getColumn(5).numFmt = '#,##0.0';
   jw.columns.forEach((col, i) => {
-    col.width = i === 10 ? 60 : i === 0 ? 26 : 18;
+    col.width = i === 11 ? 60 : i === 0 ? 26 : 18;
+  });
+
+  // Grades are typed by a person per shape family; the system never fills one in.
+  const gw = wb.addWorksheet('Grades');
+  bold(gw.addRow(['Shape family', 'Grade (user-set)', 'Set by', 'Set at']));
+  const families = [
+    ...new Set(
+      [...takeoff.rows, ...takeoff.joists.rows]
+        .map((r) => r.family)
+        .filter((f): f is string => !!f),
+    ),
+  ].sort();
+  for (const f of families) {
+    const rule = takeoff.grades?.find((g) => g.family === f);
+    gw.addRow([f, rule?.grade ?? 'not set', rule?.set_by ?? null, rule?.set_at ?? null]);
+  }
+  gw.columns.forEach((col) => {
+    col.width = 24;
   });
 
   if (takeoff.sheets) {

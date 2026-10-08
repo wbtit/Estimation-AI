@@ -4,6 +4,7 @@
 import { mmToFeetInches } from '../units/index.js';
 import type { MemberView } from './members.js';
 import type { ViewBox } from '../db/types.js';
+import { familyOf, GRADE_NOT_SET } from './grades.js';
 import { isPossibleDuplicate } from './shared-line.js';
 
 export type TakeoffColor = 'green' | 'amber' | 'red';
@@ -24,6 +25,10 @@ export interface TakeoffRow {
   /** Canonical profile (null when the text could not be parsed). */
   profile: string | null;
   level: string | null;
+  /** Shape family (W, HSS, ..., joist), or null when the profile is not parsed. */
+  family: string | null;
+  /** The grade a person set for the family, or "not set". Never inferred. */
+  grade: string;
   quantity: number;
   members: number;
   /** Sum of quantity x unit length over the members that have a length; null when none has one. */
@@ -110,7 +115,11 @@ function kindOf(m: MemberView): TakeoffKind {
 }
 
 /** Group members into takeoff rows and add up the totals. `pageOf` maps a sheet id to its page number. */
-export function buildTakeoff(members: MemberView[], pageOf: Map<string, number>): Takeoff {
+export function buildTakeoff(
+  members: MemberView[],
+  pageOf: Map<string, number>,
+  grades: Map<string, string> = new Map(),
+): Takeoff {
   const live = members.filter((m) => !m.deleted && m.merged_into === null && m.not_member === null);
   const unlinked = new Map<string, number>();
   for (const m of live) {
@@ -123,10 +132,12 @@ export function buildTakeoff(members: MemberView[], pageOf: Map<string, number>)
     ...section(
       linked.filter((m) => m.type !== 'joist'),
       pageOf,
+      grades,
     ),
     joists: section(
       linked.filter((m) => m.type === 'joist'),
       pageOf,
+      grades,
     ),
     unlinked_labels: {
       count: [...unlinked.values()].reduce((a, b) => a + b, 0),
@@ -141,7 +152,11 @@ export function buildTakeoff(members: MemberView[], pageOf: Map<string, number>)
   };
 }
 
-function section(members: MemberView[], pageOf: Map<string, number>): TakeoffSection {
+function section(
+  members: MemberView[],
+  pageOf: Map<string, number>,
+  grades: Map<string, string>,
+): TakeoffSection {
   const groups = new Map<string, MemberView[]>();
   for (const m of members) {
     const key = JSON.stringify([
@@ -180,6 +195,8 @@ function section(members: MemberView[], pageOf: Map<string, number>): TakeoffSec
       profile_raw: first.profile_raw,
       profile: first.type === 'joist' ? (first.joist_series?.canonical ?? null) : first.profile,
       level: first.level,
+      family: familyOf(first),
+      grade: grades.get(familyOf(first) ?? '') ?? GRADE_NOT_SET,
       quantity: list.reduce((n, m) => n + m.quantity, 0),
       members: list.length,
       total_length_mm: measured.length ? Math.round(total * 10) / 10 : null,

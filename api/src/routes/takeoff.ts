@@ -5,9 +5,10 @@
 import type { FastifyPluginAsync } from 'fastify';
 import type { Kysely } from 'kysely';
 import { getDb } from '../db/client.js';
-import type { Database } from '../db/types.js';
+import { SHAPE_FAMILIES, type Database, type ShapeFamily } from '../db/types.js';
 import { buildTakeoffWorkbook } from '../excel/takeoff.js';
 import { XLSX_MIME } from '../excel/index.js';
+import { loadGrades, setGrade } from '../review/grades.js';
 import { buildTakeoff } from '../review/takeoff.js';
 import { loadSheetInclusions } from '../review/takeoff-sheets.js';
 import { HttpError } from './http-error.js';
@@ -31,6 +32,64 @@ export const takeoffRoutes: FastifyPluginAsync<TakeoffRouteOptions> = async (app
     return reply.send(err);
   });
 
+  const familyParams = {
+    type: 'object',
+    required: ['projectId', 'family'],
+    properties: {
+      projectId: { type: 'string', format: 'uuid' },
+      family: { enum: [...SHAPE_FAMILIES] },
+    },
+  } as const;
+
+  app.get<{ Params: { projectId: string } }>(
+    '/api/projects/:projectId/grades',
+    { schema: { params } },
+    async (request) => {
+      const { projectId } = request.params;
+      const project = await db()
+        .selectFrom('projects')
+        .select('id')
+        .where('id', '=', projectId)
+        .executeTakeFirst();
+      if (!project) throw new HttpError(404, { error: 'project not found' });
+      return { families: SHAPE_FAMILIES, rules: [...(await loadGrades(db(), projectId)).values()] };
+    },
+  );
+
+  app.put<{
+    Params: { projectId: string; family: ShapeFamily };
+    Body: { grade: string | null; who: string };
+  }>(
+    '/api/projects/:projectId/grades/:family',
+    {
+      schema: {
+        params: familyParams,
+        body: {
+          type: 'object',
+          required: ['grade', 'who'],
+          additionalProperties: false,
+          properties: {
+            grade: { type: ['string', 'null'], maxLength: 80 },
+            who: { type: 'string', minLength: 1, maxLength: 100 },
+          },
+        },
+      },
+    },
+    async (request) => {
+      const { projectId, family } = request.params;
+      const who = request.body.who.trim();
+      if (who === '') throw new HttpError(400, { error: 'who must not be blank' });
+      const project = await db()
+        .selectFrom('projects')
+        .select('id')
+        .where('id', '=', projectId)
+        .executeTakeFirst();
+      if (!project) throw new HttpError(404, { error: 'project not found' });
+      await setGrade(db(), projectId, family, request.body.grade, who);
+      return { families: SHAPE_FAMILIES, rules: [...(await loadGrades(db(), projectId)).values()] };
+    },
+  );
+
   async function compute(projectId: string) {
     const project = await db()
       .selectFrom('projects')
@@ -38,6 +97,7 @@ export const takeoffRoutes: FastifyPluginAsync<TakeoffRouteOptions> = async (app
       .where('id', '=', projectId)
       .executeTakeFirst();
     if (!project) throw new HttpError(404, { error: 'project not found' });
+    const grades = await loadGrades(db(), projectId);
     const inclusions = await loadSheetInclusions(db(), projectId);
     const included = new Set(inclusions.filter((s) => s.included).map((s) => s.sheet_id));
     const all = await loadMemberViews(db(), projectId);
@@ -52,7 +112,12 @@ export const takeoffRoutes: FastifyPluginAsync<TakeoffRouteOptions> = async (app
     return {
       project: { project_id: project.id, name: project.name, number: project.number },
       takeoff: {
-        ...buildTakeoff(members, pageOf),
+        ...buildTakeoff(
+          members,
+          pageOf,
+          new Map([...grades].map(([f, r]) => [f, r.grade] as const)),
+        ),
+        grades: [...grades.values()],
         sheets: inclusions.map((s) => ({ ...s, members_not_counted: held.get(s.sheet_id) ?? 0 })),
       },
     };

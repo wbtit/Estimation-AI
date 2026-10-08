@@ -269,7 +269,13 @@ describe('takeoff routes', () => {
     expect(res.statusCode).toBe(200);
     expect(res.headers['content-type']).toContain('spreadsheetml');
     const wb = await loadWorkbook(res.rawPayload);
-    expect(wb.worksheets.map((w) => w.name)).toEqual(['Takeoff', 'Summary', 'Joists', 'Sheets']);
+    expect(wb.worksheets.map((w) => w.name)).toEqual([
+      'Takeoff',
+      'Summary',
+      'Joists',
+      'Grades',
+      'Sheets',
+    ]);
     const ws = wb.getWorksheet('Takeoff')!;
     const header = (ws.getRow(1).values as unknown[]).slice(1).map(String);
     expect(header).toContain('Mark');

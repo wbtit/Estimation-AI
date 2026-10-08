@@ -187,6 +187,8 @@ export interface TakeoffRow {
   profile_raw: string | null;
   profile: string | null;
   level: string | null;
+  family: string | null;
+  grade: string;
   quantity: number;
   members: number;
   total_length_mm: number | null;
@@ -226,6 +228,7 @@ export interface TakeoffSection {
 
 export interface TakeoffData extends TakeoffSection {
   joists: TakeoffSection;
+  grades?: { family: string; grade: string; set_by: string; set_at: string }[];
   sheets?: {
     sheet_id: string;
     page_number: number;

@@ -738,6 +738,7 @@ export const App: React.FC = () => {
               projectId={projectId}
               version={members}
               onError={fail}
+              who={who}
               onJump={(row) => {
                 if (!row.source.sheet_id) return;
                 if (row.source.sheet_id === sheetId) {

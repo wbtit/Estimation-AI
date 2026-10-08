@@ -147,6 +147,35 @@ export interface ProjectFilesTable {
   updated_at: Timestamp;
 }
 
+export const SHAPE_FAMILIES = [
+  'W',
+  'M',
+  'S',
+  'HP',
+  'C',
+  'MC',
+  'L',
+  'WT',
+  'MT',
+  'ST',
+  'HSS',
+  'PIPE',
+  'PL',
+  'ROD',
+  'joist',
+] as const;
+export type ShapeFamily = (typeof SHAPE_FAMILIES)[number];
+
+/** Material/grade by shape family, set by a person (append-only, latest wins, null clears). */
+export interface ProjectGradeRulesTable {
+  id: Generated<string>;
+  project_id: string;
+  shape_family: ShapeFamily;
+  grade: string | null;
+  set_by: string;
+  set_at: Generated<Timestamp>;
+}
+
 export interface SheetEditsTable {
   id: Generated<string>;
   sheet_id: string;
@@ -327,4 +356,5 @@ export interface Database {
   text_items: TextItemsTable;
   sheet_views: SheetViewsTable;
   legend_rows: LegendRowsTable;
+  project_grade_rules: ProjectGradeRulesTable;
 }

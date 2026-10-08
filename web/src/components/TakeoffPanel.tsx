@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { api } from "../lib/api";
+import { api, send } from "../lib/api";
 import { COLOUR_HEX } from "../lib/status";
 import type {
   TakeoffData,
@@ -42,6 +42,7 @@ const Section: React.FC<{
           <small> ({Math.round(r.total_length_mm)} mm)</small>
         )}
       </td>
+      <td>{r.grade}</td>
       <td>{r.level ?? ""}</td>
       <td>{r.sheets.join(", ")}</td>
       <td>
@@ -61,6 +62,7 @@ const Section: React.FC<{
             <th>{nameHeader}</th>
             <th>qty</th>
             <th>length</th>
+            <th>grade (user-set)</th>
             <th>level</th>
             <th>sheet</th>
             <th>color</th>
@@ -70,7 +72,7 @@ const Section: React.FC<{
           {included.map(rowView)}
           {included.length === 0 && (
             <tr>
-              <td colSpan={8} className="hint">
+              <td colSpan={9} className="hint">
                 Nothing in the totals yet.
               </td>
             </tr>
@@ -116,13 +118,35 @@ export const TakeoffPanel: React.FC<{
   version: unknown;
   onJump: (row: TakeoffRow) => void;
   onError: (err: unknown) => void;
-}> = ({ projectId, version, onJump, onError }) => {
+  who: string;
+}> = ({ projectId, version, onJump, onError, who }) => {
   const [data, setData] = useState<TakeoffData | null>(null);
   useEffect(() => {
     api<TakeoffData>(`/api/projects/${projectId}/takeoff`)
       .then(setData)
       .catch(onError);
   }, [projectId, version, onError]);
+
+  const families = data
+    ? [
+        ...new Set(
+          [...data.rows, ...data.joists.rows]
+            .map((r) => r.family)
+            .filter((f): f is string => !!f),
+        ),
+      ].sort()
+    : [];
+  const saveGrade = (family: string, grade: string) => {
+    if (who.trim() === "")
+      return onError(new Error("Type your name at the top first."));
+    send("PUT", `/api/projects/${projectId}/grades/${family}`, {
+      grade: grade.trim() === "" ? null : grade.trim(),
+      who: who.trim(),
+    })
+      .then(() => api<TakeoffData>(`/api/projects/${projectId}/takeoff`))
+      .then(setData)
+      .catch(onError);
+  };
 
   if (!data) return <p className="hint">Loading...</p>;
   return (
@@ -161,6 +185,35 @@ export const TakeoffPanel: React.FC<{
               </li>
             ))}
           </ul>
+        </details>
+      )}
+      {families.length > 0 && (
+        <details>
+          <summary>
+            Grade by shape family (typed by you; never filled in)
+          </summary>
+          {families.map((f) => (
+            <label className="field" key={f}>
+              {f}
+              <input
+                key={`${f}-${data.grades?.find((g) => g.family === f)?.grade ?? ""}`}
+                defaultValue={
+                  data.grades?.find((g) => g.family === f)?.grade ?? ""
+                }
+                placeholder="not set"
+                onBlur={(e) => {
+                  const was =
+                    data.grades?.find((g) => g.family === f)?.grade ?? "";
+                  if (e.target.value.trim() !== was)
+                    saveGrade(f, e.target.value);
+                }}
+                onKeyDown={(e) =>
+                  e.key === "Enter" && (e.target as HTMLInputElement).blur()
+                }
+                aria-label={`grade for ${f}`}
+              />
+            </label>
+          ))}
         </details>
       )}
       <Section
