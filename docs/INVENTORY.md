@@ -33,3 +33,16 @@ Two bugs in this tool were found and fixed, and the inventory was rerun: text co
 - Most drawings have a real text layer, so the Phase 4b glyph reader is needed only for the outlined-text minority (1 unique file here).
 - Real dash patterns were not seen; exploded dashes are common, so a dash-aware reader must handle collinear short segments.
 - Layers exist in half of the files, but only a minority are referenced by page content.
+
+## Duplicates (2026-10-08)
+`worker/tools/dedupe_inputs.py` (synthetic tests in `worker/tests/test_dedupe_inputs.py`). Counts of the run on the two folders:
+
+| | Files |
+|---|---|
+| PDFs examined | 34 |
+| Byte-identical groups | 15 (14 pairs inside the two folders, 1 group that also matches a copy in `fixtures/private`) |
+| Kept in the folders | 18 |
+| Moved (not deleted) to `_duplicates_removed_20261008` | 16 |
+| Near-duplicates (same inventory signature, different bytes; not moved) | 0 |
+
+In the group that matches the private copy, the private copy is the one kept, so both folder copies of it were moved. The estimator list has 19 rows: the 18 files kept in the folders plus that private copy. Real file names appear only in the estimator CSV and the private map.
