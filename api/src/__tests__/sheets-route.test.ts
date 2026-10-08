@@ -31,6 +31,12 @@ afterAll(async () => {
   await closeDatabaseConnection();
 });
 
+// Page indexes are unique per project (sheets_project_page_index_uq). These cases used a random index in
+// 25..1024, which collided with another case (or with the fixed indexes 40, 41, 42, 90) in about 5% of
+// runs: the cause of the "flaky scale-flag test". A counter from a range no fixed index uses cannot collide.
+let pageIndexCounter = 200;
+const nextFreePageIndex = () => (pageIndexCounter += 1);
+
 const patch = (sheetId: string, body: Record<string, unknown>, project = projectId) =>
   app.inject({
     method: 'PATCH',
@@ -293,7 +299,7 @@ describe('scale override', () => {
     ['unknown field', { scale: S14, editor: 'alice', extra: 1 }],
   ])('rejects %s (400) without changing anything', async (_label, body) => {
     const id = await insertSheet(getDb(), projectId, {
-      page_index: 25 + Math.floor(Math.random() * 1000),
+      page_index: nextFreePageIndex(),
       scale_parsed: S18,
       scale_parsed_ratio: 96,
     });
