@@ -53,3 +53,15 @@ Each item is an assumption I made so Phase 1 could proceed while you were away. 
 37. **Text-quality threshold (0.90)** that decides pdf_text versus the glyph reader is a tunable default, not measured. No page in the six documents fell below it.
 38. **Rotated pdf_text items** are stored with their angle (`angle_deg`) and read normally; they are not flagged for review. Say if rotated text should always be reviewed.
 
+
+## Phase 5
+
+39. **Test document and views.** job-005 only. Views were drawn and scales confirmed by the test harness acting as a person (the view box was placed around the gold labels of each page, plus 150 pt). A real person draws the box once per plan area; the first confirmation is the main extra step before anything is measured. Is one box per plan area the right unit for you, or do you want one box for the whole sheet by default?
+40. **Default member type is `beam`.** Every profile label becomes a `beam` member; braces, joists and other types are changed by hand. No automatic type guess exists yet.
+41. **"Looks right" can turn a red member green.** A person's confirmation overrides a low rule confidence (it stays red only when there is no confirmed scale or no length). Say if a confirmed member should instead stay amber until the link is also fixed.
+42. **Calibration is against AI-made gold** (Phase 4e, 40 labels of job-005). Green 16/16, amber 14/21, red 2/3 correct are not a real accuracy: the sample is small and the gold was drawn by an AI, not a person. A human spot check of the same 40 labels would settle it.
+43. **Clicks to fix a wrong link could not be measured on the 8 wrong links.** All 8 have gold `missing` (no correct line in the extracted lines), so there is nothing to click. Counted by design: top-3 pick = 2 actions (select, 1/2/3), other line = 3 (select, L, click the line), confirm = 2 (N, Enter), delete = 2 (N, Delete). Need a person's timed run on a real review to confirm.
+44. **Marks and legends were not exercised on job-005** (it has no legend rows; all labels carry the profile). Mark linking, ambiguous marks and columns are covered by tests only. Which document should be used to try them on real data?
+45. **Structural class is one per view** (suggested, then confirmed). Views with mixed line weights (e.g. page 27, detail) need the person to choose; the suggestion there gave no green at all.
+46. **Profile canonical form is stored without AISC validation** (the AISC file is still not supplied, see 32).
+47. **Takeoff length is the length of the chosen line** as drawn in plan (no cut lengths, no end offsets, no splice or camber). Say if end allowances are wanted before this is used for ordering.
