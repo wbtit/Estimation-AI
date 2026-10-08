@@ -5,6 +5,7 @@ import pytest
 from db_fixtures import DbProject
 from pdf_factory import new_doc, vector_page
 
+from src.review.classes_job import classes_view
 from src.review.link_job import LinkError, link_view
 from src.text_reader.job import read_project
 
@@ -37,7 +38,13 @@ def build_pdf(dbp: DbProject) -> None:
     dbp.pdf_path.write_bytes(doc.tobytes())
 
 
-def make_view(dbp: DbProject, confirmed: bool = True, box: dict | None = None) -> str:
+def make_view(
+    dbp: DbProject,
+    confirmed: bool = True,
+    box: dict | None = None,
+    classes: list[str] | None = None,
+) -> str:
+    """A view as a person leaves it: scale confirmed and, by default, the beam class confirmed."""
     sheet_id = dbp.conn.execute(
         "SELECT id FROM sheets WHERE project_id = %s AND page_index = 0", (dbp.project_id,)
     ).fetchone()["id"]
@@ -45,8 +52,8 @@ def make_view(dbp: DbProject, confirmed: bool = True, box: dict | None = None) -
 
     row = dbp.conn.execute(
         "INSERT INTO sheet_views (sheet_id, box, scale_ratio, scale_source, scale_text,"
-        " scale_confirmed)"
-        " VALUES (%s, %s, %s, %s, %s, %s) RETURNING id",
+        " scale_confirmed, structural_classes, classes_confirmed)"
+        " VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
         (
             sheet_id,
             json.dumps(box or BOX),
@@ -54,6 +61,8 @@ def make_view(dbp: DbProject, confirmed: bool = True, box: dict | None = None) -
             "user_confirmed" if confirmed else None,
             '1/8" = 1\'-0"' if confirmed else None,
             confirmed,
+            classes if classes is not None else ["1.5-2.5|black|solid"],
+            classes != [],
         ),
     ).fetchone()
     dbp.conn.commit()
@@ -125,21 +134,33 @@ def test_the_proposed_line_gives_plan_geometry_in_the_view_frame(prepared: DbPro
     assert set(m["plan_bbox"]) == {"x0", "y0", "x1", "y1"}
 
 
-def test_the_structural_class_is_suggested_stored_and_a_confirmed_choice_is_kept(
+def test_the_classes_are_suggested_by_their_own_job_and_the_link_job_waits_for_a_person(
     prepared: DbProject,
 ) -> None:
-    view = make_view(prepared)
-    link_view(prepared.conn, prepared.config, view)
+    view = make_view(prepared, classes=[])  # no classes chosen yet
+    with pytest.raises(LinkError, match="line classes"):
+        link_view(prepared.conn, prepared.config, view)
+    assert members(prepared) == []
+    result = classes_view(prepared.conn, prepared.config, view)
     row = prepared.conn.execute("SELECT * FROM sheet_views WHERE id = %s", (view,)).fetchone()
-    assert row["structural_classes"] == ["1.5-2.5|black|solid"] and not row["classes_confirmed"]
+    assert result["suggested"] == 1 and not row["classes_confirmed"]
+    assert row["structural_classes"] == ["1.5-2.5|black|solid"]  # suggested, not confirmed
     keys = {c["key"] for c in row["class_table"]}
     assert "1.5-2.5|black|solid" in keys and any(k.startswith("1-1.5|black") for k in keys)
-    # the user confirms a different class: the next run uses it (the thin lines are not beams)
-    prepared.conn.execute(
-        "UPDATE sheet_views SET structural_classes = %s, classes_confirmed = TRUE WHERE id = %s",
-        (["1-1.5|black|solid"], view),
-    )
-    prepared.conn.commit()
+    # a suggestion is not a confirmation: the link job still refuses
+    with pytest.raises(LinkError, match="line classes"):
+        link_view(prepared.conn, prepared.config, view)
+    assert members(prepared) == []
+
+
+def test_a_confirmed_choice_is_used_and_never_replaced_by_the_suggestion(
+    prepared: DbProject,
+) -> None:
+    view = make_view(prepared, classes=["1-1.5|black|solid"])  # the thin lines, chosen by a person
+    classes_view(prepared.conn, prepared.config, view)  # must not touch the confirmed choice
+    assert prepared.conn.execute(
+        "SELECT structural_classes FROM sheet_views WHERE id = %s", (view,)
+    ).fetchone()["structural_classes"] == ["1-1.5|black|solid"]
     result = link_view(prepared.conn, prepared.config, view)
     assert result["structural_lines"] >= 70  # the thin lines inside the box
     assert prepared.conn.execute(

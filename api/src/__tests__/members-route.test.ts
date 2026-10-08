@@ -10,6 +10,7 @@ let projectId: string;
 let sheetId: string;
 let viewId: string; // scale 1/8" = 1'-0" confirmed
 let unconfirmedViewId: string;
+let noClassesViewId: string; // scale confirmed, line classes not confirmed
 const ids: Record<string, string> = {};
 
 const cand = (rank: number, y: number, score: number) => ({
@@ -55,6 +56,21 @@ beforeAll(async () => {
     .execute();
   const box = JSON.stringify({ x0: 0, y0: 0, x1: 1200, y1: 800 });
   viewId = (
+    await db
+      .insertInto('sheet_views')
+      .values({
+        sheet_id: sheetId,
+        box,
+        scale_ratio: 96,
+        scale_source: 'user_confirmed',
+        scale_confirmed: true,
+        structural_classes: ['1.5-2.5|black|solid'],
+        classes_confirmed: true,
+      })
+      .returning('id')
+      .executeTakeFirstOrThrow()
+  ).id;
+  noClassesViewId = (
     await db
       .insertInto('sheet_views')
       .values({
@@ -225,6 +241,60 @@ describe('members', () => {
   });
 });
 
+describe('line classes before linking', () => {
+  const post = (url: string) =>
+    app.inject({ method: 'POST', url: `/api/projects/${projectId}${url}` });
+  const jobs: string[] = [];
+  afterAll(async () => {
+    if (jobs.length) await db.deleteFrom('jobs').where('id', 'in', jobs).execute();
+  });
+
+  it('the link job is refused until a person confirmed the classes of the view', async () => {
+    const res = await post(`/views/${noClassesViewId}/link`);
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toMatch(/confirm the line classes/);
+  });
+
+  it('the classes job only suggests; choosing the classes is the confirmation', async () => {
+    await db
+      .insertInto('project_files')
+      .values({
+        project_id: projectId,
+        original_filename: 'x.pdf',
+        stored_path: 'x/y.pdf',
+        sha256: '1'.repeat(64),
+        size_bytes: 1,
+        scan_status: 'done',
+      })
+      .onConflict((oc) => oc.doNothing())
+      .execute();
+    const queued = await post(`/views/${noClassesViewId}/classes`);
+    expect(queued.statusCode).toBe(202);
+    jobs.push(queued.json().job_id);
+    // asking again returns the open job instead of a second one
+    const again = await post(`/views/${noClassesViewId}/classes`);
+    expect(again.json().job_id).toBe(queued.json().job_id);
+    const status = (
+      await app.inject({
+        method: 'GET',
+        url: `/api/projects/${projectId}/views/${noClassesViewId}/classes-status`,
+      })
+    ).json();
+    expect(status.job).toMatchObject({ id: queued.json().job_id, status: 'pending' });
+    // still refused: a suggestion is not a confirmation
+    expect((await post(`/views/${noClassesViewId}/link`)).statusCode).toBe(409);
+    const patched = await app.inject({
+      method: 'PATCH',
+      url: `/api/projects/${projectId}/views/${noClassesViewId}`,
+      payload: { who: 'alice', structural_classes: ['1.5-2.5|black|solid'] },
+    });
+    expect(patched.json()).toMatchObject({ classes_confirmed: true });
+    const link = await post(`/views/${noClassesViewId}/link`);
+    expect(link.statusCode).toBe(202);
+    jobs.push(link.json().job_id);
+  });
+});
+
 describe('link job', () => {
   it('refuses to find members before the scale is confirmed', async () => {
     const res = await app.inject({
@@ -246,6 +316,7 @@ describe('link job', () => {
         size_bytes: 1,
         scan_status: 'done',
       })
+      .onConflict((oc) => oc.doNothing())
       .execute();
     const first = await app.inject({
       method: 'POST',

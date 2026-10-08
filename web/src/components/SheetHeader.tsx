@@ -16,8 +16,17 @@ export const SheetHeader: React.FC<{
   onPageType: (value: string | null) => void;
   onLevel: (value: string | null) => void;
   unlinkedCount?: number;
+  /** Views of this sheet whose line classes nobody confirmed yet (no members can be found there). */
+  waitingViews?: number;
   onTakeoff?: (value: "include" | "exclude" | null) => void;
-}> = ({ sheet, onPageType, onLevel, unlinkedCount = 0, onTakeoff }) => {
+}> = ({
+  sheet,
+  onPageType,
+  onLevel,
+  unlinkedCount = 0,
+  waitingViews = 0,
+  onTakeoff,
+}) => {
   const level = sheet.level?.effective ?? "";
   const [text, setText] = useState(level);
   useEffect(() => setText(level), [level, sheet.id]);
@@ -93,6 +102,15 @@ export const SheetHeader: React.FC<{
           in takeoff
           {sheet.takeoff.source === "person" ? " (set by a person)" : ""}
         </label>
+      )}
+      {waitingViews > 0 && (
+        <span
+          className="warn"
+          title="Open the views tab, show the line classes and confirm one"
+        >
+          {waitingViews} view{waitingViews === 1 ? "" : "s"} waiting for line
+          classes
+        </span>
       )}
       {unlinkedCount > 0 && (
         <span className="warn" title="profile labels with no line near them">

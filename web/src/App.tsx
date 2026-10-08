@@ -217,6 +217,8 @@ export const App: React.FC = () => {
     setSelectedId: setMemberId,
     busyView,
     find,
+    showClasses,
+    confirmClasses,
     addColumn,
     addOnLine,
     act,
@@ -575,6 +577,7 @@ export const App: React.FC = () => {
           onPageType={(v) => void override("page-type", v)}
           onLevel={(v) => void override("level", v)}
           onTakeoff={(v) => void override("takeoff", v)}
+          waitingViews={views.filter((v) => !v.classes_confirmed).length}
           unlinkedCount={
             members.filter((m) => !m.deleted && m.status.color === "unlinked")
               .length
@@ -626,6 +629,7 @@ export const App: React.FC = () => {
                   >
                     {v.name ?? "view"}{" "}
                     {v.scale.confirmed ? `1:${v.scale.ratio}` : "(scale?)"}
+                    {v.classes_confirmed ? "" : " (confirm line classes)"}
                   </text>
                 </g>
               ))}
@@ -893,8 +897,9 @@ export const App: React.FC = () => {
                 <ClassPicker
                   view={v}
                   busy={busyView === v.id}
+                  onShow={() => void showClasses(v.id)}
+                  onConfirm={(classes) => void confirmClasses(v.id, classes)}
                   onFind={() => void find(v.id)}
-                  onUse={(classes) => void find(v.id, classes)}
                 />
               )}
               onDelete={(id) => {

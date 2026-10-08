@@ -45,28 +45,68 @@ export function useMembers(
     load().catch(onError);
   }, [load, onError]);
 
-  /** Queue the link job for a view and wait for it (the worker runs it in the background). */
-  const find = useCallback(
-    async (viewId: string, classes?: string[]) => {
+  /** Wait for a queued job of a view (the worker runs it in the background). */
+  const waitFor = useCallback(
+    async (viewId: string, statusPath: string, what: string) => {
+      for (let i = 0; i < 180; i += 1) {
+        await new Promise((r) => setTimeout(r, 1000));
+        const s = await api<LinkStatus>(
+          `/api/projects/${projectId}/views/${viewId}/${statusPath}`,
+        );
+        if (s.job?.status === "done" || s.job?.status === "completed") return;
+        if (s.job?.status === "failed")
+          throw new Error(s.job.error ?? `${what} failed`);
+      }
+    },
+    [projectId],
+  );
+
+  /** Tabulate the line classes of a view; the worker suggests one (a person still has to confirm). */
+  const showClasses = useCallback(
+    async (viewId: string) => {
       if (!projectId) return;
       setBusyView(viewId);
       try {
-        if (classes) {
-          await send("PATCH", `/api/projects/${projectId}/views/${viewId}`, {
-            who: who.trim(),
-            structural_classes: classes,
-          });
-        }
+        await send(
+          "POST",
+          `/api/projects/${projectId}/views/${viewId}/classes`,
+        );
+        await waitFor(viewId, "classes-status", "reading the line classes");
+        await onViewsChanged();
+      } catch (err) {
+        onError(err);
+      } finally {
+        setBusyView(null);
+      }
+    },
+    [projectId, waitFor, onError, onViewsChanged],
+  );
+
+  /** The person's choice of the member line classes (this is the confirmation). */
+  const confirmClasses = useCallback(
+    async (viewId: string, classes: string[]) => {
+      if (!projectId) return;
+      try {
+        await send("PATCH", `/api/projects/${projectId}/views/${viewId}`, {
+          who: who.trim(),
+          structural_classes: classes,
+        });
+        await onViewsChanged();
+      } catch (err) {
+        onError(err);
+      }
+    },
+    [projectId, who, onError, onViewsChanged],
+  );
+
+  /** Queue the link job for a view and wait for it (the line classes must be confirmed). */
+  const find = useCallback(
+    async (viewId: string) => {
+      if (!projectId) return;
+      setBusyView(viewId);
+      try {
         await send("POST", `/api/projects/${projectId}/views/${viewId}/link`);
-        for (let i = 0; i < 180; i += 1) {
-          await new Promise((r) => setTimeout(r, 1000));
-          const s = await api<LinkStatus>(
-            `/api/projects/${projectId}/views/${viewId}/link-status`,
-          );
-          if (s.job?.status === "done" || s.job?.status === "completed") break;
-          if (s.job?.status === "failed")
-            throw new Error(s.job.error ?? "finding members failed");
-        }
+        await waitFor(viewId, "link-status", "finding members");
         await onViewsChanged();
         await load();
       } catch (err) {
@@ -75,7 +115,7 @@ export function useMembers(
         setBusyView(null);
       }
     },
-    [projectId, who, load, onError, onViewsChanged],
+    [projectId, waitFor, load, onError, onViewsChanged],
   );
 
   const addColumn = useCallback(
@@ -182,6 +222,8 @@ export function useMembers(
     setSelectedId,
     busyView,
     find,
+    showClasses,
+    confirmClasses,
     addColumn,
     addOnLine,
     act,

@@ -175,6 +175,21 @@ def ensure_text(pid: str) -> None:
     wait_job(r["job_id"], "read_text")
 
 
+def show_and_confirm(pid: str, sheet_id: str, vid: str, classes: list[str] | None) -> str:
+    """Show the line classes of the view (the worker suggests one), then confirm explicitly: the
+    suggestion when `classes` is None, else the given classes. Returns what happened."""
+    r = call("POST", f"/api/projects/{pid}/views/{vid}/classes")
+    if r.get("_error"):
+        return f"classes job refused: {str(r)[:80]}"
+    wait_job(r["job_id"], "classes_view")
+    view = next(v for v in call("GET", f"/api/projects/{pid}/sheets/{sheet_id}/views")["views"] if v["id"] == vid)
+    chosen = classes if classes else view["structural_classes"]
+    if not chosen:
+        return "no suggestion and no classes given: not confirmed"
+    call("PATCH", f"/api/projects/{pid}/views/{vid}", {"who": WHO, "structural_classes": chosen})
+    return "confirmed the suggestion" if classes is None else "confirmed the study classes"
+
+
 def run_link(pid: str, vid: str) -> dict:
     r = call("POST", f"/api/projects/{pid}/views/{vid}/link")
     if r.get("_error"):
@@ -315,10 +330,9 @@ def run_job(job: str) -> dict:
         for pg, entry in log.items():
             if entry["scale"].startswith("skipped"):
                 continue
-            if run == "study_classes":
-                cls = data["classes"].get(str(pg - 1), {}).get("structural")
-                if cls:
-                    call("PATCH", f"/api/projects/{pid}/views/{entry['view_id']}", {"who": WHO, "structural_classes": cls})
+            cls = data["classes"].get(str(pg - 1), {}).get("structural") if run == "study_classes" else None
+            how = show_and_confirm(pid, entry["sheet_id"], entry["view_id"], cls)
+            entry.setdefault("classes", {})[run] = how
             err = run_link(pid, entry["view_id"])
             if err:
                 entry.setdefault("link_error", str(err)[:120])

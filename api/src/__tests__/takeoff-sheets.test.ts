@@ -40,6 +40,8 @@ describe('sheet inclusion routes', () => {
         scale_ratio: 96,
         scale_source: 'user_confirmed',
         scale_confirmed: true,
+        structural_classes: ['1.5-2.5|black|solid'],
+        classes_confirmed: true,
       })
       .returning('id')
       .executeTakeFirstOrThrow();

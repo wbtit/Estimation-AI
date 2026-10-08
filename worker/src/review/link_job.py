@@ -1,9 +1,9 @@
 """The `link_view` job: propose members and links for one view of a sheet.
 
-Payload: {"view_id": "<uuid>"}. The view must have a confirmed scale. Steps: reconstruct the page
-lines, tabulate the stroke classes inside the view (and suggest the structural class when the user
-has not confirmed one), take profile labels and legend-linked mark labels inside the view, and
-propose for each the best of its nearest structural lines with the frozen Phase 4e rule.
+Payload: {"view_id": "<uuid>"}. The view must have a confirmed scale AND line classes confirmed by a
+person (the `classes_view` job only suggests them). Steps: reconstruct the page lines, tabulate
+the stroke classes inside the view, take profile labels and legend-linked mark labels inside the
+view, and propose for each the best of its nearest structural lines with the frozen Phase 4e rule.
 Members are upserted by label key; a member a person has touched (reviewed, edited, or with any
 edit row) is never changed. Logs counts only, never page text.
 """
@@ -24,7 +24,7 @@ from src.linking.candidates import candidates_for
 from src.linking.labels import Label, page_labels
 from src.linking.lines import page_lines
 from src.linking.rules import Proposal, propose
-from src.linking.structural import class_table, lines_in_box, suggest_classes
+from src.linking.structural import class_table, lines_in_box
 from src.queue import Job
 
 log = logging.getLogger("worker.link")
@@ -90,6 +90,8 @@ def link_view(conn: psycopg.Connection, config: WorkerConfig, view_id: str) -> d
         raise LinkError("view not found")
     if not row["scale_confirmed"] or row["scale_ratio"] is None:
         raise LinkError("the scale of this view is not confirmed")
+    if not row["classes_confirmed"] or not row["structural_classes"]:
+        raise LinkError("the line classes of this view are not confirmed by a person")
     ratio = float(row["scale_ratio"])
     box_json = row["box"]
     box = (
@@ -108,19 +110,11 @@ def link_view(conn: psycopg.Connection, config: WorkerConfig, view_id: str) -> d
         size = (page.rect.width, page.rect.height)
         in_view = lines_in_box(page_lines(page), box, size)
         table = class_table(in_view)
-        classes = (
-            list(row["structural_classes"])
-            if row["classes_confirmed"] and row["structural_classes"]
-            else suggest_classes(table)
-        )
+        classes = list(row["structural_classes"])  # the person's choice, never replaced
         legend = _legend_by_mark(conn, project_id)
         labels = [lb for lb in page_labels(page, sheet_id, set(legend)) if _inside(box, lb.bbox)]
     structural = [ln for ln in in_view if ln.klass in classes]
 
-    if not row["classes_confirmed"]:
-        conn.execute(
-            "UPDATE sheet_views SET structural_classes = %s WHERE id = %s", (classes, view_id)
-        )
     conn.execute(
         "UPDATE sheet_views SET structural_lines = %s WHERE id = %s",
         (

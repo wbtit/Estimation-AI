@@ -70,6 +70,7 @@ export const ViewsPanel: React.FC<{
               <span className={`dot ${v.scale.confirmed ? "green" : "red"}`} />{" "}
               {v.name ?? "view"}{" "}
               {v.scale.confirmed ? `1:${v.scale.ratio}` : "scale not confirmed"}
+              {v.classes_confirmed ? "" : " - line classes not confirmed"}
             </button>
           </li>
         ))}

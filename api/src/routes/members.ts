@@ -1,6 +1,7 @@
 // Members of the review screen (effective values with colors) and the link job for a view.
 //   GET  /api/projects/:projectId/members[?sheet_id=&view_id=&include_deleted=true]
-//   POST /api/projects/:projectId/views/:viewId/link        enqueue link_view (scale must be confirmed)
+//   POST /api/projects/:projectId/views/:viewId/classes     enqueue classes_view (stroke classes + a suggestion)
+//   POST /api/projects/:projectId/views/:viewId/link        enqueue link_view (scale AND line classes must be confirmed)
 //   GET  /api/projects/:projectId/views/:viewId/link-status  latest link job of the view
 import type { FastifyPluginAsync } from 'fastify';
 import { sql, type Kysely } from 'kysely';
@@ -161,7 +162,7 @@ export const memberRoutes: FastifyPluginAsync<MemberRouteOptions> = async (app, 
     const view = await db()
       .selectFrom('sheet_views as v')
       .innerJoin('sheets as s', 's.id', 'v.sheet_id')
-      .select(['v.id', 'v.sheet_id', 'v.scale_confirmed', 's.project_id'])
+      .select(['v.id', 'v.sheet_id', 'v.scale_confirmed', 'v.classes_confirmed', 's.project_id'])
       .where('v.id', '=', viewId)
       .where('s.project_id', '=', projectId)
       .executeTakeFirst();
@@ -178,6 +179,12 @@ export const memberRoutes: FastifyPluginAsync<MemberRouteOptions> = async (app, 
       if (!view.scale_confirmed) {
         throw new HttpError(409, {
           error: 'confirm the scale of this view before finding members',
+        });
+      }
+      if (!view.classes_confirmed) {
+        throw new HttpError(409, {
+          error:
+            'confirm the line classes of this view before finding members (show the classes, tick the beam lines, confirm)',
         });
       }
       const inclusion = (await loadSheetInclusions(db(), projectId)).find(
@@ -214,6 +221,56 @@ export const memberRoutes: FastifyPluginAsync<MemberRouteOptions> = async (app, 
         .returning('id')
         .executeTakeFirstOrThrow();
       return reply.status(202).send({ job_id: job.id, status: 'pending' });
+    },
+  );
+
+  /** Tabulate the stroke classes of a view and suggest the member class (a suggestion only). */
+  app.post<{ Params: { projectId: string; viewId: string } }>(
+    '/api/projects/:projectId/views/:viewId/classes',
+    { schema: { params: viewParams } },
+    async (request, reply) => {
+      const { projectId, viewId } = request.params;
+      await loadView(projectId, viewId);
+      const file = await db()
+        .selectFrom('project_files')
+        .select('scan_status')
+        .where('project_id', '=', projectId)
+        .executeTakeFirst();
+      if (!file || file.scan_status !== 'done') {
+        throw new HttpError(409, { error: 'the PDF scan is not finished' });
+      }
+      const open = await db()
+        .selectFrom('jobs')
+        .select('id')
+        .where('type', '=', 'classes_view')
+        .where('status', 'in', ['pending', 'processing'])
+        .where(sql<boolean>`payload->>'view_id' = ${viewId}`)
+        .executeTakeFirst();
+      if (open) return reply.status(202).send({ job_id: open.id, status: 'pending' });
+      const job = await db()
+        .insertInto('jobs')
+        .values({ type: 'classes_view', payload: JSON.stringify({ view_id: viewId }) })
+        .returning('id')
+        .executeTakeFirstOrThrow();
+      return reply.status(202).send({ job_id: job.id, status: 'pending' });
+    },
+  );
+
+  app.get<{ Params: { projectId: string; viewId: string } }>(
+    '/api/projects/:projectId/views/:viewId/classes-status',
+    { schema: { params: viewParams } },
+    async (request) => {
+      const { projectId, viewId } = request.params;
+      await loadView(projectId, viewId);
+      const job = await db()
+        .selectFrom('jobs')
+        .select(['id', 'status', 'result', 'error', 'created_at'])
+        .where('type', '=', 'classes_view')
+        .where(sql<boolean>`payload->>'view_id' = ${viewId}`)
+        .orderBy('created_at', 'desc')
+        .limit(1)
+        .executeTakeFirst();
+      return { job: job ?? null };
     },
   );
 

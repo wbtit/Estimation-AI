@@ -13,6 +13,8 @@ from src.db import connect
 from src.pdf_scan.job import JOB_TYPE as SCAN_PDF
 from src.pdf_scan.job import run_scan_pdf
 from src.queue import Job, claim_next_job, complete_job, fail_expired_jobs, fail_job
+from src.review.classes_job import JOB_TYPE as CLASSES_VIEW
+from src.review.classes_job import run_classes_view
 from src.review.link_job import JOB_TYPE as LINK_VIEW
 from src.review.link_job import run_link_view
 from src.text_reader.job import JOB_TYPE as READ_TEXT
@@ -26,6 +28,7 @@ HANDLERS: dict[str, Handler] = {
     SCAN_PDF: run_scan_pdf,
     READ_TEXT: run_read_text,
     LINK_VIEW: run_link_view,
+    CLASSES_VIEW: run_classes_view,
 }
 
 
