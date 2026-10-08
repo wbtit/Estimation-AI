@@ -47,6 +47,7 @@ export const REASONS = {
   columnBase: 'column base elevation unknown',
   profileNotParsed: 'profile not parsed',
   markNotLinked: 'mark not linked to a legend row',
+  sharedLine: 'shares its line with other members (shared_line)',
 } as const;
 
 export function statusOf(i: StatusInput): Status {
@@ -73,4 +74,14 @@ export function statusOf(i: StatusInput): Status {
     return { color: 'green', confirmed: false, reasons: [] };
   }
   return { color: 'amber', confirmed: false, reasons: amber };
+}
+
+/**
+ * A member that shares its chosen line with other members, and nobody has said yet whether they are
+ * separate members, cannot be green: a person's "looks right" does not clear it. Red stays red.
+ * Resolving the group ("separate members" or a merge) removes the reason.
+ */
+export function withSharedLine(status: Status): Status {
+  if (status.color === 'red') return status;
+  return { ...status, color: 'amber', reasons: [...status.reasons, REASONS.sharedLine] };
 }

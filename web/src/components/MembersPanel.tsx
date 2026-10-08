@@ -14,9 +14,20 @@ export const MembersPanel: React.FC<{
   onAddColumn: () => void;
   extra?: (m: MemberView) => React.ReactNode;
 }> = ({ members, selectedId, onSelect, addingColumn, onAddColumn, extra }) => {
-  const visible = members.filter((m) => !m.deleted);
+  const visible = members
+    .filter((m) => !m.deleted)
+    .map((m, i) => ({ m, i }))
+    .sort(
+      (a, b) =>
+        (a.m.shared_line?.group ?? "").localeCompare(
+          b.m.shared_line?.group ?? "",
+        ) ||
+        Number(b.m.shared_line?.best) - Number(a.m.shared_line?.best) ||
+        a.i - b.i,
+    )
+    .map((x) => x.m);
   const counts = { green: 0, amber: 0, red: 0 };
-  for (const m of visible) counts[m.status.color] += 1;
+  for (const m of visible) if (!m.merged_into) counts[m.status.color] += 1;
   const selected = visible.find((m) => m.id === selectedId) ?? null;
   return (
     <div className="panel">
@@ -49,6 +60,17 @@ export const MembersPanel: React.FC<{
               />{" "}
               <b>{memberTitle(m)}</b> {m.length_ft_in ?? "no length"}
               {m.status.confirmed && " ✓"}
+              {m.merged_into && " (merged)"}
+              {m.shared_line && !m.shared_line.resolved && (
+                <span
+                  className="shared-tag"
+                  title="shares its line with other members"
+                >
+                  {" "}
+                  ⇄{m.shared_line.size}
+                  {m.shared_line.best ? "" : " possible duplicate"}
+                </span>
+              )}
             </button>
           </li>
         ))}

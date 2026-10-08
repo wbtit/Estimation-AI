@@ -146,6 +146,17 @@ export interface MemberView {
   length_source: string | null;
   status: { color: Color; confirmed: boolean; reasons: string[] };
   plan_point: { x_mm: number | null; y_mm: number | null } | null;
+  shared_line: SharedLine | null;
+  merged_into: string | null;
+  not_member: { reason: string } | null;
+}
+
+export interface SharedLine {
+  group: string;
+  size: number;
+  best: boolean;
+  resolution: "separate" | null;
+  resolved: boolean;
 }
 
 export interface ClassStat {
@@ -169,6 +180,7 @@ export interface TakeoffRow {
   sheets: number[];
   color: Color;
   confirmed: boolean;
+  kind: "main" | "red" | "duplicate";
   excluded: boolean;
   reasons: string[];
   source: {
@@ -193,4 +205,5 @@ export interface TakeoffData {
   by_level: { level: string | null; totals: TakeoffTotals }[];
   totals: TakeoffTotals;
   excluded_red: TakeoffTotals;
+  possible_duplicates: TakeoffTotals;
 }

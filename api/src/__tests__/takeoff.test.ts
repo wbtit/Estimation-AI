@@ -34,6 +34,10 @@ function member(over: Partial<MemberView> & { color?: 'green' | 'amber' | 'red' 
     length_mm: 3000,
     length_ft_in: null,
     status: { color, confirmed: false, reasons: [] },
+    shared_line: null,
+    shared_resolution: null,
+    merged_into: null,
+    not_member: null,
     ...rest,
   } as MemberView;
 }

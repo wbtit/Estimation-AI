@@ -24,6 +24,7 @@ import {
   deleteEntries,
   linkEntries,
   markRefEntries,
+  sharedLineEntries,
   OpError,
   patchEntries,
   undoLastAction,
@@ -94,6 +95,16 @@ const markRefBody = {
     who: { type: 'string', minLength: 1, maxLength: 100 },
     legend_row_id: uuid,
     status: { enum: ['linked', 'no_legend_row', 'ambiguous'] },
+  },
+} as const;
+const sharedLineBody = {
+  type: 'object',
+  required: ['who', 'resolution'],
+  additionalProperties: false,
+  properties: {
+    who: { type: 'string', minLength: 1, maxLength: 100 },
+    resolution: { enum: ['separate', 'merge'] },
+    keep: uuid,
   },
 } as const;
 const legendQuery = {
@@ -391,6 +402,28 @@ export const memberActionRoutes: FastifyPluginAsync<MemberActionOptions> = async
         }
         if (!status) throw new OpError(400, 'give a legend row or a status');
         return markRefEntries(m, { status });
+      });
+    },
+  );
+
+  app.post<{
+    Params: { projectId: string; memberId: string };
+    Body: { who: string; resolution: 'separate' | 'merge'; keep?: string };
+  }>(
+    '/api/projects/:projectId/members/:memberId/shared-line',
+    { schema: { params: memberParams, body: sharedLineBody } },
+    async (request) => {
+      const { projectId, memberId } = request.params;
+      const { resolution, keep } = request.body;
+      return act(projectId, memberId, request.body.who, async (m) => {
+        const all = m.sheet_id
+          ? await loadMemberViews(db(), projectId, { sheetId: m.sheet_id })
+          : [m];
+        return sharedLineEntries(
+          m,
+          all,
+          resolution === 'merge' ? { resolution, keep } : { resolution },
+        );
       });
     },
   );

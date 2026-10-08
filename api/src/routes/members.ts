@@ -6,6 +6,7 @@ import type { FastifyPluginAsync } from 'fastify';
 import { sql, type Kysely } from 'kysely';
 import { getDb } from '../db/client.js';
 import type { Database, ViewBox } from '../db/types.js';
+import { annotateSharedLines } from '../review/shared-line.js';
 import { memberView, type EditRow, type ViewContext } from '../review/members.js';
 import { loadSheetOverrides } from '../review/overrides.js';
 import { HttpError } from './http-error.js';
@@ -44,8 +45,27 @@ export async function loadMemberViews(
   if (filter.sheetId) q = q.where('sheet_id', '=', filter.sheetId);
   if (filter.viewId) q = q.where('view_id', '=', filter.viewId);
   if (filter.memberIds) q = q.where('id', 'in', filter.memberIds);
-  const rows = await q.orderBy('created_at').orderBy('id').execute();
-  if (rows.length === 0) return [];
+  const requested = await q.orderBy('created_at').orderBy('id').execute();
+  if (requested.length === 0) return [];
+  // shared lines are decided against every member of the sheet, so a single member is loaded with
+  // its sheet's other members and only the requested ones are returned
+  let rows = requested;
+  const wanted = new Set(requested.map((r) => r.id));
+  const sheetOf = [
+    ...new Set(requested.map((r) => r.sheet_id).filter((s): s is string => s !== null)),
+  ];
+  if (sheetOf.length > 0 && (filter.memberIds || filter.viewId)) {
+    const siblings = await db
+      .selectFrom('members')
+      .selectAll()
+      .where('project_id', '=', projectId)
+      .where('sheet_id', 'in', sheetOf)
+      .where('id', 'not in', [...wanted])
+      .execute();
+    rows = [...requested, ...siblings].sort(
+      (a, b) => +a.created_at - +b.created_at || a.id.localeCompare(b.id),
+    );
+  }
   const edits = await db
     .selectFrom('member_edits')
     .select(['member_id', 'field_name', 'corrected_value', 'created_at'])
@@ -90,7 +110,7 @@ export async function loadMemberViews(
   const levelOf = new Map(
     sheets.map((s) => [s.id, overrides.get(s.id)?.level ?? s.level_guess ?? null] as const),
   );
-  return rows.map((r) =>
+  const out = rows.map((r) =>
     memberView(
       r,
       editsOf.get(r.id) ?? [],
@@ -98,6 +118,7 @@ export async function loadMemberViews(
       r.sheet_id ? (levelOf.get(r.sheet_id) ?? null) : null,
     ),
   );
+  return annotateSharedLines(out).filter((m) => wanted.has(m.id));
 }
 
 export const memberRoutes: FastifyPluginAsync<MemberRouteOptions> = async (app, options) => {

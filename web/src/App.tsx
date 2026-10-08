@@ -820,6 +820,9 @@ export const App: React.FC = () => {
                     onPick={(rank) => void act(m.id, "/link", "POST", { rank })}
                     onRelink={() => void startRelink()}
                     onPatch={(patch) => void act(m.id, "", "PATCH", patch)}
+                    onSharedLine={(resolution) =>
+                      void act(m.id, "/shared-line", "POST", { resolution })
+                    }
                     onLegend={(rowId) =>
                       void act(m.id, "/mark-ref", "POST", {
                         legend_row_id: rowId,

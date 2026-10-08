@@ -82,18 +82,18 @@ beforeAll(async () => {
   await member('amber', {
     ...high,
     link_confidence: 'medium',
-    link_candidates: JSON.stringify([cand(1, 120, 6), cand(2, 150, 20)]),
+    link_candidates: JSON.stringify([cand(1, 130, 6), cand(2, 150, 20)]),
   });
   await member('red', {
     ...high,
     link_confidence: 'low',
-    link_candidates: JSON.stringify([cand(1, 120, 6)]),
+    link_candidates: JSON.stringify([cand(1, 140, 6)]),
   });
   await member('nolink', { ...high, link_confidence: 'low', link_candidates: JSON.stringify([]) });
   await member('noscale', {
     ...high,
     view_id: unconfirmedViewId,
-    link_candidates: JSON.stringify([cand(1, 120, 6)]),
+    link_candidates: JSON.stringify([cand(1, 160, 6)]),
   });
 });
 

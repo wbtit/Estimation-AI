@@ -7,6 +7,7 @@ import type { Database } from '../db/types.js';
 import { recordAction, type EditEntry } from './actions.js';
 import type { Line, LinkEdit, LinkReset, MemberView } from './members.js';
 import { parseProfile } from './profile.js';
+import { groupOf } from './shared-line.js';
 
 type Db = Kysely<Database> | Transaction<Database>;
 
@@ -97,6 +98,42 @@ export function deleteEntries(m: MemberView): EditEntry[] {
       status: 'rejected',
     },
   ];
+}
+
+/**
+ * A person's answer for a group of members on one line: "separate members" (every member of the
+ * group is kept) or a merge (the others become part of `keep`, default the best-scoring member).
+ * One action, so one undo. Nothing is deleted.
+ */
+export function sharedLineEntries(
+  target: MemberView,
+  all: MemberView[],
+  choice: { resolution: 'separate' } | { resolution: 'merge'; keep?: string },
+): EditEntry[] {
+  const group = groupOf(target, all);
+  if (group.length < 2) throw new OpError(409, 'this member does not share its line with another');
+  if (choice.resolution === 'separate') {
+    return group
+      .filter((m) => m.shared_resolution !== 'separate')
+      .map((m) => ({
+        memberId: m.id,
+        field: 'shared_line',
+        before: m.shared_resolution,
+        after: 'separate',
+        status: 'edited' as const,
+      }));
+  }
+  const keep = choice.keep ? group.find((m) => m.id === choice.keep) : group[0];
+  if (!keep) throw new OpError(400, 'the member to keep is not in this group');
+  return group
+    .filter((m) => m.id !== keep.id)
+    .map((m) => ({
+      memberId: m.id,
+      field: 'merged_into',
+      before: m.merged_into,
+      after: keep.id,
+      status: 'edited' as const,
+    }));
 }
 
 export interface LegendChoice {

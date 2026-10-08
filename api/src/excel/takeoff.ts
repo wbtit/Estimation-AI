@@ -58,7 +58,7 @@ export async function buildTakeoffWorkbook(input: TakeoffExportInput): Promise<B
       r.sheets.join(', '),
       r.color,
       r.confirmed ? 'Yes' : 'No',
-      r.excluded ? 'No' : 'Yes',
+      r.kind === 'main' ? 'Yes' : r.kind === 'red' ? 'No (red)' : 'No (possible duplicate)',
       r.reasons.join('; '),
     ]);
     row.getCell(11).fill = {
@@ -86,6 +86,15 @@ export async function buildTakeoffWorkbook(input: TakeoffExportInput): Promise<B
     x.pieces,
     x.total_length_ft_in,
     x.total_length_mm,
+  ]);
+  const d = takeoff.possible_duplicates;
+  ws.addRow([
+    'POSSIBLE DUPLICATES (shared line), not in totals',
+    null,
+    null,
+    d.pieces,
+    d.total_length_ft_in,
+    d.total_length_mm,
   ]);
   ws.getColumn(6).numFmt = '#,##0.0';
   ws.columns.forEach((col, i) => {
@@ -136,6 +145,14 @@ export async function buildTakeoffWorkbook(input: TakeoffExportInput): Promise<B
     x.total_length_ft_in,
     x.total_length_mm,
     x.unmeasured,
+  ]);
+  sum.addRow([
+    'POSSIBLE DUPLICATES (shared line), not in totals',
+    d.members,
+    d.pieces,
+    d.total_length_ft_in,
+    d.total_length_mm,
+    d.unmeasured,
   ]);
   sum.columns.forEach((col, i) => {
     col.width = i === 0 ? 34 : 20;

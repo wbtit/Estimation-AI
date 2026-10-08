@@ -25,7 +25,8 @@ export const TakeoffPanel: React.FC<{
 
   if (!data) return <p className="hint">Loading...</p>;
   const included = data.rows.filter((r) => !r.excluded);
-  const excluded = data.rows.filter((r) => r.excluded);
+  const excluded = data.rows.filter((r) => r.kind === "red");
+  const duplicates = data.rows.filter((r) => r.kind === "duplicate");
   const rowView = (r: TakeoffRow) => (
     <tr
       key={r.key}
@@ -101,6 +102,13 @@ export const TakeoffPanel: React.FC<{
       {excluded.length > 0 && (
         <table className="takeoff-table">
           <tbody>{excluded.map(rowView)}</tbody>
+        </table>
+      )}
+      <h4>Possible duplicates (shared line), not in the totals</h4>
+      <p>{totalsLine(data.possible_duplicates)}</p>
+      {duplicates.length > 0 && (
+        <table className="takeoff-table">
+          <tbody>{duplicates.map(rowView)}</tbody>
         </table>
       )}
     </div>

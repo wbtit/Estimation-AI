@@ -4,6 +4,7 @@ import type { Selectable } from 'kysely';
 import type { MembersTable, ReviewStatus, ViewBox } from '../db/types.js';
 import { mmToFeetInches } from '../units/index.js';
 import { MM_PER_PT } from './geometry.js';
+import type { SharedLine } from './shared-line.js';
 import { statusOf, type LinkConfidence, type MarkRefStatus, type Status } from './status.js';
 
 export type MemberRow = Selectable<MembersTable>;
@@ -77,6 +78,14 @@ export interface MemberView {
   base_elevation_mm: number | null;
   top_elevation_mm: number | null;
   status: Status;
+  /** Set by annotateSharedLines: members that share a chosen line. */
+  shared_line: SharedLine | null;
+  /** The person's own answer for this member's shared line (an edit). */
+  shared_resolution: 'separate' | null;
+  /** A person merged this member into another one (it leaves the takeoff). */
+  merged_into: string | null;
+  /** A person said this is not a member (see item 5b). */
+  not_member: { reason: string } | null;
   plan_point: { x_mm: number | null; y_mm: number | null } | null;
 }
 
@@ -204,6 +213,10 @@ export function memberView(
     base_elevation_mm: baseElev,
     top_elevation_mm: topElev,
     status,
+    shared_line: null,
+    shared_resolution: (e.get('shared_line') as 'separate' | null | undefined) ?? null,
+    merged_into: (e.get('merged_into') as string | null | undefined) ?? null,
+    not_member: (e.get('not_member') as { reason: string } | null | undefined) ?? null,
     plan_point:
       row.origin === 'manual' && row.plan_start_x_mm !== null
         ? { x_mm: num(row.plan_start_x_mm), y_mm: num(row.plan_start_y_mm) }

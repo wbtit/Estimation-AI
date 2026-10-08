@@ -4,8 +4,11 @@
 import { mmToFeetInches } from '../units/index.js';
 import type { MemberView } from './members.js';
 import type { ViewBox } from '../db/types.js';
+import { isPossibleDuplicate } from './shared-line.js';
 
 export type TakeoffColor = 'green' | 'amber' | 'red';
+/** main = in the totals; red = held out because red; duplicate = held out as a possible duplicate (shared line). */
+export type TakeoffKind = 'main' | 'red' | 'duplicate';
 
 export interface TakeoffRow {
   /** Stable key of the row (level, mark, profile and whether it is excluded). */
@@ -27,6 +30,7 @@ export interface TakeoffRow {
   /** The worst color of the members in the row (red rows hold red members only). */
   color: TakeoffColor;
   confirmed: boolean;
+  kind: TakeoffKind;
   excluded: boolean;
   reasons: string[];
   /** First member of the row: where "click a row to jump" goes. */
@@ -52,8 +56,11 @@ export interface Takeoff {
   by_level: { level: string | null; totals: TakeoffTotals }[];
   totals: TakeoffTotals;
   excluded_red: TakeoffTotals;
+  /** Members that share a line with a better-scoring member and nobody has decided yet. */
+  possible_duplicates: TakeoffTotals;
 }
 
+const KIND_ORDER: Record<TakeoffKind, number> = { main: 0, red: 1, duplicate: 2 };
 const RANK: Record<TakeoffColor, number> = { green: 0, amber: 1, red: 2 };
 
 function emptyTotals(): TakeoffTotals {
@@ -84,13 +91,17 @@ const compare = (a: string | null, b: string | null): number => {
   return a.localeCompare(b, 'en', { numeric: true });
 };
 
+function kindOf(m: MemberView): TakeoffKind {
+  if (m.status.color === 'red') return 'red';
+  return isPossibleDuplicate(m) ? 'duplicate' : 'main';
+}
+
 /** Group members into takeoff rows and add up the totals. `pageOf` maps a sheet id to its page number. */
 export function buildTakeoff(members: MemberView[], pageOf: Map<string, number>): Takeoff {
   const groups = new Map<string, MemberView[]>();
   for (const m of members) {
-    if (m.deleted) continue;
-    const excluded = m.status.color === 'red';
-    const key = JSON.stringify([m.level, m.mark, m.profile ?? m.profile_raw, excluded]);
+    if (m.deleted || m.merged_into !== null || m.not_member !== null) continue;
+    const key = JSON.stringify([m.level, m.mark, m.profile ?? m.profile_raw, kindOf(m)]);
     const list = groups.get(key) ?? [];
     list.push(m);
     groups.set(key, list);
@@ -130,7 +141,8 @@ export function buildTakeoff(members: MemberView[], pageOf: Map<string, number>)
       sheets: pages,
       color,
       confirmed: list.every((m) => m.status.confirmed),
-      excluded: color === 'red',
+      kind: kindOf(first),
+      excluded: kindOf(first) !== 'main',
       reasons: [...new Set(list.flatMap((m) => m.status.reasons))],
       source: {
         member_id: first.id,
@@ -144,7 +156,7 @@ export function buildTakeoff(members: MemberView[], pageOf: Map<string, number>)
 
   rows.sort(
     (a, b) =>
-      Number(a.excluded) - Number(b.excluded) ||
+      KIND_ORDER[a.kind] - KIND_ORDER[b.kind] ||
       compare(a.level, b.level) ||
       compare(a.mark, b.mark) ||
       compare(a.profile ?? a.profile_raw, b.profile ?? b.profile_raw),
@@ -152,10 +164,11 @@ export function buildTakeoff(members: MemberView[], pageOf: Map<string, number>)
 
   const totals = emptyTotals();
   const excluded = emptyTotals();
+  const duplicates = emptyTotals();
   const levels = new Map<string | null, TakeoffTotals>();
   for (const row of rows) {
-    if (row.excluded) {
-      add(excluded, row);
+    if (row.kind !== 'main') {
+      add(row.kind === 'red' ? excluded : duplicates, row);
       continue;
     }
     add(totals, row);
@@ -167,5 +180,11 @@ export function buildTakeoff(members: MemberView[], pageOf: Map<string, number>)
     .map(([level, t]) => ({ level, totals: finish(t) }))
     .sort((a, b) => compare(a.level, b.level));
 
-  return { rows, by_level, totals: finish(totals), excluded_red: finish(excluded) };
+  return {
+    rows,
+    by_level,
+    totals: finish(totals),
+    excluded_red: finish(excluded),
+    possible_duplicates: finish(duplicates),
+  };
 }

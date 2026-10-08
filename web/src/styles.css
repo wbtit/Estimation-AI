@@ -383,3 +383,13 @@ mark {
   padding-left: 16px;
   margin: 4px 0;
 }
+
+.shared-tag {
+  color: #8a5a00;
+  font-size: 11px;
+}
+.shared-box {
+  border: 1px solid #f0a30a;
+  background: #fff8e6;
+  padding: 4px 6px;
+}

@@ -28,6 +28,7 @@ export const MemberActions: React.FC<{
     type?: string;
   }) => void;
   onLegend: (rowId: string) => void;
+  onSharedLine: (resolution: "separate" | "merge") => void;
 }> = ({
   member,
   legend,
@@ -38,6 +39,7 @@ export const MemberActions: React.FC<{
   onRelink,
   onPatch,
   onLegend,
+  onSharedLine,
 }) => {
   const [profile, setProfile] = useState(member.profile_raw ?? "");
   const [mark, setMark] = useState(member.mark ?? "");
@@ -88,6 +90,23 @@ export const MemberActions: React.FC<{
         </button>
         <button onClick={onDelete}>Delete (Del)</button>
       </div>
+      {member.shared_line && !member.shared_line.resolved && (
+        <div className="shared-box warn">
+          {member.shared_line.size} members share this line
+          {member.shared_line.best
+            ? " (this one stays in the total)"
+            : " (this one is held out of the total as a possible duplicate)"}
+          .
+          <div className="row">
+            <button onClick={() => onSharedLine("separate")}>
+              Separate members
+            </button>
+            <button onClick={() => onSharedLine("merge")}>
+              Merge into the best
+            </button>
+          </div>
+        </div>
+      )}
       {member.type !== "column" && (
         <div className="row">
           {member.link.candidates.map((c) => (
