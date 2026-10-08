@@ -75,6 +75,7 @@ const patchBody = {
     level: { type: ['string', 'null'], maxLength: 60 },
     type: { enum: ['column', 'beam', 'brace', 'joist', 'other'] },
     quantity: { type: 'integer', minimum: 1, maximum: 999 },
+    length: { type: ['string', 'null'], maxLength: 40 },
   },
 } as const;
 const linkBody = {
@@ -341,6 +342,7 @@ export const memberActionRoutes: FastifyPluginAsync<MemberActionOptions> = async
       level?: string | null;
       type?: string;
       quantity?: number;
+      length?: string | null;
     };
   }>(
     '/api/projects/:projectId/members/:memberId',

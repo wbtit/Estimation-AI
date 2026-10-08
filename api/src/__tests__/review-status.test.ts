@@ -43,14 +43,10 @@ describe('color rules', () => {
     expect(s({ profileOnLabel: false, markStatus: null }).color).toBe('amber');
   });
 
-  it('red: low confidence, no candidate, ambiguous mark, scale not confirmed, no length', () => {
+  it('red: low confidence, ambiguous mark, scale not confirmed, no length', () => {
     expect(s({ linkConfidence: 'low' })).toMatchObject({
       color: 'red',
       reasons: [REASONS.confidenceLow],
-    });
-    expect(s({ linkConfidence: 'low', hasLine: false, lengthMm: null })).toMatchObject({
-      color: 'red',
-      reasons: [REASONS.noLine],
     });
     expect(s({ markStatus: 'ambiguous', profileOnLabel: false }).reasons).toEqual([
       REASONS.markAmbiguous,
@@ -78,7 +74,26 @@ describe('color rules', () => {
     expect(s({ humanConfirmed: true, profileParsed: false }).color).toBe('green');
     expect(s({ humanConfirmed: true, scaleConfirmed: false, lengthMm: null }).color).toBe('red');
     expect(s({ humanConfirmed: true, markStatus: 'ambiguous' }).color).toBe('red');
-    expect(s({ humanConfirmed: true, hasLine: false, lengthMm: null }).color).toBe('red');
+    expect(
+      s({ humanConfirmed: true, scaleConfirmed: false, manualLength: true, lengthMm: 3000 }).color,
+    ).toBe('red');
+  });
+
+  it('unlinked: a profile label with no candidate line is not a red member', () => {
+    expect(s({ linkConfidence: 'low', hasLine: false, lengthMm: null })).toEqual({
+      color: 'unlinked',
+      confirmed: false,
+      reasons: [REASONS.noLine],
+    });
+    // even when the scale is not confirmed or a person pressed "looks right"
+    expect(s({ hasLine: false, lengthMm: null, scaleConfirmed: false }).color).toBe('unlinked');
+    expect(s({ hasLine: false, lengthMm: null, humanConfirmed: true }).color).toBe('unlinked');
+  });
+
+  it('a typed length makes a label without a line a member (green once a person set it)', () => {
+    expect(s({ hasLine: false, manualLength: true, lengthMm: 3000, humanConfirmed: true })).toEqual(
+      { color: 'green', confirmed: true, reasons: [] },
+    );
   });
 
   it('a link fixed by hand has no proposal confidence but is green', () => {

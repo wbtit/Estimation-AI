@@ -4,12 +4,14 @@ export const COLOUR_HEX: Record<Color, string> = {
   green: "#1f9d3f",
   amber: "#f0a30a",
   red: "#d12c2c",
+  unlinked: "#6b7a99",
 };
 
 export const COLOUR_WORD: Record<Color, string> = {
   green: "green",
   amber: "amber",
   red: "red",
+  unlinked: "unlinked",
 };
 
 /** Stable swatch colour of a stroke class (same order as the class table). */

@@ -105,7 +105,7 @@ export interface NotesSheet {
   lines: { text: string; bbox: Box }[];
 }
 
-export type Color = "green" | "amber" | "red";
+export type Color = "green" | "amber" | "red" | "unlinked";
 
 export interface Candidate {
   rank: number;
@@ -206,4 +206,8 @@ export interface TakeoffData {
   totals: TakeoffTotals;
   excluded_red: TakeoffTotals;
   possible_duplicates: TakeoffTotals;
+  unlinked_labels: {
+    count: number;
+    by_sheet: { sheet_id: string; page_number: number | null; count: number }[];
+  };
 }

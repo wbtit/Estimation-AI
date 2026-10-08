@@ -26,8 +26,10 @@ export const MembersPanel: React.FC<{
         a.i - b.i,
     )
     .map((x) => x.m);
-  const counts = { green: 0, amber: 0, red: 0 };
+  const counts = { green: 0, amber: 0, red: 0, unlinked: 0 };
   for (const m of visible) if (!m.merged_into) counts[m.status.color] += 1;
+  const linked = visible.filter((m) => m.status.color !== "unlinked");
+  const unlinked = visible.filter((m) => m.status.color === "unlinked");
   const selected = visible.find((m) => m.id === selectedId) ?? null;
   return (
     <div className="panel">
@@ -35,7 +37,8 @@ export const MembersPanel: React.FC<{
       <div className="counts">
         <span className="dot green" /> {counts.green}{" "}
         <span className="dot amber" /> {counts.amber}{" "}
-        <span className="dot red" /> {counts.red}
+        <span className="dot red" /> {counts.red}{" "}
+        <span className="dot unlinked" /> {counts.unlinked} unlinked
       </div>
       <button
         className={addingColumn ? "primary active" : "primary"}
@@ -46,7 +49,7 @@ export const MembersPanel: React.FC<{
           : "Add a column (C)"}
       </button>
       <ul className="member-list">
-        {visible.map((m) => (
+        {linked.map((m) => (
           <li key={m.id}>
             <button
               className={
@@ -74,12 +77,39 @@ export const MembersPanel: React.FC<{
             </button>
           </li>
         ))}
-        {visible.length === 0 && (
+        {linked.length === 0 && (
           <li className="hint">
             No members yet. Confirm a view scale and find members.
           </li>
         )}
       </ul>
+      {unlinked.length > 0 && (
+        <div className="unlinked-list">
+          <h4>Unlinked labels ({unlinked.length})</h4>
+          <p className="hint">
+            No line was found near these labels. They are not members and are in
+            no total. Select one and click a line (L), or type a length.
+          </p>
+          <ul className="member-list">
+            {unlinked.map((m) => (
+              <li key={m.id}>
+                <button
+                  className={
+                    m.id === selectedId ? "member-item selected" : "member-item"
+                  }
+                  onClick={() => onSelect(m.id)}
+                >
+                  <span
+                    className="dot"
+                    style={{ background: COLOUR_HEX.unlinked }}
+                  />{" "}
+                  <b>{memberTitle(m)}</b>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       {selected && (
         <div className="member-detail">
           <h4>{memberTitle(selected)}</h4>

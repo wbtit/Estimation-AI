@@ -6,6 +6,7 @@ import { sql } from 'kysely';
 import type { Database } from '../db/types.js';
 import { recordAction, type EditEntry } from './actions.js';
 import type { Line, LinkEdit, LinkReset, MemberView } from './members.js';
+import { parseLengthMm } from '../units/parse.js';
 import { parseProfile } from './profile.js';
 import { groupOf } from './shared-line.js';
 
@@ -27,12 +28,19 @@ export function linkValue(m: MemberView): LinkEdit | LinkReset {
     : { reset: true };
 }
 
+/** The typed length in force (an edit), not the line length. */
+function typedLengthOf(m: MemberView): number | null {
+  return m.length_source === 'manual' && m.type !== 'column' ? m.length_mm : null;
+}
+
 export interface MemberPatch {
   profile_text?: string | null;
   mark?: string | null;
   level?: string | null;
   type?: string;
   quantity?: number;
+  /** A typed length (feet-inch or mm); empty clears it. */
+  length?: string | null;
 }
 
 /** Edits for changed fields only; the profile text is re-parsed into the canonical profile. */
@@ -57,6 +65,15 @@ export function patchEntries(
   if (patch.level !== undefined) push('level', memberLevelOverride, patch.level?.trim() || null);
   if (patch.type !== undefined) push('type', m.type, patch.type);
   if (patch.quantity !== undefined) push('quantity', m.quantity, patch.quantity);
+  if (patch.length !== undefined) {
+    const text = patch.length === null ? '' : patch.length.trim();
+    let mm: number | null = null;
+    if (text !== '') {
+      mm = parseLengthMm(text);
+      if (mm === null) throw new OpError(400, 'the length is not a length (use 12\'-6", 3000 mm)');
+    }
+    push('length_mm', typedLengthOf(m), mm === null ? null : Math.round(mm * 10) / 10);
+  }
   return out;
 }
 

@@ -57,6 +57,15 @@ export const TakeoffPanel: React.FC<{
   return (
     <div className="panel takeoff">
       <h3>Takeoff</h3>
+      {data.unlinked_labels.count > 0 && (
+        <p className="warn">
+          {data.unlinked_labels.count} unlinked labels on reviewed sheets (pages{" "}
+          {data.unlinked_labels.by_sheet
+            .map((s) => `${s.page_number ?? "?"}: ${s.count}`)
+            .join(", ")}
+          ). They are not members and are in no total.
+        </p>
+      )}
       <div className="row">
         <a href={`/api/projects/${projectId}/takeoff.xlsx`} download>
           Download Excel

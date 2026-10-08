@@ -42,10 +42,18 @@ export function nextToReview<
     id: string;
     deleted: boolean;
     status: { color: string; confirmed: boolean };
+    merged_into?: string | null;
+    not_member?: unknown;
   },
 >(members: T[], currentId: string | null): string | null {
   const open = members.filter(
-    (m) => !m.deleted && !m.status.confirmed && m.status.color !== "green",
+    (m) =>
+      !m.deleted &&
+      !m.merged_into &&
+      !m.not_member &&
+      !m.status.confirmed &&
+      m.status.color !== "green" &&
+      m.status.color !== "unlinked",
   );
   if (open.length === 0) return null;
   const ranked = [...open].sort(

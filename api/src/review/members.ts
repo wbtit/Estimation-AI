@@ -142,6 +142,8 @@ export function memberView(
   const type = pick('type', row.type);
   const baseElev = pick('start_elevation_mm', num(row.start_elevation_mm));
   const topElev = pick('end_elevation_mm', num(row.end_elevation_mm));
+  const typedLength =
+    type === 'column' ? null : ((e.get('length_mm') as number | null | undefined) ?? null);
   let lengthMm: number | null = null;
   let lengthSource = row.length_source;
   if (type === 'column') {
@@ -149,6 +151,9 @@ export function memberView(
       lengthMm = Math.abs(topElev - baseElev);
       lengthSource = 'manual';
     }
+  } else if (typedLength !== null) {
+    lengthMm = typedLength;
+    lengthSource = 'manual';
   } else if (line && ratio) {
     lengthMm = lineLengthMm(line, ratio);
     lengthSource = 'plan_geometry';
@@ -164,15 +169,18 @@ export function memberView(
     row.origin === 'manual' ||
     reviewStatus === 'approved' ||
     reviewStatus === 'edited' ||
-    linkEdit !== undefined;
+    linkEdit !== undefined ||
+    typedLength !== null;
   const profileOnLabel = row.mark === null && row.origin !== 'manual';
   const status = statusOf({
     memberType: type,
     linkConfidence: row.link_confidence,
     hasLine: line !== null,
+    manualLength: typedLength !== null,
     humanConfirmed,
     // a column's length comes from its elevations, so its view scale does not matter
-    scaleConfirmed: type === 'column' ? true : (view?.scaleConfirmed ?? false),
+    scaleConfirmed:
+      type === 'column' || typedLength !== null ? true : (view?.scaleConfirmed ?? false),
     lengthMm,
     profileParsed: profile !== null,
     profileOnLabel: profileOnLabel || (row.origin === 'manual' && row.mark === null),

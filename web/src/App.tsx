@@ -548,6 +548,10 @@ export const App: React.FC = () => {
           sheet={sheet}
           onPageType={(v) => void override("page-type", v)}
           onLevel={(v) => void override("level", v)}
+          unlinkedCount={
+            members.filter((m) => !m.deleted && m.status.color === "unlinked")
+              .length
+          }
         />
       )}
       <div className="layout">

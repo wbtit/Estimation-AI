@@ -116,6 +116,29 @@ describe('takeoff grouping', () => {
     expect(t.rows[0].total_length_mm).toBe(1000);
   });
 
+  it('unlinked labels are in no total and no row; they are counted per sheet as a warning', () => {
+    const lonely = (sheet: string) =>
+      member({
+        sheet_id: sheet,
+        length_mm: null,
+        status: { color: 'unlinked', confirmed: false, reasons: ['no candidate line'] },
+      } as never);
+    const t = buildTakeoff(
+      [member({}), lonely('sheet-14'), lonely('sheet-14'), lonely('sheet-15')],
+      pages,
+    );
+    expect(t.rows).toHaveLength(1);
+    expect(t.totals.pieces).toBe(1);
+    expect(t.excluded_red.pieces).toBe(0);
+    expect(t.unlinked_labels).toEqual({
+      count: 3,
+      by_sheet: [
+        { sheet_id: 'sheet-14', page_number: 14, count: 2 },
+        { sheet_id: 'sheet-15', page_number: 15, count: 1 },
+      ],
+    });
+  });
+
   it('is empty and zero for a project without members', () => {
     const t = buildTakeoff([], pages);
     expect(t.rows).toEqual([]);

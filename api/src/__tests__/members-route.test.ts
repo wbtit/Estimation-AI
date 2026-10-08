@@ -111,7 +111,7 @@ describe('members', () => {
   it('lists effective members with colors, lengths and the top candidates', async () => {
     const res = await list();
     expect(res.count).toBe(5);
-    expect(res.colors).toEqual({ green: 1, amber: 1, red: 3 });
+    expect(res.colors).toEqual({ green: 1, amber: 1, red: 2, unlinked: 1 });
     const g = byKey(res.members, 'green');
     expect(g.status).toEqual({ color: 'green', confirmed: false, reasons: [] });
     // 600 pt of paper at 1/8" = 1'-0" is 600/72 in x 96 = 800 in = 66'-8"
@@ -123,7 +123,10 @@ describe('members', () => {
     expect(g.link.candidates).toHaveLength(2);
     expect(byKey(res.members, 'amber').status.reasons).toEqual(['link confidence medium']);
     expect(byKey(res.members, 'red').status.reasons).toEqual(['link confidence low']);
-    expect(byKey(res.members, 'nolink').status.reasons).toEqual(['no candidate line']);
+    expect(byKey(res.members, 'nolink').status).toMatchObject({
+      color: 'unlinked',
+      reasons: ['no candidate line'],
+    });
     const ns = byKey(res.members, 'noscale');
     expect(ns.status.reasons).toEqual(['scale of the view is not confirmed']);
     expect(ns.length_mm).toBeNull();
@@ -264,5 +267,42 @@ describe('link job', () => {
     ).json();
     expect(none.job).toBeNull();
     await db.deleteFrom('jobs').where('id', '=', first.json().job_id).execute();
+  });
+});
+
+describe('an unlinked label and a typed length', () => {
+  it('becomes a member when a person types its length, and the edit can be undone', async () => {
+    await member('typed', {
+      view_id: viewId,
+      link_confidence: 'low',
+      profile_raw: 'W12x26',
+      profile: 'W12X26',
+      link_candidates: JSON.stringify([]),
+    });
+    expect(byKey((await list()).members, 'typed').status.color).toBe('unlinked');
+    const patch = (body: object) =>
+      app.inject({
+        method: 'PATCH',
+        url: `/api/projects/${projectId}/members/${ids.typed}`,
+        payload: { who: 'alice', ...body },
+      });
+    const bad = await patch({ length: 'about twelve feet' });
+    expect(bad.statusCode).toBe(400);
+    const ok = await patch({ length: '12\'-0"' });
+    expect(ok.statusCode).toBe(200);
+    expect(ok.json().member).toMatchObject({
+      length_source: 'manual',
+      status: { color: 'green', confirmed: true },
+    });
+    expect(ok.json().member.length_mm).toBeCloseTo(3657.6, 1);
+    const undo = await app.inject({
+      method: 'POST',
+      url: `/api/projects/${projectId}/undo`,
+      payload: { who: 'alice' },
+    });
+    expect(undo.statusCode).toBe(200);
+    const after = byKey((await list()).members, 'typed');
+    expect(after.status.color).toBe('unlinked');
+    expect(after.length_mm).toBeNull();
   });
 });

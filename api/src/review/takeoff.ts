@@ -7,6 +7,12 @@ import type { ViewBox } from '../db/types.js';
 import { isPossibleDuplicate } from './shared-line.js';
 
 export type TakeoffColor = 'green' | 'amber' | 'red';
+
+/** Profile labels with no line and no typed length. They are not members and are in no total. */
+export interface UnlinkedSummary {
+  count: number;
+  by_sheet: { sheet_id: string; page_number: number | null; count: number }[];
+}
 /** main = in the totals; red = held out because red; duplicate = held out as a possible duplicate (shared line). */
 export type TakeoffKind = 'main' | 'red' | 'duplicate';
 
@@ -58,6 +64,7 @@ export interface Takeoff {
   excluded_red: TakeoffTotals;
   /** Members that share a line with a better-scoring member and nobody has decided yet. */
   possible_duplicates: TakeoffTotals;
+  unlinked_labels: UnlinkedSummary;
 }
 
 const KIND_ORDER: Record<TakeoffKind, number> = { main: 0, red: 1, duplicate: 2 };
@@ -99,8 +106,14 @@ function kindOf(m: MemberView): TakeoffKind {
 /** Group members into takeoff rows and add up the totals. `pageOf` maps a sheet id to its page number. */
 export function buildTakeoff(members: MemberView[], pageOf: Map<string, number>): Takeoff {
   const groups = new Map<string, MemberView[]>();
+  const unlinked = new Map<string, number>();
   for (const m of members) {
     if (m.deleted || m.merged_into !== null || m.not_member !== null) continue;
+    if (m.status.color === 'unlinked') {
+      const sid = m.sheet_id ?? '';
+      unlinked.set(sid, (unlinked.get(sid) ?? 0) + 1);
+      continue;
+    }
     const key = JSON.stringify([m.level, m.mark, m.profile ?? m.profile_raw, kindOf(m)]);
     const list = groups.get(key) ?? [];
     list.push(m);
@@ -112,10 +125,10 @@ export function buildTakeoff(members: MemberView[], pageOf: Map<string, number>)
     const first = list[0];
     const measured = list.filter((m) => m.length_mm !== null);
     const total = measured.reduce((sum, m) => sum + (m.length_mm as number) * m.quantity, 0);
-    const color = list.reduce<TakeoffColor>(
-      (worst, m) => (RANK[m.status.color] > RANK[worst] ? m.status.color : worst),
-      'green',
-    );
+    const color = list.reduce<TakeoffColor>((worst, m) => {
+      const c = m.status.color as TakeoffColor;
+      return RANK[c] > RANK[worst] ? c : worst;
+    }, 'green');
     const pages = [
       ...new Set(
         list.flatMap((m) => {
@@ -186,5 +199,15 @@ export function buildTakeoff(members: MemberView[], pageOf: Map<string, number>)
     totals: finish(totals),
     excluded_red: finish(excluded),
     possible_duplicates: finish(duplicates),
+    unlinked_labels: {
+      count: [...unlinked.values()].reduce((a, b) => a + b, 0),
+      by_sheet: [...unlinked.entries()]
+        .map(([sheet_id, count]) => ({
+          sheet_id,
+          page_number: pageOf.get(sheet_id) ?? null,
+          count,
+        }))
+        .sort((a, b) => (a.page_number ?? 0) - (b.page_number ?? 0)),
+    },
   };
 }

@@ -154,6 +154,12 @@ export async function buildTakeoffWorkbook(input: TakeoffExportInput): Promise<B
     d.total_length_mm,
     d.unmeasured,
   ]);
+  sum.addRow([]);
+  bold(sum.addRow(['Unlinked labels (profile labels with no line; not members, in no total)']));
+  sum.addRow(['Unlinked labels on the sheets of this takeoff', takeoff.unlinked_labels.count]);
+  for (const s of takeoff.unlinked_labels.by_sheet) {
+    sum.addRow([`Sheet page ${s.page_number ?? '?'}`, s.count]);
+  }
   sum.columns.forEach((col, i) => {
     col.width = i === 0 ? 34 : 20;
   });

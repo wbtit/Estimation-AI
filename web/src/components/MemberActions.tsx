@@ -26,6 +26,7 @@ export const MemberActions: React.FC<{
     mark?: string | null;
     level?: string | null;
     type?: string;
+    length?: string | null;
   }) => void;
   onLegend: (rowId: string) => void;
   onSharedLine: (resolution: "separate" | "merge") => void;
@@ -44,14 +45,25 @@ export const MemberActions: React.FC<{
   const [profile, setProfile] = useState(member.profile_raw ?? "");
   const [mark, setMark] = useState(member.mark ?? "");
   const [level, setLevel] = useState(member.level ?? "");
+  const [length, setLength] = useState("");
   useEffect(() => {
     setProfile(member.profile_raw ?? "");
     setMark(member.mark ?? "");
     setLevel(member.level ?? "");
-  }, [member.id, member.profile_raw, member.mark, member.level]);
+    setLength(
+      member.length_source === "manual" ? (member.length_ft_in ?? "") : "",
+    );
+  }, [
+    member.id,
+    member.profile_raw,
+    member.mark,
+    member.level,
+    member.length_source,
+    member.length_ft_in,
+  ]);
 
   const save = (
-    field: "profile_text" | "mark" | "level",
+    field: "profile_text" | "mark" | "level" | "length",
     value: string,
     current: string | null,
   ) => {
@@ -134,6 +146,14 @@ export const MemberActions: React.FC<{
       {field("level", level, setLevel, () =>
         save("level", level, member.level),
       )}
+      {member.type !== "column" &&
+        field("typed length (e.g. 12'-6\")", length, setLength, () =>
+          save(
+            "length",
+            length,
+            member.length_source === "manual" ? member.length_ft_in : null,
+          ),
+        )}
       <label className="field">
         type
         <select

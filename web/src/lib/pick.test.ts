@@ -50,4 +50,13 @@ describe("next member to review", () => {
     expect(nextToReview(list, "a")).toBe("c");
     expect(nextToReview([m("x", "green")], null)).toBeNull();
   });
+  it("skips unlinked labels, merged members and not-a-member", () => {
+    const list = [
+      m("u", "unlinked"),
+      { ...m("g", "amber"), merged_into: "a" },
+      { ...m("n", "red"), not_member: { reason: "existing" } },
+      m("ok", "amber"),
+    ];
+    expect(nextToReview(list, null)).toBe("ok");
+  });
 });

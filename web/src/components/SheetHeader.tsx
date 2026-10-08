@@ -15,7 +15,8 @@ export const SheetHeader: React.FC<{
   sheet: Sheet;
   onPageType: (value: string | null) => void;
   onLevel: (value: string | null) => void;
-}> = ({ sheet, onPageType, onLevel }) => {
+  unlinkedCount?: number;
+}> = ({ sheet, onPageType, onLevel, unlinkedCount = 0 }) => {
   const level = sheet.level?.effective ?? "";
   const [text, setText] = useState(level);
   useEffect(() => setText(level), [level, sheet.id]);
@@ -70,6 +71,11 @@ export const SheetHeader: React.FC<{
       </label>
       {sheet.level && !sheet.level.overridden && sheet.level.guess && (
         <span className="hint">(suggested)</span>
+      )}
+      {unlinkedCount > 0 && (
+        <span className="warn" title="profile labels with no line near them">
+          {unlinkedCount} unlinked labels on this sheet
+        </span>
       )}
     </div>
   );

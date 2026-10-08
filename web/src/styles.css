@@ -393,3 +393,10 @@ mark {
   background: #fff8e6;
   padding: 4px 6px;
 }
+
+.dot.unlinked {
+  background: #6b7a99;
+}
+.warn {
+  color: #8a5a00;
+}
