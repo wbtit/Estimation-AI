@@ -1,4 +1,4 @@
-.PHONY: setup setup-ocr up down ps migrate api worker web schema seed-synthetic test test-api test-worker lint lint-api lint-worker lint-web gitleaks hooks glyph-sheets glyph-export glyph-import glyph-summary
+.PHONY: test-db setup setup-ocr up down ps migrate api worker web schema seed-synthetic test test-api test-worker lint lint-api lint-worker lint-web gitleaks hooks glyph-sheets glyph-export glyph-import glyph-summary
 
 # One-time install: Node deps (root, api, web), Python 3.12 venv via uv, git hooks.
 setup: hooks
@@ -47,10 +47,13 @@ seed-synthetic:
 # Tests need the database: run `make up` and `make migrate` first.
 test: test-api test-worker
 
-test-api:
+test-db:
+	npm --prefix api run test-db
+
+test-api: test-db
 	npm --prefix api test
 
-test-worker:
+test-worker: test-db
 	cd worker && .venv/bin/pytest
 
 lint: lint-api lint-worker lint-web

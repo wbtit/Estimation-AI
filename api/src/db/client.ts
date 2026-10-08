@@ -1,13 +1,16 @@
 import { Kysely, PostgresDialect } from 'kysely';
 import pg from 'pg';
 import type { Database } from './types.js';
+import { assertTestDatabaseUrl } from './test-database.js';
 
 let pool: pg.Pool | null = null;
 let db: Kysely<Database> | null = null;
 
-function databaseUrl(): string {
+export function databaseUrl(): string {
   const url = process.env.DATABASE_URL;
   if (!url) throw new Error('DATABASE_URL is not set (see .env.example)');
+  // Under the test runner only a database whose name ends with "_test" may be used.
+  if (process.env.VITEST) assertTestDatabaseUrl(url);
   return url;
 }
 

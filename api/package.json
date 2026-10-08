@@ -13,7 +13,8 @@
     "typecheck": "tsc --noEmit",
     "schema:generate": "tsx src/scripts/generate-schema.ts",
     "catalog:import": "tsx src/scripts/import-catalog.ts",
-    "seed:synthetic": "tsx src/scripts/seed-synthetic.ts"
+    "seed:synthetic": "tsx src/scripts/seed-synthetic.ts",
+    "test-db": "tsx src/scripts/ensure-test-db.ts"
   },
   "dependencies": {
     "@fastify/multipart": "^10.1.2",
