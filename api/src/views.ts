@@ -1,6 +1,7 @@
 // JSON shapes returned by the project and sheet endpoints. NUMERIC columns arrive from pg as
 // strings and are converted to numbers here.
 import type { Selectable } from 'kysely';
+import { singleSheetScale, wholeSheetBox } from './review/geometry.js';
 import type { ProjectFilesTable, ProjectsTable, SheetsTable } from './db/types.js';
 
 const num = (v: string | null): number | null => (v === null ? null : Number(v));
@@ -56,6 +57,15 @@ export interface SheetOverrides {
   level?: string | null;
 }
 
+/** One click "whole sheet" view: offered only when the sheet has exactly one distinct scale. */
+export function wholeSheetOffer(sheet: Selectable<SheetsTable>) {
+  const scale = singleSheetScale(sheet.scales);
+  const w = num(sheet.width_pt);
+  const h = num(sheet.height_pt);
+  if (!scale || w === null || h === null) return { available: false, scale: null, box: null };
+  return { available: true, scale, box: wholeSheetBox(w, h) };
+}
+
 export function sheetView(sheet: Selectable<SheetsTable>, overrides: SheetOverrides = {}) {
   const effective = effectiveScale(sheet);
   const typeOverridden = overrides.page_type !== undefined && overrides.page_type !== null;
@@ -84,6 +94,7 @@ export function sheetView(sheet: Selectable<SheetsTable>, overrides: SheetOverri
       image_coverage: num(sheet.image_coverage),
     },
     scales_found: sheet.scales,
+    whole_sheet: wholeSheetOffer(sheet),
     scale: {
       parsed: sheet.scale_parsed,
       parsed_ratio: num(sheet.scale_parsed_ratio),

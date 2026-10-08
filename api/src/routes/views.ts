@@ -14,13 +14,16 @@ import type { FastifyPluginAsync } from 'fastify';
 import type { Kysely, Selectable } from 'kysely';
 import { resolveUploadDir } from '../config.js';
 import { getDb } from '../db/client.js';
-import type { Database, SheetViewsTable, ViewBox } from '../db/types.js';
+import type { Database, SheetViewsTable, SheetsTable, ViewBox } from '../db/types.js';
+import { wholeSheetOffer } from '../views.js';
 import {
   boxProblem,
   normaliseBox,
   planFrameOf,
+  singleSheetScale,
   suggestScale,
   type ScaleItem,
+  type ScaleSuggestion,
 } from '../review/geometry.js';
 import { parseScaleExact } from '../scale/index.js';
 import { HttpError } from './http-error.js';
@@ -59,10 +62,12 @@ const projectParams = {
 } as const;
 const createBody = {
   type: 'object',
-  required: ['box', 'who'],
+  required: ['who'],
   additionalProperties: false,
   properties: {
     box: boxSchema,
+    /** One click: the whole sheet minus a fixed margin and title strip (only if the sheet has one scale). */
+    whole_sheet: { type: 'boolean' },
     name: { type: ['string', 'null'], maxLength: 100 },
     who: { type: 'string', minLength: 1, maxLength: 100 },
   },
@@ -179,8 +184,25 @@ export const viewRoutes: FastifyPluginAsync<ViewRouteOptions> = async (app, opti
     return row;
   }
 
-  async function suggestionFor(sheetId: string, box: ViewBox) {
-    return suggestScale(box, await scaleItemsOfSheet(db(), sheetId));
+  /** Scale text in or near the box; else the sheet's only scale (a suggestion, never confirmed by itself). */
+  async function suggestionFor(
+    sheet: Selectable<SheetsTable>,
+    box: ViewBox,
+    items?: ScaleItem[],
+  ): Promise<ScaleSuggestion | null> {
+    const found = suggestScale(box, items ?? (await scaleItemsOfSheet(db(), sheet.id)));
+    if (found) return found;
+    const only = singleSheetScale(sheet.scales);
+    return only
+      ? {
+          ratio: only.ratio,
+          raw: only.raw,
+          where: 'sheet',
+          distance_pt: 0,
+          alternatives: [],
+          ambiguous: false,
+        }
+      : null;
   }
 
   app.get<{ Params: { projectId: string; sheetId: string } }>(
@@ -196,24 +218,42 @@ export const viewRoutes: FastifyPluginAsync<ViewRouteOptions> = async (app, opti
         .orderBy('created_at')
         .execute();
       const items = await scaleItemsOfSheet(db(), sheetId);
-      return {
-        views: rows.map((r) =>
-          viewJson(r, r.scale_confirmed ? null : suggestScale(r.box as ViewBox, items)),
-        ),
-      };
+      const sheet = await loadSheet(projectId, sheetId);
+      const views = [];
+      for (const r of rows) {
+        views.push(
+          viewJson(
+            r,
+            r.scale_confirmed ? null : await suggestionFor(sheet, r.box as ViewBox, items),
+          ),
+        );
+      }
+      return { views };
     },
   );
 
   app.post<{
     Params: { projectId: string; sheetId: string };
-    Body: { box: ViewBox; name?: string | null; who: string };
+    Body: { box?: ViewBox; whole_sheet?: boolean; name?: string | null; who: string };
   }>(
     '/api/projects/:projectId/sheets/:sheetId/views',
     { schema: { params: sheetParams, body: createBody } },
     async (request, reply) => {
       const { projectId, sheetId } = request.params;
       const sheet = await loadSheet(projectId, sheetId);
-      const box = normaliseBox(request.body.box);
+      let rawBox = request.body.box;
+      if (request.body.whole_sheet) {
+        const offer = wholeSheetOffer(sheet);
+        if (!offer.available || !offer.box) {
+          throw new HttpError(409, {
+            error:
+              'this sheet does not have exactly one scale expression; draw a box for each plan area',
+          });
+        }
+        rawBox = offer.box;
+      }
+      if (!rawBox) throw new HttpError(400, { error: 'give a box or whole_sheet' });
+      const box = normaliseBox(rawBox);
       const problem = boxProblem(
         box,
         Number(sheet.width_pt ?? Infinity),
@@ -224,14 +264,14 @@ export const viewRoutes: FastifyPluginAsync<ViewRouteOptions> = async (app, opti
         .insertInto('sheet_views')
         .values({
           sheet_id: sheetId,
-          name: request.body.name ?? null,
+          name: request.body.name ?? (request.body.whole_sheet ? 'whole sheet' : null),
           box: JSON.stringify(box),
           plan_frame: JSON.stringify(planFrameOf(box)),
           created_by: request.body.who.trim(),
         })
         .returningAll()
         .executeTakeFirstOrThrow();
-      return reply.status(201).send(viewJson(row, await suggestionFor(sheetId, box)));
+      return reply.status(201).send(viewJson(row, await suggestionFor(sheet, box)));
     },
   );
 
@@ -283,7 +323,7 @@ export const viewRoutes: FastifyPluginAsync<ViewRouteOptions> = async (app, opti
           });
           auditAfter = { ratio: null, confirmed: false };
         } else if (scale.action === 'confirm_suggestion') {
-          const s = await suggestionFor(sheet.id, box);
+          const s = await suggestionFor(sheet, box);
           if (!s) throw new HttpError(409, { error: 'there is no scale suggestion for this view' });
           Object.assign(update, {
             scale_ratio: s.ratio,
@@ -348,7 +388,7 @@ export const viewRoutes: FastifyPluginAsync<ViewRouteOptions> = async (app, opti
           }
           return saved;
         });
-      return viewJson(row, row.scale_confirmed ? null : await suggestionFor(sheet.id, box));
+      return viewJson(row, row.scale_confirmed ? null : await suggestionFor(sheet, box));
     },
   );
 

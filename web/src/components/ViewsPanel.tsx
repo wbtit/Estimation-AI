@@ -8,6 +8,9 @@ export const ViewsPanel: React.FC<{
   onSelect: (id: string | null) => void;
   drawing: boolean;
   onDrawToggle: () => void;
+  /** One click view of the whole sheet, offered only when the sheet has exactly one scale. */
+  wholeSheet?: { available: boolean; scaleText: string | null };
+  onWholeSheet?: () => void;
   onConfirmSuggestion: (id: string) => void;
   onSetScale: (id: string, text: string) => void;
   onClearScale: (id: string) => void;
@@ -19,6 +22,8 @@ export const ViewsPanel: React.FC<{
   onSelect,
   drawing,
   onDrawToggle,
+  wholeSheet,
+  onWholeSheet,
   onConfirmSuggestion,
   onSetScale,
   onClearScale,
@@ -43,6 +48,16 @@ export const ViewsPanel: React.FC<{
           ? "Drawing: drag a box on the sheet (Esc to cancel)"
           : "Draw a view (V)"}
       </button>
+      {wholeSheet?.available ? (
+        <button onClick={onWholeSheet}>
+          Whole sheet (one scale found: {wholeSheet.scaleText})
+        </button>
+      ) : (
+        <p className="hint">
+          This sheet has no scale or several scales: draw a box for each plan
+          area.
+        </p>
+      )}
       <ul className="view-list">
         {views.map((v) => (
           <li key={v.id}>
@@ -86,10 +101,10 @@ export const ViewsPanel: React.FC<{
             </div>
           ) : selected.suggestion ? (
             <div className="suggestion">
-              Suggested from scale text{" "}
-              {selected.suggestion.where === "inside"
-                ? "inside the box"
-                : "near the box"}
+              Suggested from{" "}
+              {selected.suggestion.where === "sheet"
+                ? "the only scale found on this sheet"
+                : `scale text ${selected.suggestion.where === "inside" ? "inside the box" : "near the box"}`}
               : <b>{selected.suggestion.raw}</b> (ratio{" "}
               {selected.suggestion.ratio})
               {selected.suggestion.ambiguous && (

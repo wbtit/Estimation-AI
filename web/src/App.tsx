@@ -395,6 +395,23 @@ export const App: React.FC = () => {
     }
   };
 
+  const createWholeSheet = async () => {
+    const w = requireWho();
+    if (!w || !projectId || !sheetId) return;
+    try {
+      const v = await send<SheetView>(
+        "POST",
+        `/api/projects/${projectId}/sheets/${sheetId}/views`,
+        { whole_sheet: true, who: w },
+      );
+      await loadViews();
+      setViewId(v.id);
+      setMessage(null);
+    } catch (err) {
+      fail(err);
+    }
+  };
+
   const patchView = async (id: string, body: object) => {
     const w = requireWho();
     if (!w || !projectId) return;
@@ -844,6 +861,11 @@ export const App: React.FC = () => {
               onSelect={setViewId}
               drawing={drawing}
               onDrawToggle={() => setDrawing((d) => !d)}
+              wholeSheet={{
+                available: sheet?.whole_sheet?.available ?? false,
+                scaleText: sheet?.whole_sheet?.scale?.raw ?? null,
+              }}
+              onWholeSheet={() => void createWholeSheet()}
               onConfirmSuggestion={(id) =>
                 void patchView(id, { scale: { action: "confirm_suggestion" } })
               }

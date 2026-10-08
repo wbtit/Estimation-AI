@@ -29,6 +29,11 @@ export interface Sheet {
     has_text_layer: boolean | null;
   };
   scale: { effective: { raw: string; ratio: number | null } | null };
+  whole_sheet?: {
+    available: boolean;
+    scale: { raw: string; ratio: number } | null;
+    box: Box | null;
+  };
   needs_review: boolean;
   review_reasons: string[];
   thumbnail_url: string | null;
@@ -53,7 +58,7 @@ export interface LevelInfo {
 export interface ScaleSuggestion {
   ratio: number;
   raw: string;
-  where: "inside" | "near";
+  where: "inside" | "near" | "sheet";
   distance_pt: number;
   alternatives: { raw: string; ratio: number; distance_pt: number }[];
   ambiguous: boolean;

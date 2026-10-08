@@ -70,6 +70,37 @@ export function boxProblem(b: ViewBox, pageW: number, pageH: number): string | n
   return null;
 }
 
+/**
+ * "Whole sheet" view box. There is NO reliable rule for where the title block is (the sheet-number
+ * finder only knows a bottom-right corner and a far-right strip, and the study documents differ), so
+ * the box is a fixed margin: 2.5% of the page on every side for the sheet border, and the far-right
+ * 14% of the width left out for a title block strip. A title block along the bottom is NOT
+ * excluded; the person can adjust the box or draw one instead. Documented in docs/PHASE5B_PLAN.md.
+ */
+export const WHOLE_SHEET_BORDER_FRACTION = 0.025;
+export const WHOLE_SHEET_TITLE_STRIP_FRACTION = 0.14;
+
+export function wholeSheetBox(pageW: number, pageH: number): ViewBox {
+  const round = (v: number) => Math.round(v * 100) / 100;
+  return {
+    x0: round(pageW * WHOLE_SHEET_BORDER_FRACTION),
+    y0: round(pageH * WHOLE_SHEET_BORDER_FRACTION),
+    x1: round(pageW * (1 - WHOLE_SHEET_TITLE_STRIP_FRACTION)),
+    y1: round(pageH * (1 - WHOLE_SHEET_BORDER_FRACTION)),
+  };
+}
+
+/** The sheet's only scale, when the scan found exactly one distinct scale expression with a ratio. */
+export function singleSheetScale(
+  scales: { raw: string; kind: string; ratio: number | null; count?: number }[],
+): { raw: string; ratio: number } | null {
+  if (scales.length !== 1) return null;
+  const s = scales[0];
+  return s.kind === 'ratio' && s.ratio !== null && s.ratio > 0
+    ? { raw: s.raw, ratio: s.ratio }
+    : null;
+}
+
 export interface ScaleItem {
   bbox: ViewBox;
   raw: string;
@@ -79,7 +110,7 @@ export interface ScaleItem {
 export interface ScaleSuggestion {
   ratio: number;
   raw: string;
-  where: 'inside' | 'near';
+  where: 'inside' | 'near' | 'sheet';
   distance_pt: number;
   /** Other different scales found inside or near the box, nearest first. */
   alternatives: { raw: string; ratio: number; distance_pt: number }[];
