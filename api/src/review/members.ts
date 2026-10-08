@@ -4,6 +4,7 @@ import type { Selectable } from 'kysely';
 import type { MembersTable, ReviewStatus, ViewBox } from '../db/types.js';
 import { mmToFeetInches } from '../units/index.js';
 import { MM_PER_PT } from './geometry.js';
+import { parseJoist } from './joist.js';
 import type { SharedLine } from './shared-line.js';
 import { statusOf, type LinkConfidence, type MarkRefStatus, type Status } from './status.js';
 
@@ -78,6 +79,13 @@ export interface MemberView {
   base_elevation_mm: number | null;
   top_elevation_mm: number | null;
   status: Status;
+  /** Joist (K, LH, DLH series) designation parsed from the profile text; a joist is never matched to AISC. */
+  joist_series: {
+    series: 'K' | 'LH' | 'DLH';
+    canonical: string;
+    depth: string;
+    number: string;
+  } | null;
   /** Set by annotateSharedLines: members that share a chosen line. */
   shared_line: SharedLine | null;
   /** The person's own answer for this member's shared line (an edit). */
@@ -164,6 +172,8 @@ export function memberView(
     ? (e.get('mark_ref') as { status: MarkRefStatus | null; legend_row_id: string | null })
     : { status: row.mark_ref_status, legend_row_id: row.legend_row_id };
   const profile = pick('profile', row.profile);
+  const rawProfile = pick('profile_raw', row.profile_raw);
+  const joist = type === 'joist' && rawProfile ? parseJoist(rawProfile) : null;
   const mark = pick('mark', row.mark);
   const humanConfirmed =
     row.origin === 'manual' ||
@@ -182,7 +192,7 @@ export function memberView(
     scaleConfirmed:
       type === 'column' || typedLength !== null ? true : (view?.scaleConfirmed ?? false),
     lengthMm,
-    profileParsed: profile !== null,
+    profileParsed: type === 'joist' ? joist !== null : profile !== null,
     profileOnLabel: profileOnLabel || (row.origin === 'manual' && row.mark === null),
     markStatus: markRef.status,
     columnBaseKnown: baseElev !== null && topElev !== null,
@@ -196,7 +206,7 @@ export function memberView(
     origin: row.origin,
     type,
     mark,
-    profile_raw: pick('profile_raw', row.profile_raw),
+    profile_raw: rawProfile,
     profile,
     quantity: pick('quantity', row.quantity),
     level: pick<string | null>('level', null) ?? sheetLevel,
@@ -221,6 +231,14 @@ export function memberView(
     base_elevation_mm: baseElev,
     top_elevation_mm: topElev,
     status,
+    joist_series: joist
+      ? {
+          series: joist.series,
+          canonical: joist.canonical,
+          depth: joist.depth,
+          number: joist.number,
+        }
+      : null,
     shared_line: null,
     shared_resolution: (e.get('shared_line') as 'separate' | null | undefined) ?? null,
     merged_into: (e.get('merged_into') as string | null | undefined) ?? null,

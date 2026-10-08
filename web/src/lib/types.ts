@@ -156,6 +156,12 @@ export interface MemberView {
   length_source: string | null;
   status: { color: Color; confirmed: boolean; reasons: string[] };
   plan_point: { x_mm: number | null; y_mm: number | null } | null;
+  joist_series: {
+    series: "K" | "LH" | "DLH";
+    canonical: string;
+    depth: string;
+    number: string;
+  } | null;
   shared_line: SharedLine | null;
   merged_into: string | null;
   not_member: { reason: string } | null;
@@ -210,12 +216,16 @@ export interface TakeoffTotals {
   unmeasured: number;
 }
 
-export interface TakeoffData {
+export interface TakeoffSection {
   rows: TakeoffRow[];
   by_level: { level: string | null; totals: TakeoffTotals }[];
   totals: TakeoffTotals;
   excluded_red: TakeoffTotals;
   possible_duplicates: TakeoffTotals;
+}
+
+export interface TakeoffData extends TakeoffSection {
+  joists: TakeoffSection;
   sheets?: {
     sheet_id: string;
     page_number: number;

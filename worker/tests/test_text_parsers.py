@@ -288,3 +288,39 @@ def test_the_shared_profile_cases_match_the_parser() -> None:
         p = parse_profile(c["text"])
         assert (p.canonical if p else None) == c["canonical"], c["text"]
         assert (p.family if p else None) == c["family"], c["text"]
+
+
+def test_the_shared_joist_cases_match_the_parser() -> None:
+    """fixtures/synthetic/joist-cases.json is read by this test and by the TypeScript parser."""
+    import json
+    from pathlib import Path
+
+    from src.text_layer.parsers.joist import find_joists, parse_joist
+
+    path = Path(__file__).resolve().parents[2] / "fixtures" / "synthetic" / "joist-cases.json"
+    data = json.loads(path.read_text())
+    assert len(data["cases"]) > 20 and len(data["find"]) > 5
+    for c in data["cases"]:
+        j = parse_joist(c["text"])
+        assert (j.canonical if j else None) == c["canonical"], c["text"]
+        assert (j.series if j else None) == c["series"], c["text"]
+        # a joist designation is never a steel profile
+        if j:
+            assert parse_profile(c["text"]) is None, c["text"]
+    for c in data["find"]:
+        assert [j.canonical for j in find_joists(c["text"])] == c["canonicals"], c["text"]
+
+
+def test_the_joist_series_are_k_lh_and_dlh_and_keep_the_raw_text() -> None:
+    from src.text_layer.parsers.joist import parse_joist
+
+    j = parse_joist("24 K 7")
+    assert j is not None and (j.raw, j.canonical, j.series, j.depth, j.number) == (
+        "24 K 7",
+        "24K7",
+        "K",
+        "24",
+        "7",
+    )
+    j = parse_joist("40dlh15")
+    assert j is not None and j.series == "DLH" and j.canonical == "40DLH15"

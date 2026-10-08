@@ -6,6 +6,8 @@
 //   POST  /api/projects/:projectId/members/:memberId/confirm  "looks right"
 //   POST  /api/projects/:projectId/members/:memberId/delete
 //   POST  /api/projects/:projectId/members/:memberId/mark-ref { legend_row_id } or { status }
+//   POST  /api/projects/:projectId/members/:memberId/shared-line { resolution: separate|merge, keep? }
+//   POST  /api/projects/:projectId/members/:memberId/not-member { reason: existing|misc_steel|detail|other|null }
 //   POST  /api/projects/:projectId/undo                       undo the last action of this person
 //   GET   /api/projects/:projectId/legend?mark=               legend rows
 //   GET   /api/projects/:projectId/views/:viewId/lines        structural lines of a view (click targets)
@@ -24,12 +26,16 @@ import {
   deleteEntries,
   linkEntries,
   markRefEntries,
+  NOT_MEMBER_REASONS,
+  notMemberEntries,
+  type NotMemberReason,
   sharedLineEntries,
   OpError,
   patchEntries,
   undoLastAction,
   type LegendChoice,
 } from '../review/member-ops.js';
+import { parseJoist } from '../review/joist.js';
 import { parseProfile } from '../review/profile.js';
 import { parseLengthMm } from '../units/parse.js';
 import { correctionLines } from '../review/corrections.js';
@@ -96,6 +102,15 @@ const markRefBody = {
     who: { type: 'string', minLength: 1, maxLength: 100 },
     legend_row_id: uuid,
     status: { enum: ['linked', 'no_legend_row', 'ambiguous'] },
+  },
+} as const;
+const notMemberBody = {
+  type: 'object',
+  required: ['who', 'reason'],
+  additionalProperties: false,
+  properties: {
+    who: { type: 'string', minLength: 1, maxLength: 100 },
+    reason: { anyOf: [{ enum: [...NOT_MEMBER_REASONS] }, { type: 'null' }] },
   },
 } as const;
 const sharedLineBody = {
@@ -186,6 +201,9 @@ export const memberActionRoutes: FastifyPluginAsync<MemberActionOptions> = async
       }
       const profileText = b.profile_text?.trim() || null;
       const parsed = profileText ? parseProfile(profileText) : null;
+      // a joist designation makes a joist (never matched to the AISC catalog)
+      const type: CreateBody['type'] =
+        b.type !== 'column' && profileText && parseJoist(profileText) ? 'joist' : b.type;
       const parseElev = (text: string | null | undefined, label: string): number | null => {
         if (text === undefined || text === null || text.trim() === '') return null;
         const mm = parseLengthMm(text);
@@ -209,7 +227,7 @@ export const memberActionRoutes: FastifyPluginAsync<MemberActionOptions> = async
         v === null || v === undefined ? null : Math.round(v * 10) / 10;
       const memberId = `M-${randomUUID().slice(0, 12)}`;
       const summary = {
-        type: b.type,
+        type,
         mark: b.mark?.trim() || null,
         profile_raw: profileText,
         profile: parsed?.canonical ?? null,
@@ -227,7 +245,7 @@ export const memberActionRoutes: FastifyPluginAsync<MemberActionOptions> = async
               plan_sheet_id: view.sheet_id,
               member_id: memberId,
               origin: 'manual',
-              type: b.type,
+              type,
               mark: summary.mark,
               profile_raw: profileText,
               profile: summary.profile,
@@ -406,6 +424,18 @@ export const memberActionRoutes: FastifyPluginAsync<MemberActionOptions> = async
         return markRefEntries(m, { status });
       });
     },
+  );
+
+  app.post<{
+    Params: { projectId: string; memberId: string };
+    Body: { who: string; reason: NotMemberReason | null };
+  }>(
+    '/api/projects/:projectId/members/:memberId/not-member',
+    { schema: { params: memberParams, body: notMemberBody } },
+    async (request) =>
+      act(request.params.projectId, request.params.memberId, request.body.who, (m) =>
+        notMemberEntries(m, request.body.reason),
+      ),
   );
 
   app.post<{

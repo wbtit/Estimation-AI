@@ -842,6 +842,9 @@ export const App: React.FC = () => {
                     onPick={(rank) => void act(m.id, "/link", "POST", { rank })}
                     onRelink={() => void startRelink()}
                     onPatch={(patch) => void act(m.id, "", "PATCH", patch)}
+                    onNotMember={(reason) =>
+                      void act(m.id, "/not-member", "POST", { reason })
+                    }
                     onSharedLine={(resolution) =>
                       void act(m.id, "/shared-line", "POST", { resolution })
                     }

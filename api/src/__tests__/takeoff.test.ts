@@ -34,6 +34,7 @@ function member(over: Partial<MemberView> & { color?: 'green' | 'amber' | 'red' 
     length_mm: 3000,
     length_ft_in: null,
     status: { color, confirmed: false, reasons: [] },
+    joist_series: null,
     shared_line: null,
     shared_resolution: null,
     merged_into: null,
@@ -139,6 +140,32 @@ describe('takeoff grouping', () => {
     });
   });
 
+  it('joists have their own section, never mixed into the steel rows or totals', () => {
+    const joist = (over = {}) =>
+      member({
+        type: 'joist',
+        profile_raw: '24 K 7',
+        profile: null,
+        joist_series: { series: 'K', canonical: '24K7', depth: '24', number: '7' },
+        ...over,
+      } as never);
+    const t = buildTakeoff(
+      [
+        member({}),
+        joist(),
+        joist({ length_mm: 6000 }),
+        joist({ profile_raw: '24K7', level: 'Roof' }),
+      ],
+      pages,
+    );
+    expect(t.totals.pieces).toBe(1);
+    expect(t.rows.every((r) => r.profile === 'W12X26')).toBe(true);
+    expect(t.joists.totals.pieces).toBe(3);
+    const l2 = t.joists.rows.find((r) => r.level === 'Level 2')!;
+    expect(l2).toMatchObject({ profile: '24K7', quantity: 2, total_length_mm: 9000 });
+    expect(t.joists.rows).toHaveLength(2);
+  });
+
   it('is empty and zero for a project without members', () => {
     const t = buildTakeoff([], pages);
     expect(t.rows).toEqual([]);
@@ -210,7 +237,6 @@ describe('takeoff routes', () => {
 
   afterAll(async () => {
     await deleteProject(db, projectId);
-    await closeDatabaseConnection();
   });
 
   it('returns rows, totals and the excluded (red) line', async () => {
@@ -243,7 +269,7 @@ describe('takeoff routes', () => {
     expect(res.statusCode).toBe(200);
     expect(res.headers['content-type']).toContain('spreadsheetml');
     const wb = await loadWorkbook(res.rawPayload);
-    expect(wb.worksheets.map((w) => w.name)).toEqual(['Takeoff', 'Summary', 'Sheets']);
+    expect(wb.worksheets.map((w) => w.name)).toEqual(['Takeoff', 'Summary', 'Joists', 'Sheets']);
     const ws = wb.getWorksheet('Takeoff')!;
     const header = (ws.getRow(1).values as unknown[]).slice(1).map(String);
     expect(header).toContain('Mark');
@@ -259,4 +285,99 @@ describe('takeoff routes', () => {
       .find((r) => r.getCell(1).value === 'TOTAL (rows in totals)')!;
     expect(total.getCell(4).value).toBe(2);
   });
+});
+
+describe('joists through the routes', () => {
+  const app = buildApp();
+  const db = getDb();
+  let projectId: string;
+  let viewId: string;
+  const line = { p: [200, 300], q: [600, 300] };
+  const post = (body: object) =>
+    app.inject({
+      method: 'POST',
+      url: `/api/projects/${projectId}/members`,
+      payload: {
+        view_id: viewId,
+        point: { x: 300, y: 300 },
+        line,
+        who: 'alice',
+        ...body,
+      },
+    });
+
+  beforeAll(async () => {
+    projectId = await insertProject(db);
+    const sheetId = await insertSheet(db, projectId, {
+      page_index: 3,
+      page_type_guess: 'framing_plan',
+      width_pt: 1200,
+      height_pt: 800,
+    });
+    viewId = (
+      await db
+        .insertInto('sheet_views')
+        .values({
+          sheet_id: sheetId,
+          box: JSON.stringify({ x0: 100, y0: 100, x1: 900, y1: 700 }),
+          scale_ratio: 96,
+          scale_source: 'user_confirmed',
+          scale_confirmed: true,
+        })
+        .returning('id')
+        .executeTakeFirstOrThrow()
+    ).id;
+  });
+  afterAll(async () => {
+    await deleteProject(db, projectId);
+  });
+
+  it('a joist designation makes a joist member with no AISC profile and the joist flag', async () => {
+    const res = await post({ type: 'beam', profile_text: '28 LH 10' });
+    expect(res.statusCode).toBe(201);
+    expect(res.json()).toMatchObject({
+      type: 'joist',
+      profile: null,
+      profile_raw: '28 LH 10',
+      joist_series: { series: 'LH', canonical: '28LH10', depth: '28', number: '10' },
+      status: { color: 'green' },
+    });
+  });
+
+  it('typing a joist designation into a beam turns it into a joist (an edit, with undo)', async () => {
+    const created = (await post({ type: 'beam', profile_text: 'W12x26' })).json();
+    expect(created.type).toBe('beam');
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/api/projects/${projectId}/members/${created.id}`,
+      payload: { who: 'alice', profile_text: '24K7' },
+    });
+    expect(res.json().member).toMatchObject({ type: 'joist', profile: null });
+    expect(res.json().member.joist_series.canonical).toBe('24K7');
+    await app.inject({
+      method: 'POST',
+      url: `/api/projects/${projectId}/undo`,
+      payload: { who: 'alice' },
+    });
+    const back = (await app.inject({ method: 'GET', url: `/api/projects/${projectId}/members` }))
+      .json()
+      .members.find((m: { id: string }) => m.id === created.id);
+    expect(back).toMatchObject({ type: 'beam', profile: 'W12X26' });
+  });
+
+  it('the takeoff and the Excel show joists in their own section', async () => {
+    const t = (
+      await app.inject({ method: 'GET', url: `/api/projects/${projectId}/takeoff` })
+    ).json();
+    expect(t.joists.rows.map((r: { profile: string }) => r.profile)).toEqual(['28LH10']);
+    expect(t.rows.map((r: { profile: string }) => r.profile)).toEqual(['W12X26']);
+    const x = await app.inject({ method: 'GET', url: `/api/projects/${projectId}/takeoff.xlsx` });
+    const ws = (await loadWorkbook(x.rawPayload)).getWorksheet('Joists')!;
+    expect(ws.getRow(2).getCell(1).value).toBe('28LH10');
+    expect(ws.getRow(2).getCell(2).value).toBe('28 LH 10');
+  });
+});
+
+afterAll(async () => {
+  await closeDatabaseConnection();
 });

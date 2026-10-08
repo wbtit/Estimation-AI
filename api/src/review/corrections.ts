@@ -86,6 +86,9 @@ export async function correctionLines(db: Kysely<Database>, projectId: string) {
         level: v.level,
         color: v.status.color,
         deleted: v.deleted,
+        not_member: v.not_member,
+        merged_into: v.merged_into,
+        shared_line_resolution: v.shared_resolution,
         confirmed: v.status.confirmed,
       },
       link_changed:

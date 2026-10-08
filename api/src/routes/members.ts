@@ -148,7 +148,9 @@ export const memberRoutes: FastifyPluginAsync<MemberRouteOptions> = async (app, 
         sheetId: request.query.sheet_id,
         viewId: request.query.view_id,
       });
-      const members = request.query.include_deleted ? all : all.filter((m) => !m.deleted);
+      const members = request.query.include_deleted
+        ? all
+        : all.filter((m) => !m.deleted && m.not_member === null);
       const counts = { green: 0, amber: 0, red: 0, unlinked: 0 };
       for (const m of members) counts[m.status.color] += 1;
       return { count: members.length, colors: counts, members };

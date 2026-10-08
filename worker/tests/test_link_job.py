@@ -245,3 +245,23 @@ def test_a_label_with_no_line_in_reach_has_no_proposal_and_low_confidence(dbp: D
         None,
     )
     assert m["profile_raw"] == "W8x10" and m["plan_method"] is None
+
+
+def test_a_joist_designation_becomes_a_joist_member_without_a_profile(dbp: DbProject) -> None:
+    doc = new_doc()
+    page = vector_page(doc, "S4.1", "SECOND FLOOR FRAMING PLAN", texts=[])
+    page.draw_line((100, 200), (700, 200), width=2.0)
+    page.insert_text((300, 194), "24K7", fontsize=8)  # a joist label just above a line
+    page.draw_line((100, 400), (700, 400), width=2.0)
+    page.insert_text((300, 394), "W12x26", fontsize=8)
+    page.insert_text((300, 500), "W12X26 K1", fontsize=8)  # K1 belongs to the profile text
+    dbp.pdf_path.write_bytes(doc.tobytes())
+    dbp.scan()
+    read_project(dbp.conn, dbp.config, dbp.project_id, dbp.document_id, dbp.font_id)
+    link_view(dbp.conn, dbp.config, make_view(dbp))
+    got = {m["profile_raw"]: m for m in members(dbp)}
+    j = got["24K7"]
+    assert j["type"] == "joist" and j["profile"] is None and j["origin"] == "extracted"
+    assert got["W12x26"]["type"] == "beam" and got["W12x26"]["profile"] == "W12X26"
+    assert not any(k.startswith("K1") or k == "K1" for k in got)
+    assert len([m for m in members(dbp) if m["type"] == "joist"]) == 1

@@ -48,6 +48,9 @@ const bold = (row: ExcelJS.Row): void => {
 
 export async function buildTakeoffWorkbook(input: TakeoffExportInput): Promise<Buffer> {
   const { takeoff } = input;
+  const jt = takeoff.joists.totals;
+  const jx = takeoff.joists.excluded_red;
+  const jd = takeoff.joists.possible_duplicates;
   const wb = new ExcelJS.Workbook();
   wb.creator = 'Estimation-AI';
 
@@ -164,6 +167,41 @@ export async function buildTakeoffWorkbook(input: TakeoffExportInput): Promise<B
     d.unmeasured,
   ]);
   sum.addRow([]);
+  bold(
+    sum.addRow([
+      'Joists (K, LH, DLH series; not matched to AISC)',
+      'Members',
+      'Pieces',
+      'Total length (ft-in)',
+      'Total length (mm)',
+      'Pieces without length',
+    ]),
+  );
+  sum.addRow([
+    'Joists in totals',
+    jt.members,
+    jt.pieces,
+    jt.total_length_ft_in,
+    jt.total_length_mm,
+    jt.unmeasured,
+  ]);
+  sum.addRow([
+    'Joists excluded (red)',
+    jx.members,
+    jx.pieces,
+    jx.total_length_ft_in,
+    jx.total_length_mm,
+    jx.unmeasured,
+  ]);
+  sum.addRow([
+    'Joists possible duplicates (shared line)',
+    jd.members,
+    jd.pieces,
+    jd.total_length_ft_in,
+    jd.total_length_mm,
+    jd.unmeasured,
+  ]);
+  sum.addRow([]);
   bold(sum.addRow(['Unlinked labels (profile labels with no line; not members, in no total)']));
   sum.addRow(['Unlinked labels on the sheets of this takeoff', takeoff.unlinked_labels.count]);
   for (const s of takeoff.unlinked_labels.by_sheet) {
@@ -171,6 +209,71 @@ export async function buildTakeoffWorkbook(input: TakeoffExportInput): Promise<B
   }
   sum.columns.forEach((col, i) => {
     col.width = i === 0 ? 34 : 20;
+  });
+
+  // Joists (K, LH, DLH series): their own section, never matched to AISC, designation as read.
+  const jw = wb.addWorksheet('Joists', { views: [{ state: 'frozen', ySplit: 1 }] });
+  bold(
+    jw.addRow([
+      'Designation',
+      'As read',
+      'Qty',
+      'Total length (ft-in)',
+      'Total length (mm)',
+      'Unit lengths (ft-in)',
+      'Level',
+      'Sheets (page numbers)',
+      'Status',
+      'In totals',
+      'Notes',
+    ]),
+  );
+  for (const r of takeoff.joists.rows) {
+    const row = jw.addRow([
+      r.profile,
+      r.profile_raw,
+      r.quantity,
+      r.total_length_ft_in,
+      r.total_length_mm,
+      r.unit_lengths_mm.map((mm) => mmToFeetInches(mm)).join('; '),
+      r.level,
+      r.sheets.join(', '),
+      r.color,
+      r.kind === 'main' ? 'Yes' : r.kind === 'red' ? 'No (red)' : 'No (possible duplicate)',
+      r.reasons.join('; '),
+    ]);
+    row.getCell(9).fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: STATUS_FILL[r.color] },
+    };
+  }
+  bold(
+    jw.addRow([
+      'TOTAL (rows in totals)',
+      null,
+      jt.pieces,
+      jt.total_length_ft_in,
+      jt.total_length_mm,
+    ]),
+  );
+  jw.addRow([
+    'EXCLUDED (red), not in totals',
+    null,
+    jx.pieces,
+    jx.total_length_ft_in,
+    jx.total_length_mm,
+  ]);
+  jw.addRow([
+    'POSSIBLE DUPLICATES (shared line), not in totals',
+    null,
+    jd.pieces,
+    jd.total_length_ft_in,
+    jd.total_length_mm,
+  ]);
+  jw.getColumn(5).numFmt = '#,##0.0';
+  jw.columns.forEach((col, i) => {
+    col.width = i === 10 ? 60 : i === 0 ? 26 : 18;
   });
 
   if (takeoff.sheets) {

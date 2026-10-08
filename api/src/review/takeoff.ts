@@ -57,13 +57,19 @@ export interface TakeoffTotals {
   unmeasured: number;
 }
 
-export interface Takeoff {
+/** One section of the takeoff: its rows and its totals. */
+export interface TakeoffSection {
   rows: TakeoffRow[];
   by_level: { level: string | null; totals: TakeoffTotals }[];
   totals: TakeoffTotals;
   excluded_red: TakeoffTotals;
   /** Members that share a line with a better-scoring member and nobody has decided yet. */
   possible_duplicates: TakeoffTotals;
+}
+
+export interface Takeoff extends TakeoffSection {
+  /** Joists (K, LH, DLH series) are never matched to AISC and have their own section. */
+  joists: TakeoffSection;
   unlinked_labels: UnlinkedSummary;
 }
 
@@ -105,16 +111,47 @@ function kindOf(m: MemberView): TakeoffKind {
 
 /** Group members into takeoff rows and add up the totals. `pageOf` maps a sheet id to its page number. */
 export function buildTakeoff(members: MemberView[], pageOf: Map<string, number>): Takeoff {
-  const groups = new Map<string, MemberView[]>();
+  const live = members.filter((m) => !m.deleted && m.merged_into === null && m.not_member === null);
   const unlinked = new Map<string, number>();
+  for (const m of live) {
+    if (m.status.color !== 'unlinked') continue;
+    const sid = m.sheet_id ?? '';
+    unlinked.set(sid, (unlinked.get(sid) ?? 0) + 1);
+  }
+  const linked = live.filter((m) => m.status.color !== 'unlinked');
+  return {
+    ...section(
+      linked.filter((m) => m.type !== 'joist'),
+      pageOf,
+    ),
+    joists: section(
+      linked.filter((m) => m.type === 'joist'),
+      pageOf,
+    ),
+    unlinked_labels: {
+      count: [...unlinked.values()].reduce((a, b) => a + b, 0),
+      by_sheet: [...unlinked.entries()]
+        .map(([sheet_id, count]) => ({
+          sheet_id,
+          page_number: pageOf.get(sheet_id) ?? null,
+          count,
+        }))
+        .sort((a, b) => (a.page_number ?? 0) - (b.page_number ?? 0)),
+    },
+  };
+}
+
+function section(members: MemberView[], pageOf: Map<string, number>): TakeoffSection {
+  const groups = new Map<string, MemberView[]>();
   for (const m of members) {
-    if (m.deleted || m.merged_into !== null || m.not_member !== null) continue;
-    if (m.status.color === 'unlinked') {
-      const sid = m.sheet_id ?? '';
-      unlinked.set(sid, (unlinked.get(sid) ?? 0) + 1);
-      continue;
-    }
-    const key = JSON.stringify([m.level, m.mark, m.profile ?? m.profile_raw, kindOf(m)]);
+    const key = JSON.stringify([
+      m.level,
+      m.mark,
+      m.type === 'joist'
+        ? (m.joist_series?.canonical ?? m.profile_raw)
+        : (m.profile ?? m.profile_raw),
+      kindOf(m),
+    ]);
     const list = groups.get(key) ?? [];
     list.push(m);
     groups.set(key, list);
@@ -141,7 +178,7 @@ export function buildTakeoff(members: MemberView[], pageOf: Map<string, number>)
       key,
       mark: first.mark,
       profile_raw: first.profile_raw,
-      profile: first.profile,
+      profile: first.type === 'joist' ? (first.joist_series?.canonical ?? null) : first.profile,
       level: first.level,
       quantity: list.reduce((n, m) => n + m.quantity, 0),
       members: list.length,
@@ -199,15 +236,5 @@ export function buildTakeoff(members: MemberView[], pageOf: Map<string, number>)
     totals: finish(totals),
     excluded_red: finish(excluded),
     possible_duplicates: finish(duplicates),
-    unlinked_labels: {
-      count: [...unlinked.values()].reduce((a, b) => a + b, 0),
-      by_sheet: [...unlinked.entries()]
-        .map(([sheet_id, count]) => ({
-          sheet_id,
-          page_number: pageOf.get(sheet_id) ?? null,
-          count,
-        }))
-        .sort((a, b) => (a.page_number ?? 0) - (b.page_number ?? 0)),
-    },
   };
 }

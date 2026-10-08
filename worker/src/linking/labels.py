@@ -13,6 +13,7 @@ from dataclasses import dataclass
 
 import pymupdf
 
+from src.text_layer.parsers.joist import find_joists
 from src.text_layer.parsers.marks import MARK_RE
 from src.text_layer.parsers.profile import find_profiles
 
@@ -22,9 +23,9 @@ NOTE_MAX_WORDS = 12
 
 @dataclass(frozen=True)
 class Label:
-    kind: str  # "profile" | "mark"
-    text: str  # the string as on the drawing (profile raw, or the mark)
-    canonical: str | None  # canonical profile for a profile label
+    kind: str  # "profile" | "joist" | "mark"
+    text: str  # the string as on the drawing (profile or joist raw, or the mark)
+    canonical: str | None  # canonical profile (profile label) or joist designation (joist label)
     bbox: tuple[float, float, float, float]  # displayed points
     angle_deg: float
     quantity_prefix: bool
@@ -99,6 +100,24 @@ def page_labels(
                         angle,
                         prefix,
                         label_key(sheet_id, "profile", p.canonical, box),
+                    )
+                )
+            taken = [p.span for p in find_profiles(text)]
+            for j in find_joists(text):
+                if any(a < j.span[1] and j.span[0] < b for a, b in taken):
+                    continue
+                box = _union(rects[j.span[0] : j.span[1]], m)
+                if in_title(box):
+                    continue
+                out.append(
+                    Label(
+                        "joist",
+                        j.raw,
+                        j.canonical,
+                        box,
+                        angle,
+                        False,
+                        label_key(sheet_id, "joist", j.canonical, box),
                     )
                 )
             if marks:

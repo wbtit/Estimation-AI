@@ -30,6 +30,7 @@ export const MemberActions: React.FC<{
   }) => void;
   onLegend: (rowId: string) => void;
   onSharedLine: (resolution: "separate" | "merge") => void;
+  onNotMember: (reason: string) => void;
 }> = ({
   member,
   legend,
@@ -41,6 +42,7 @@ export const MemberActions: React.FC<{
   onPatch,
   onLegend,
   onSharedLine,
+  onNotMember,
 }) => {
   const [profile, setProfile] = useState(member.profile_raw ?? "");
   const [mark, setMark] = useState(member.mark ?? "");
@@ -102,6 +104,12 @@ export const MemberActions: React.FC<{
         </button>
         <button onClick={onDelete}>Delete (Del)</button>
       </div>
+      {member.joist_series && (
+        <div className="hint">
+          Joist, {member.joist_series.series} series (kept as written, never
+          matched to the AISC catalog).
+        </div>
+      )}
       {member.shared_line && !member.shared_line.resolved && (
         <div className="shared-box warn">
           {member.shared_line.size} members share this line
@@ -154,6 +162,20 @@ export const MemberActions: React.FC<{
             member.length_source === "manual" ? member.length_ft_in : null,
           ),
         )}
+      <label className="field">
+        not a member
+        <select
+          value=""
+          onChange={(e) => e.target.value && onNotMember(e.target.value)}
+          aria-label="not a member"
+        >
+          <option value="">choose a reason...</option>
+          <option value="existing">existing steel</option>
+          <option value="misc_steel">misc steel</option>
+          <option value="detail">detail, not this plan</option>
+          <option value="other">other</option>
+        </select>
+      </label>
       <label className="field">
         type
         <select

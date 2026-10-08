@@ -1,0 +1,195 @@
+{
+ "_comment": "SYNTHETIC strings; expected values are the output of worker/src/text_layer/parsers/joist.py. Both the Python and TypeScript joist parsers are tested against this file. A joist is never matched to the AISC catalog.",
+ "cases": [
+  {
+   "text": "24K7",
+   "canonical": "24K7",
+   "series": "K"
+  },
+  {
+   "text": "28LH10",
+   "canonical": "28LH10",
+   "series": "LH"
+  },
+  {
+   "text": "40DLH15",
+   "canonical": "40DLH15",
+   "series": "DLH"
+  },
+  {
+   "text": "18LH02",
+   "canonical": "18LH02",
+   "series": "LH"
+  },
+  {
+   "text": "24 K 7",
+   "canonical": "24K7",
+   "series": "K"
+  },
+  {
+   "text": "24-K-7",
+   "canonical": "24K7",
+   "series": "K"
+  },
+  {
+   "text": "24K-7",
+   "canonical": "24K7",
+   "series": "K"
+  },
+  {
+   "text": "24k7",
+   "canonical": "24K7",
+   "series": "K"
+  },
+  {
+   "text": "12K1",
+   "canonical": "12K1",
+   "series": "K"
+  },
+  {
+   "text": " 16K6 ",
+   "canonical": "16K6",
+   "series": "K"
+  },
+  {
+   "text": "10 DLH 20",
+   "canonical": "10DLH20",
+   "series": "DLH"
+  },
+  {
+   "text": "52DLH19",
+   "canonical": "52DLH19",
+   "series": "DLH"
+  },
+  {
+   "text": "1K1",
+   "canonical": "1K1",
+   "series": "K"
+  },
+  {
+   "text": "24K7 TYP",
+   "canonical": null,
+   "series": null
+  },
+  {
+   "text": "K7",
+   "canonical": null,
+   "series": null
+  },
+  {
+   "text": "24K",
+   "canonical": null,
+   "series": null
+  },
+  {
+   "text": "24KK7",
+   "canonical": null,
+   "series": null
+  },
+  {
+   "text": "24",
+   "canonical": null,
+   "series": null
+  },
+  {
+   "text": "W12X26",
+   "canonical": null,
+   "series": null
+  },
+  {
+   "text": "24X7",
+   "canonical": null,
+   "series": null
+  },
+  {
+   "text": "240K7",
+   "canonical": "240K7",
+   "series": "K"
+  },
+  {
+   "text": "24K123",
+   "canonical": null,
+   "series": null
+  },
+  {
+   "text": "24 K 7 8",
+   "canonical": null,
+   "series": null
+  },
+  {
+   "text": "HSS6X4X1/4",
+   "canonical": null,
+   "series": null
+  },
+  {
+   "text": "24LHH7",
+   "canonical": null,
+   "series": null
+  },
+  {
+   "text": "24DLK7",
+   "canonical": null,
+   "series": null
+  }
+ ],
+ "find": [
+  {
+   "text": "(6) 24K7 @ 4'-0\" O.C.",
+   "canonicals": [
+    "24K7"
+   ]
+  },
+  {
+   "text": "28LH10 AND 24K7",
+   "canonicals": [
+    "28LH10",
+    "24K7"
+   ]
+  },
+  {
+   "text": "W12X26 K1",
+   "canonicals": []
+  },
+  {
+   "text": "L4X4X1/2 K3",
+   "canonicals": []
+  },
+  {
+   "text": "TYP-24K7",
+   "canonicals": []
+  },
+  {
+   "text": "SEE 40DLH15.",
+   "canonicals": [
+    "40DLH15"
+   ]
+  },
+  {
+   "text": "JOIST: 18 LH 02, 20K5",
+   "canonicals": [
+    "18LH02",
+    "20K5"
+   ]
+  },
+  {
+   "text": "20K5/3",
+   "canonicals": [
+    "20K5"
+   ]
+  },
+  {
+   "text": "12K 5 TYP",
+   "canonicals": [
+    "12K5"
+   ]
+  },
+  {
+   "text": "14K3A",
+   "canonicals": []
+  },
+  {
+   "text": "B24K7",
+   "canonicals": []
+  }
+ ]
+}

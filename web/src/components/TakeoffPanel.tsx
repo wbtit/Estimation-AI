@@ -1,32 +1,28 @@
 import React, { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import { COLOUR_HEX } from "../lib/status";
-import type { TakeoffData, TakeoffRow, TakeoffTotals } from "../lib/types";
+import type {
+  TakeoffData,
+  TakeoffRow,
+  TakeoffSection,
+  TakeoffTotals,
+} from "../lib/types";
 
 const totalsLine = (t: TakeoffTotals) =>
   `${t.pieces} pieces, ${t.total_length_ft_in} (${Math.round(t.total_length_mm)} mm)${
     t.unmeasured ? `, ${t.unmeasured} without length` : ""
   }`;
 
-/** The takeoff table of the whole project. Click a row to jump to its first member on the sheet. */
-export const TakeoffPanel: React.FC<{
-  projectId: string;
-  /** Changes whenever members change, so the table reloads. */
-  version: unknown;
+/** The rows and totals of one takeoff section (steel, or joists). */
+const Section: React.FC<{
+  title: string;
+  section: TakeoffSection;
+  nameHeader: string;
   onJump: (row: TakeoffRow) => void;
-  onError: (err: unknown) => void;
-}> = ({ projectId, version, onJump, onError }) => {
-  const [data, setData] = useState<TakeoffData | null>(null);
-  useEffect(() => {
-    api<TakeoffData>(`/api/projects/${projectId}/takeoff`)
-      .then(setData)
-      .catch(onError);
-  }, [projectId, version, onError]);
-
-  if (!data) return <p className="hint">Loading...</p>;
-  const included = data.rows.filter((r) => !r.excluded);
-  const excluded = data.rows.filter((r) => r.kind === "red");
-  const duplicates = data.rows.filter((r) => r.kind === "duplicate");
+}> = ({ title, section, nameHeader, onJump }) => {
+  const included = section.rows.filter((r) => !r.excluded);
+  const excluded = section.rows.filter((r) => r.kind === "red");
+  const duplicates = section.rows.filter((r) => r.kind === "duplicate");
   const rowView = (r: TakeoffRow) => (
     <tr
       key={r.key}
@@ -55,6 +51,81 @@ export const TakeoffPanel: React.FC<{
     </tr>
   );
   return (
+    <section>
+      <h4>{title}</h4>
+      <table className="takeoff-table">
+        <thead>
+          <tr>
+            <th>mark</th>
+            <th>as read</th>
+            <th>{nameHeader}</th>
+            <th>qty</th>
+            <th>length</th>
+            <th>level</th>
+            <th>sheet</th>
+            <th>color</th>
+          </tr>
+        </thead>
+        <tbody>
+          {included.map(rowView)}
+          {included.length === 0 && (
+            <tr>
+              <td colSpan={8} className="hint">
+                Nothing in the totals yet.
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+      <ul className="totals">
+        {section.by_level.map((l) => (
+          <li key={l.level ?? "none"}>
+            <b>{l.level ?? "(no level)"}</b>: {totalsLine(l.totals)}
+          </li>
+        ))}
+        <li>
+          <b>All levels</b>: {totalsLine(section.totals)}
+        </li>
+      </ul>
+      <p>
+        <b>Excluded (red), not in the totals</b>:{" "}
+        {totalsLine(section.excluded_red)}
+      </p>
+      {excluded.length > 0 && (
+        <table className="takeoff-table">
+          <tbody>{excluded.map(rowView)}</tbody>
+        </table>
+      )}
+      <p>
+        <b>Possible duplicates (shared line), not in the totals</b>:{" "}
+        {totalsLine(section.possible_duplicates)}
+      </p>
+      {duplicates.length > 0 && (
+        <table className="takeoff-table">
+          <tbody>{duplicates.map(rowView)}</tbody>
+        </table>
+      )}
+    </section>
+  );
+};
+
+/** The takeoff table of the whole project. Click a row to jump to its first member on the sheet. */
+export const TakeoffPanel: React.FC<{
+  projectId: string;
+  /** Changes whenever members change, so the table reloads. */
+  version: unknown;
+  onJump: (row: TakeoffRow) => void;
+  onError: (err: unknown) => void;
+}> = ({ projectId, version, onJump, onError }) => {
+  const [data, setData] = useState<TakeoffData | null>(null);
+  useEffect(() => {
+    api<TakeoffData>(`/api/projects/${projectId}/takeoff`)
+      .then(setData)
+      .catch(onError);
+  }, [projectId, version, onError]);
+
+  if (!data) return <p className="hint">Loading...</p>;
+  return (
     <div className="panel takeoff">
       <h3>Takeoff</h3>
       {data.unlinked_labels.count > 0 && (
@@ -71,30 +142,6 @@ export const TakeoffPanel: React.FC<{
           Download Excel
         </a>
       </div>
-      <table className="takeoff-table">
-        <thead>
-          <tr>
-            <th>mark</th>
-            <th>as read</th>
-            <th>profile</th>
-            <th>qty</th>
-            <th>length</th>
-            <th>level</th>
-            <th>sheet</th>
-            <th>color</th>
-          </tr>
-        </thead>
-        <tbody>
-          {included.map(rowView)}
-          {included.length === 0 && (
-            <tr>
-              <td colSpan={8} className="hint">
-                No members in the totals yet.
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
       {data.sheets && (
         <details>
           <summary>
@@ -116,31 +163,18 @@ export const TakeoffPanel: React.FC<{
           </ul>
         </details>
       )}
-      <h4>Totals</h4>
-      <ul className="totals">
-        {data.by_level.map((l) => (
-          <li key={l.level ?? "none"}>
-            <b>{l.level ?? "(no level)"}</b>: {totalsLine(l.totals)}
-          </li>
-        ))}
-        <li>
-          <b>All levels</b>: {totalsLine(data.totals)}
-        </li>
-      </ul>
-      <h4>Excluded (red), not in the totals</h4>
-      <p>{totalsLine(data.excluded_red)}</p>
-      {excluded.length > 0 && (
-        <table className="takeoff-table">
-          <tbody>{excluded.map(rowView)}</tbody>
-        </table>
-      )}
-      <h4>Possible duplicates (shared line), not in the totals</h4>
-      <p>{totalsLine(data.possible_duplicates)}</p>
-      {duplicates.length > 0 && (
-        <table className="takeoff-table">
-          <tbody>{duplicates.map(rowView)}</tbody>
-        </table>
-      )}
+      <Section
+        title="Steel shapes"
+        section={data}
+        nameHeader="profile"
+        onJump={onJump}
+      />
+      <Section
+        title="Joists (K, LH, DLH; not matched to AISC)"
+        section={data.joists}
+        nameHeader="designation"
+        onJump={onJump}
+      />
     </div>
   );
 };

@@ -205,6 +205,9 @@ def _member_fields(
     }
     if lb.kind == "profile":
         f["profile_raw"], f["profile"] = lb.text, lb.canonical
+    elif lb.kind == "joist":
+        # a joist designation is kept as written and is never matched to the AISC catalog
+        f["profile_raw"] = lb.text
     else:
         rows = legend.get(lb.text, [])
         designations = {r["profile"] or r["designation_raw"] for r in rows}
@@ -291,13 +294,14 @@ def _upsert(
         conn.execute(
             "INSERT INTO members (project_id, sheet_id, view_id, plan_sheet_id, member_id, origin,"
             f" type, label_key, quantity, {cols})"
-            f" VALUES (%s, %s, %s, %s, %s, 'extracted', 'beam', %s, 1, {marks})",
+            f" VALUES (%s, %s, %s, %s, %s, 'extracted', %s, %s, 1, {marks})",
             [
                 project_id,
                 sheet_id,
                 view_id,
                 sheet_id,
                 member_id_for(lb.key),
+                "joist" if lb.kind == "joist" else "beam",
                 lb.key,
                 *_values(fields),
             ],

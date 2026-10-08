@@ -7,6 +7,7 @@ import type { Database } from '../db/types.js';
 import { recordAction, type EditEntry } from './actions.js';
 import type { Line, LinkEdit, LinkReset, MemberView } from './members.js';
 import { parseLengthMm } from '../units/parse.js';
+import { parseJoist } from './joist.js';
 import { parseProfile } from './profile.js';
 import { groupOf } from './shared-line.js';
 
@@ -60,6 +61,10 @@ export function patchEntries(
     const parsed = text ? parseProfile(text) : null;
     push('profile_raw', m.profile_raw, text);
     push('profile', m.profile, parsed?.canonical ?? null);
+    // a joist designation makes the member a joist (kept as written, never matched to AISC)
+    if (text && parseJoist(text) && m.type !== 'column' && patch.type === undefined) {
+      push('type', m.type, 'joist');
+    }
   }
   if (patch.mark !== undefined) push('mark', m.mark, patch.mark?.trim() || null);
   if (patch.level !== undefined) push('level', memberLevelOverride, patch.level?.trim() || null);
@@ -151,6 +156,20 @@ export function sharedLineEntries(
       after: keep.id,
       status: 'edited' as const,
     }));
+}
+
+export const NOT_MEMBER_REASONS = ['existing', 'misc_steel', 'detail', 'other'] as const;
+export type NotMemberReason = (typeof NOT_MEMBER_REASONS)[number];
+
+/**
+ * "Not a member": the label is something else (existing steel, misc steel, a detail, other). It
+ * leaves the member list, the unlinked list and the takeoff; nothing is deleted, and an undo
+ * brings it back. A null reason takes the flag off again.
+ */
+export function notMemberEntries(m: MemberView, reason: NotMemberReason | null): EditEntry[] {
+  const after = reason === null ? null : { reason };
+  if (JSON.stringify(m.not_member) === JSON.stringify(after)) return [];
+  return [{ memberId: m.id, field: 'not_member', before: m.not_member, after, status: 'edited' }];
 }
 
 export interface LegendChoice {
