@@ -7,10 +7,11 @@ from __future__ import annotations
 
 import collections
 import json
+import os
 from pathlib import Path
 
 STUDY = Path(__file__).resolve().parents[2] / "fixtures" / "private" / "study"
-DATA = json.loads((STUDY / "phase5b_calibration.json").read_text())
+DATA = json.loads((STUDY / os.environ.get("CALIBRATION_OUT", "phase5b_calibration.json")).read_text())
 RUNS = ("suggested_classes", "study_classes")
 COLORS = ("green", "amber", "red")
 

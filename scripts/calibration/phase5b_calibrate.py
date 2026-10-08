@@ -33,6 +33,7 @@ STUDY = ROOT / "fixtures" / "private" / "study"
 API = os.environ.get("CALIBRATION_API", "http://127.0.0.1:3000")
 WHO = "calibration-harness"
 JOBS = ["job-004", "job-005", "job-008", "job-009", "job-010", "job-020"]  # job-002/016: raster
+OUT_NAME = os.environ.get("CALIBRATION_OUT", "phase5b_calibration.json")
 SUFFIX = os.environ.get("CALIBRATION_SUFFIX", "b")  # a new suffix makes a fresh project
 MARGIN = 150.0
 LINE_TOL = 1.0
@@ -310,9 +311,13 @@ def whole_page_mix(members: list[dict], sheet_of: dict) -> dict:
             mix["unlinked"] += 1
         else:
             mix[c] += 1
+            if m.get("length_shared"):
+                mix["length_not_trusted (shared line)"] += 1
             sl = m["shared_line"]
-            if sl and not sl["resolved"] and not sl["best"]:
-                mix["possible_duplicate"] += 1
+            if sl and sl.get("duplicate_of"):
+                mix["true_duplicate_candidate"] += 1
+            if m.get("existing"):
+                mix["existing"] += 1
     return dict(mix)
 
 
@@ -322,8 +327,8 @@ def run_job(job: str) -> dict:
     wait_scan(pid)
     ensure_text(pid)
     log = prepare_pages(pid, job, data)
-    prior = (json.loads((STUDY / "phase5b_calibration.json").read_text()).get(job, {}).get("pages", {})
-             if (STUDY / "phase5b_calibration.json").exists() else {})
+    prior = (json.loads((STUDY / OUT_NAME).read_text()).get(job, {}).get("pages", {})
+             if (STUDY / OUT_NAME).exists() else {})
     for pg, entry in log.items():  # keep what the first run recorded about pages that were already prepared
         old = prior.get(str(pg))
         if old and entry["scale"].startswith("already confirmed") and not old["scale"].startswith("skipped"):
@@ -359,7 +364,7 @@ def summarise(job: str, res: dict) -> None:
 
 if __name__ == "__main__":
     jobs = sys.argv[1:] or JOBS
-    out_path = STUDY / "phase5b_calibration.json"
+    out_path = STUDY / OUT_NAME
     allres = json.loads(out_path.read_text()) if out_path.exists() else {}
     for job in jobs:
         allres[job] = run_job(job)
