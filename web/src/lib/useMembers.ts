@@ -106,6 +106,76 @@ export function useMembers(
     [projectId, who, load, onError],
   );
 
+  /** One saved human action on a member (confirm, delete, link, patch, mark-ref), then reload. */
+  const act = useCallback(
+    async (
+      memberId: string,
+      tail: string,
+      method: string,
+      body: object = {},
+    ) => {
+      if (!projectId) return;
+      try {
+        await send(
+          method,
+          `/api/projects/${projectId}/members/${memberId}${tail}`,
+          {
+            ...body,
+            who: who.trim(),
+          },
+        );
+        await load();
+      } catch (err) {
+        onError(err);
+      }
+    },
+    [projectId, who, load, onError],
+  );
+
+  const undo = useCallback(async () => {
+    if (!projectId) return;
+    try {
+      await send("POST", `/api/projects/${projectId}/undo`, {
+        who: who.trim(),
+      });
+      await load();
+    } catch (err) {
+      onError(err);
+    }
+  }, [projectId, who, load, onError]);
+
+  /** Add a beam, brace or joist on a clicked line. */
+  const addOnLine = useCallback(
+    async (input: {
+      view_id: string;
+      point: { x: number; y: number };
+      line: { p: [number, number]; q: [number, number] };
+      type: string;
+      mark: string;
+      profile_text: string;
+    }) => {
+      if (!projectId) return;
+      try {
+        const m = await send<MemberView>(
+          "POST",
+          `/api/projects/${projectId}/members`,
+          {
+            ...input,
+            mark: input.mark.trim() || null,
+            profile_text: input.profile_text.trim() || null,
+            who: who.trim(),
+          },
+        );
+        await load();
+        setSelectedId(m.id);
+      } catch (err) {
+        onError(err);
+        throw err;
+      }
+    },
+    [projectId, who, load, onError],
+  );
+
   return {
     members,
     selectedId,
@@ -113,6 +183,9 @@ export function useMembers(
     busyView,
     find,
     addColumn,
+    addOnLine,
+    act,
+    undo,
     reload: load,
   };
 }

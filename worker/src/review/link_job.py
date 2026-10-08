@@ -32,6 +32,8 @@ log = logging.getLogger("worker.link")
 JOB_TYPE = "link_view"
 MM_PER_PT = 25.4 / 72.0
 TOP_N = 3
+MAX_STORED_LINES = 6000  # click targets for the review screen
+MIN_STORED_LINE_PT = 12.0
 
 
 class LinkError(Exception):
@@ -119,6 +121,19 @@ def link_view(conn: psycopg.Connection, config: WorkerConfig, view_id: str) -> d
         conn.execute(
             "UPDATE sheet_views SET structural_classes = %s WHERE id = %s", (classes, view_id)
         )
+    conn.execute(
+        "UPDATE sheet_views SET structural_lines = %s WHERE id = %s",
+        (
+            Jsonb(
+                [
+                    [round(ln.x0, 2), round(ln.y0, 2), round(ln.x1, 2), round(ln.y1, 2)]
+                    for ln in structural[:MAX_STORED_LINES]
+                    if ln.length >= MIN_STORED_LINE_PT
+                ]
+            ),
+            view_id,
+        ),
+    )
     conn.execute(
         "UPDATE sheet_views SET class_table = %s WHERE id = %s",
         (

@@ -72,6 +72,7 @@ export const MembersPanel: React.FC<{
               <div className="warn">{selected.status.reasons.join("; ")}</div>
             )}
           </div>
+          {extra?.(selected)}
           <table className="kv">
             <tbody>
               <tr>
@@ -132,7 +133,6 @@ export const MembersPanel: React.FC<{
               </ol>
             </div>
           )}
-          {extra?.(selected)}
         </div>
       )}
     </div>

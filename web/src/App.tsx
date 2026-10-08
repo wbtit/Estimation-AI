@@ -1,9 +1,17 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { PageList } from "./components/PageList";
 import { PageView } from "./components/PageView";
+import { AddLineForm } from "./components/AddLineForm";
 import { ClassPicker } from "./components/ClassPicker";
 import { ColumnForm } from "./components/ColumnForm";
 import { LabelsPanel } from "./components/LabelsPanel";
+import { MemberActions, type LegendRow } from "./components/MemberActions";
 import { MemberOverlay } from "./components/MemberOverlay";
 import { MembersPanel } from "./components/MembersPanel";
 import { NotesPanel } from "./components/NotesPanel";
@@ -24,6 +32,7 @@ import type {
   SheetView,
   TextItem,
 } from "./lib/types";
+import { nearestLine, nextToReview, type Seg } from "./lib/pick";
 import { useMembers } from "./lib/useMembers";
 import { usePdf } from "./lib/usePdf";
 
@@ -53,6 +62,20 @@ export const App: React.FC = () => {
     "views",
   );
   const [addingColumn, setAddingColumn] = useState(false);
+  const [addingBeam, setAddingBeam] = useState(false);
+  const [pendingBeam, setPendingBeam] = useState<{
+    viewId: string;
+    point: Pt;
+    line: Seg;
+  } | null>(null);
+  const [linkMode, setLinkMode] = useState<{
+    memberId: string;
+    lines: Seg[];
+  } | null>(null);
+  const [pickLines, setPickLines] = useState<Seg[]>([]);
+  const [legend, setLegend] = useState<LegendRow[]>([]);
+  // a pick click must not also select the member or view under it (pointerdown ends the mode before the click event)
+  const pickedClick = useRef(false);
   const [pendingColumn, setPendingColumn] = useState<{
     viewId: string;
     point: Pt;
@@ -184,29 +207,6 @@ export const App: React.FC = () => {
       );
   }, [sheet?.id, sheet?.page.width_pt]);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.target as HTMLElement).tagName === "INPUT") return;
-      if (e.key === "v") {
-        setAddingColumn(false);
-        setDrawing((d) => !d);
-      }
-      if (e.key === "c") {
-        setDrawing(false);
-        setTab("members");
-        setAddingColumn((a) => !a);
-      }
-      if (e.key === "Escape") {
-        setDrawing(false);
-        setAddingColumn(false);
-        setPendingColumn(null);
-        setDrag(null);
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
-
   const {
     members,
     selectedId: memberId,
@@ -214,7 +214,50 @@ export const App: React.FC = () => {
     busyView,
     find,
     addColumn,
+    addOnLine,
+    act,
+    undo,
   } = useMembers(projectId, sheetId, who, fail, loadViews);
+
+  const selectedMember =
+    members.find((m) => m.id === memberId && !m.deleted) ?? null;
+
+  useEffect(() => {
+    if (!projectId || !selectedMember?.mark) {
+      setLegend([]);
+      return;
+    }
+    api<{ rows: LegendRow[] }>(
+      `/api/projects/${projectId}/legend?mark=${encodeURIComponent(selectedMember.mark)}`,
+    )
+      .then((r) => setLegend(r.rows))
+      .catch(() => setLegend([]));
+  }, [projectId, selectedMember?.mark, selectedMember?.id]);
+
+  const loadLines = useCallback(
+    async (id: string): Promise<Seg[]> => {
+      const r = await api<{ lines: Seg[] }>(
+        `/api/projects/${projectId}/views/${id}/lines`,
+      );
+      return r.lines;
+    },
+    [projectId],
+  );
+
+  const startRelink = useCallback(async () => {
+    if (!selectedMember?.view_id) return;
+    if (linkMode) return setLinkMode(null);
+    try {
+      const lines = await loadLines(selectedMember.view_id);
+      setPickLines(lines);
+      setLinkMode({ memberId: selectedMember.id, lines });
+      setAddingBeam(false);
+      setAddingColumn(false);
+      setDrawing(false);
+    } catch (err) {
+      fail(err);
+    }
+  }, [selectedMember, linkMode, loadLines, fail]);
 
   const requireWho = (): string | null => {
     if (who.trim() === "") {
@@ -225,6 +268,101 @@ export const App: React.FC = () => {
     }
     return who.trim();
   };
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement).tagName;
+      if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") return;
+      const w = who.trim();
+      const needName = () => {
+        setMessage(
+          "Type your name at the top first (it is saved with every change).",
+        );
+      };
+      if (e.key === "Escape") {
+        setDrawing(false);
+        setAddingColumn(false);
+        setAddingBeam(false);
+        setPendingColumn(null);
+        setPendingBeam(null);
+        setLinkMode(null);
+        setPickLines([]);
+        setDrag(null);
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
+        e.preventDefault();
+        if (!w) return needName();
+        void undo();
+        return;
+      }
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.key === "v") {
+        setAddingColumn(false);
+        setAddingBeam(false);
+        setLinkMode(null);
+        setDrawing((d) => !d);
+      } else if (e.key === "c") {
+        setDrawing(false);
+        setAddingBeam(false);
+        setLinkMode(null);
+        setTab("members");
+        setAddingColumn((a) => !a);
+      } else if (e.key === "b") {
+        const v = views.find((x) => x.id === viewId) ?? views[0];
+        if (!v) return setMessage("Draw a view first.");
+        setDrawing(false);
+        setAddingColumn(false);
+        setLinkMode(null);
+        setTab("members");
+        loadLines(v.id)
+          .then((lines) => {
+            setPickLines(lines);
+            setAddingBeam((a) => !a);
+          })
+          .catch(fail);
+      } else if (e.key === "u") {
+        if (!w) return needName();
+        void undo();
+      } else if (e.key === "n") {
+        setTab("members");
+        setMemberId(nextToReview(members, memberId));
+      } else if (selectedMember) {
+        if (!w) {
+          if (["Enter", "Delete", "1", "2", "3", "l"].includes(e.key))
+            needName();
+          return;
+        }
+        if (e.key === "Enter") {
+          if (!selectedMember.status.confirmed)
+            void act(selectedMember.id, "/confirm", "POST");
+        } else if (e.key === "Delete" || e.key === "Backspace") {
+          void act(selectedMember.id, "/delete", "POST");
+        } else if (["1", "2", "3"].includes(e.key)) {
+          const rank = Number(e.key);
+          if (selectedMember.link.candidates.some((c) => c.rank === rank))
+            void act(selectedMember.id, "/link", "POST", { rank });
+        } else if (e.key === "l") {
+          void startRelink();
+        }
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [
+    who,
+    views,
+    viewId,
+    members,
+    memberId,
+    selectedMember,
+    act,
+    undo,
+    startRelink,
+    loadLines,
+    fail,
+    setMemberId,
+  ]);
 
   const createView = async (box: Box) => {
     const w = requireWho();
@@ -262,6 +400,52 @@ export const App: React.FC = () => {
   };
 
   const onPointerDown = (p: Pt): boolean => {
+    pickedClick.current = !!(linkMode || addingBeam || addingColumn);
+    if (linkMode) {
+      const line = nearestLine(
+        p.x,
+        p.y,
+        linkMode.lines,
+        10 / Math.max(zoom, 0.05),
+      );
+      if (!line) {
+        setMessage(
+          "No structural line near that click. Click closer to the line.",
+        );
+        return false;
+      }
+      if (!requireWho()) return false;
+      void act(linkMode.memberId, "/link", "POST", {
+        line: { p: [line[0], line[1]], q: [line[2], line[3]] },
+      });
+      setLinkMode(null);
+      setPickLines([]);
+      return false;
+    }
+    if (addingBeam) {
+      const inside = views.find(
+        (v) =>
+          p.x >= v.box.x0 &&
+          p.x <= v.box.x1 &&
+          p.y >= v.box.y0 &&
+          p.y <= v.box.y1,
+      );
+      if (!inside) {
+        setMessage("Click a line inside a view.");
+        return false;
+      }
+      const line = nearestLine(p.x, p.y, pickLines, 10 / Math.max(zoom, 0.05));
+      if (!line) {
+        setMessage(
+          "No structural line near that click. Find members for the view first, or click closer.",
+        );
+        return false;
+      }
+      if (!requireWho()) return false;
+      setPendingBeam({ viewId: inside.id, point: p, line });
+      setAddingBeam(false);
+      return false;
+    }
     if (addingColumn) {
       const inside = views.find(
         (v) =>
@@ -372,13 +556,20 @@ export const App: React.FC = () => {
               widthPt={widthPt}
               heightPt={heightPt}
               zoom={zoom}
-              cursor={drawing || addingColumn ? "crosshair" : "default"}
+              cursor={
+                drawing || addingColumn || addingBeam || linkMode
+                  ? "crosshair"
+                  : "default"
+              }
               onPointerDown={onPointerDown}
               onPointerMove={onPointerMove}
               onPointerUp={onPointerUp}
             >
               {views.map((v) => (
-                <g key={v.id} onClick={() => setViewId(v.id)}>
+                <g
+                  key={v.id}
+                  onClick={() => !pickedClick.current && setViewId(v.id)}
+                >
                   <rect
                     x={v.box.x0}
                     y={v.box.y0}
@@ -417,10 +608,37 @@ export const App: React.FC = () => {
                 members={members}
                 selectedId={memberId}
                 onSelect={(id) => {
+                  if (pickedClick.current) return;
                   setMemberId(id);
                   setTab("members");
                 }}
               />
+              {(linkMode || addingBeam) &&
+                pickLines.map((l, i) => (
+                  <line
+                    key={i}
+                    x1={l[0]}
+                    y1={l[1]}
+                    x2={l[2]}
+                    y2={l[3]}
+                    stroke="#1768c4"
+                    strokeOpacity={0.35}
+                    strokeWidth={2}
+                    vectorEffect="non-scaling-stroke"
+                    pointerEvents="none"
+                  />
+                ))}
+              {pendingBeam && (
+                <line
+                  x1={pendingBeam.line[0]}
+                  y1={pendingBeam.line[1]}
+                  x2={pendingBeam.line[2]}
+                  y2={pendingBeam.line[3]}
+                  stroke="#8a3fc4"
+                  strokeWidth={4}
+                  vectorEffect="non-scaling-stroke"
+                />
+              )}
               {pendingColumn && (
                 <circle
                   cx={pendingColumn.point.x}
@@ -490,6 +708,69 @@ export const App: React.FC = () => {
                   onCancel={() => setPendingColumn(null)}
                 />
               )}
+              {pendingBeam && (
+                <AddLineForm
+                  onSubmit={(f) =>
+                    addOnLine({
+                      view_id: pendingBeam.viewId,
+                      point: pendingBeam.point,
+                      line: {
+                        p: [pendingBeam.line[0], pendingBeam.line[1]],
+                        q: [pendingBeam.line[2], pendingBeam.line[3]],
+                      },
+                      ...f,
+                    })
+                  }
+                  onCancel={() => {
+                    setPendingBeam(null);
+                    setPickLines([]);
+                  }}
+                />
+              )}
+              <div className="row">
+                <button onClick={() => void undo()} disabled={!who.trim()}>
+                  Undo (U)
+                </button>
+                <button
+                  className={addingBeam ? "primary active" : ""}
+                  onClick={() => {
+                    const v = views.find((x) => x.id === viewId) ?? views[0];
+                    if (!v) return setMessage("Draw a view first.");
+                    setDrawing(false);
+                    setAddingColumn(false);
+                    setLinkMode(null);
+                    loadLines(v.id)
+                      .then((lines) => {
+                        setPickLines(lines);
+                        setAddingBeam((a) => !a);
+                      })
+                      .catch(fail);
+                  }}
+                >
+                  {addingBeam
+                    ? "Click a line (Esc to cancel)"
+                    : "Add a beam (B)"}
+                </button>
+                <button
+                  onClick={() => {
+                    const w = who.trim();
+                    if (!w)
+                      return setMessage("Type your name at the top first.");
+                    const n = nextToReview(members, memberId);
+                    if (n) setMemberId(n);
+                  }}
+                >
+                  Next to review (N)
+                </button>
+                {projectId && (
+                  <a
+                    href={`/api/projects/${projectId}/corrections.jsonl`}
+                    download
+                  >
+                    Export corrections
+                  </a>
+                )}
+              </div>
               <MembersPanel
                 members={members}
                 selectedId={memberId}
@@ -499,6 +780,23 @@ export const App: React.FC = () => {
                   setDrawing(false);
                   setAddingColumn((a) => !a);
                 }}
+                extra={(m) => (
+                  <MemberActions
+                    member={m}
+                    legend={legend}
+                    relinking={linkMode?.memberId === m.id}
+                    onConfirm={() => void act(m.id, "/confirm", "POST")}
+                    onDelete={() => void act(m.id, "/delete", "POST")}
+                    onPick={(rank) => void act(m.id, "/link", "POST", { rank })}
+                    onRelink={() => void startRelink()}
+                    onPatch={(patch) => void act(m.id, "", "PATCH", patch)}
+                    onLegend={(rowId) =>
+                      void act(m.id, "/mark-ref", "POST", {
+                        legend_row_id: rowId,
+                      })
+                    }
+                  />
+                )}
               />
             </>
           )}

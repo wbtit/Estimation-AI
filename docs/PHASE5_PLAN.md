@@ -35,6 +35,8 @@ Existing columns and migrations 001 to 004 are untouched. Original extracted val
 
 **Migration 006** (added during slice 3, additive): `sheet_views.class_table` jsonb (the stroke classes seen in the view, written by the link job) and `sheet_views.classes_confirmed` boolean (a person chose the member line classes).
 
+**Migration 007** (added during slice 4, additive): `sheet_views.structural_lines` jsonb (the structural lines of the view, written by the link job, used as click targets when a person picks the right line or adds a beam).
+
 Not in 005: dimensions table, `elevation_source`, `length_source = dimension`, anything priced or weighed.
 
 ## Worker and API

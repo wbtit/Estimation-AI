@@ -101,6 +101,7 @@ export interface SheetViewsTable {
   plan_frame: Json | null;
   class_table: Json<{ key: string; lines: number; length_pt: number }[]> | null;
   classes_confirmed: Generated<boolean>;
+  structural_lines: Json<number[][]> | null;
   created_by: string | null;
   created_at: Timestamp;
   updated_at: Timestamp;
@@ -114,7 +115,7 @@ export interface LegendRowsTable {
   designation_raw: string;
   profile: string | null;
   remarks_raw: string | null;
-  source: Json;
+  source: ColumnType<unknown, string | undefined, string>;
   created_at: Timestamp;
 }
 

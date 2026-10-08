@@ -35,6 +35,11 @@ export interface LinkEdit {
   rank: number | null;
 }
 
+/** An edit value that puts the link back to the rule's proposal (what an undo of a first link edit writes). */
+export interface LinkReset {
+  reset: true;
+}
+
 export interface ViewContext {
   id: string;
   box: ViewBox;
@@ -104,12 +109,14 @@ export function memberView(
   const pick = <T>(field: string, base: T): T => (e.has(field) ? (e.get(field) as T) : base);
 
   const candidates = ((row.link_candidates ?? []) as Candidate[]).slice(0, 3);
-  const linkEdit = e.has('link') ? (e.get('link') as LinkEdit | null) : undefined;
+  let linkEdit = e.has('link') ? (e.get('link') as LinkEdit | LinkReset | null) : undefined;
+  if (linkEdit && 'reset' in linkEdit) linkEdit = undefined;
+  const person = linkEdit as LinkEdit | null | undefined;
   let line: Line | null;
   let source: 'rule' | 'person' | 'none';
   let chosenRank: number | null;
   if (linkEdit !== undefined) {
-    line = linkEdit?.line ?? null;
+    line = person?.line ?? null;
     source = line ? 'person' : 'none';
     chosenRank = line ? (candidates.find((c) => sameLine(c, line as Line))?.rank ?? null) : null;
   } else if (candidates.length > 0) {

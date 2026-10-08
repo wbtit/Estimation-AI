@@ -1,0 +1,196 @@
+// Human actions on a member, each producing a list of edit entries (field, before, after).
+// "before" is always the EFFECTIVE value before the action, in the same JSON shape the edit
+// stores, so an undo is just the same entries swapped. Nothing here touches the stored row.
+import type { Kysely, Transaction } from 'kysely';
+import { sql } from 'kysely';
+import type { Database } from '../db/types.js';
+import { recordAction, type EditEntry } from './actions.js';
+import type { Line, LinkEdit, LinkReset, MemberView } from './members.js';
+import { parseProfile } from './profile.js';
+
+type Db = Kysely<Database> | Transaction<Database>;
+
+export class OpError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+/** The link as an edit value: a person's choice, or {reset} when the rule's proposal is in force. */
+export function linkValue(m: MemberView): LinkEdit | LinkReset {
+  return m.link.source === 'person'
+    ? { line: m.link.line, rank: m.link.chosen_rank }
+    : { reset: true };
+}
+
+export interface MemberPatch {
+  profile_text?: string | null;
+  mark?: string | null;
+  level?: string | null;
+  type?: string;
+  quantity?: number;
+}
+
+/** Edits for changed fields only; the profile text is re-parsed into the canonical profile. */
+export function patchEntries(
+  m: MemberView,
+  memberLevelOverride: string | null,
+  patch: MemberPatch,
+): EditEntry[] {
+  const out: EditEntry[] = [];
+  const push = (field: string, before: unknown, after: unknown) => {
+    if (JSON.stringify(before) !== JSON.stringify(after)) {
+      out.push({ memberId: m.id, field, before, after, status: 'edited' });
+    }
+  };
+  if (patch.profile_text !== undefined) {
+    const text = patch.profile_text === null ? null : patch.profile_text.trim() || null;
+    const parsed = text ? parseProfile(text) : null;
+    push('profile_raw', m.profile_raw, text);
+    push('profile', m.profile, parsed?.canonical ?? null);
+  }
+  if (patch.mark !== undefined) push('mark', m.mark, patch.mark?.trim() || null);
+  if (patch.level !== undefined) push('level', memberLevelOverride, patch.level?.trim() || null);
+  if (patch.type !== undefined) push('type', m.type, patch.type);
+  if (patch.quantity !== undefined) push('quantity', m.quantity, patch.quantity);
+  return out;
+}
+
+export function linkEntries(m: MemberView, choice: { rank?: number; line?: Line }): EditEntry[] {
+  let after: LinkEdit;
+  if (choice.rank !== undefined) {
+    const c = m.link.candidates.find((x) => x.rank === choice.rank);
+    if (!c) throw new OpError(400, `there is no candidate ${choice.rank}`);
+    after = { line: { p: c.p, q: c.q }, rank: c.rank };
+  } else if (choice.line) {
+    after = { line: choice.line, rank: null };
+  } else {
+    throw new OpError(400, 'give a candidate rank or a line');
+  }
+  return [{ memberId: m.id, field: 'link', before: linkValue(m), after, status: 'edited' }];
+}
+
+export function confirmEntries(m: MemberView): EditEntry[] {
+  if (m.review_status === 'approved') return [];
+  return [
+    {
+      memberId: m.id,
+      field: 'review_status',
+      before: m.review_status,
+      after: 'approved',
+      status: 'approved',
+    },
+  ];
+}
+
+export function deleteEntries(m: MemberView): EditEntry[] {
+  if (m.deleted) return [];
+  return [
+    {
+      memberId: m.id,
+      field: 'review_status',
+      before: m.review_status,
+      after: 'rejected',
+      status: 'rejected',
+    },
+  ];
+}
+
+export interface LegendChoice {
+  status: 'linked' | 'no_legend_row' | 'ambiguous';
+  row?: { id: string; designation_raw: string; profile: string | null } | null;
+}
+
+/** Confirming a legend row also takes the profile from that row; the mark link is the person's. */
+export function markRefEntries(m: MemberView, choice: LegendChoice): EditEntry[] {
+  const out: EditEntry[] = [
+    {
+      memberId: m.id,
+      field: 'mark_ref',
+      before: m.mark_ref,
+      after: { status: choice.status, legend_row_id: choice.row?.id ?? null },
+      status: 'edited',
+    },
+  ];
+  if (choice.row) {
+    if (m.profile_raw !== choice.row.designation_raw) {
+      out.push({
+        memberId: m.id,
+        field: 'profile_raw',
+        before: m.profile_raw,
+        after: choice.row.designation_raw,
+        status: 'edited',
+      });
+    }
+    if (m.profile !== choice.row.profile) {
+      out.push({
+        memberId: m.id,
+        field: 'profile',
+        before: m.profile,
+        after: choice.row.profile,
+        status: 'edited',
+      });
+    }
+  }
+  return out;
+}
+
+/** The inverse of an action's rows (an undo appends them; nothing is deleted). */
+export async function undoLastAction(
+  db: Kysely<Database>,
+  projectId: string,
+  who: string,
+  states: (memberId: string) => Promise<MemberView | null>,
+): Promise<{ undone: string | null; rows: number }> {
+  const last = await sql<{ action_id: string }>`
+    SELECT e.action_id FROM member_edits e JOIN members m ON m.id = e.member_id
+    WHERE m.project_id = ${projectId} AND e.reviewer = ${who}
+      AND e.action_id IS NOT NULL AND e.undo_of_action_id IS NULL
+      AND NOT EXISTS (SELECT 1 FROM member_edits u WHERE u.undo_of_action_id = e.action_id)
+    GROUP BY e.action_id ORDER BY max(e.created_at) DESC, e.action_id DESC LIMIT 1`.execute(db);
+  const actionId = last.rows[0]?.action_id;
+  if (!actionId) return { undone: null, rows: 0 };
+  const rows = await db
+    .selectFrom('member_edits')
+    .select(['member_id', 'field_name', 'original_value', 'corrected_value'])
+    .where('action_id', '=', actionId)
+    .orderBy('created_at')
+    .orderBy('id')
+    .execute();
+  const entries: EditEntry[] = [];
+  for (const r of rows) {
+    if (r.field_name === '__created__') {
+      const m = await states(r.member_id);
+      entries.push({
+        memberId: r.member_id,
+        field: 'review_status',
+        before: m?.review_status ?? 'edited',
+        after: 'rejected',
+        status: 'rejected',
+      });
+    } else {
+      entries.push({
+        memberId: r.member_id,
+        field: r.field_name,
+        before: r.corrected_value,
+        after: r.original_value,
+        status: 'edited',
+      });
+    }
+  }
+  entries.reverse(); // restore in the opposite order
+  await recordAction(db, who, entries, `undo of action ${actionId}`, actionId);
+  return { undone: actionId, rows: entries.length };
+}
+
+export async function applyEntries(
+  db: Db,
+  who: string,
+  entries: EditEntry[],
+): Promise<string | null> {
+  if (entries.length === 0) return null;
+  return recordAction(db, who, entries);
+}
