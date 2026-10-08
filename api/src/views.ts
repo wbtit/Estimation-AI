@@ -50,8 +50,16 @@ export function effectiveScale(sheet: Selectable<SheetsTable>): EffectiveScale |
   return null;
 }
 
-export function sheetView(sheet: Selectable<SheetsTable>) {
+/** Human overrides of guessed sheet fields (latest sheet_edits row; null = override cleared). */
+export interface SheetOverrides {
+  page_type?: string | null;
+  level?: string | null;
+}
+
+export function sheetView(sheet: Selectable<SheetsTable>, overrides: SheetOverrides = {}) {
   const effective = effectiveScale(sheet);
+  const typeOverridden = overrides.page_type !== undefined && overrides.page_type !== null;
+  const levelOverridden = overrides.level !== undefined && overrides.level !== null;
   return {
     id: sheet.id,
     project_id: sheet.project_id,
@@ -83,6 +91,17 @@ export function sheetView(sheet: Selectable<SheetsTable>) {
       override_ratio: num(sheet.scale_override_ratio),
       effective: effective && { raw: effective.raw, ratio: effective.ratio },
       source: effective?.source ?? null,
+    },
+    page_type: {
+      effective: typeOverridden ? overrides.page_type : sheet.page_type_guess,
+      guess: sheet.page_type_guess,
+      reason: sheet.page_type_reason,
+      overridden: typeOverridden,
+    },
+    level: {
+      effective: levelOverridden ? overrides.level : sheet.level_guess,
+      guess: sheet.level_guess,
+      overridden: levelOverridden,
     },
     needs_review: sheet.needs_review,
     review_reasons: sheet.review_reasons,

@@ -14,7 +14,8 @@ import { resolveUploadDir } from '../config.js';
 import { getDb } from '../db/client.js';
 import type { Database, SheetsTable } from '../db/types.js';
 import { parseScaleExact } from '../scale/index.js';
-import { effectiveScale, sheetView } from '../views.js';
+import { effectiveScale, sheetView, type SheetOverrides } from '../views.js';
+import { loadSheetOverrides } from '../review/overrides.js';
 import { HttpError } from './http-error.js';
 
 export interface SheetRouteOptions {
@@ -105,14 +106,22 @@ export const sheetRoutes: FastifyPluginAsync<SheetRouteOptions> = async (app, op
         .where('project_id', '=', projectId)
         .orderBy('page_index')
         .execute();
-      return { sheets: sheets.map(sheetView) };
+      const overrides = await loadSheetOverrides(
+        db(),
+        sheets.map((s) => s.id),
+      );
+      return { sheets: sheets.map((s) => sheetView(s, overrides.get(s.id))) };
     },
   );
 
   app.get<{ Params: { projectId: string; sheetId: string } }>(
     '/api/projects/:projectId/sheets/:sheetId',
     { schema: { params: sheetParams } },
-    async (request) => sheetView(await loadSheet(request.params.projectId, request.params.sheetId)),
+    async (request) => {
+      const sheet = await loadSheet(request.params.projectId, request.params.sheetId);
+      const overrides: Map<string, SheetOverrides> = await loadSheetOverrides(db(), [sheet.id]);
+      return sheetView(sheet, overrides.get(sheet.id));
+    },
   );
 
   app.get<{ Params: { projectId: string; sheetId: string } }>(
@@ -207,7 +216,7 @@ export const sheetRoutes: FastifyPluginAsync<SheetRouteOptions> = async (app, op
             .execute();
           return after;
         });
-      return sheetView(updated);
+      return sheetView(updated, (await loadSheetOverrides(db(), [updated.id])).get(updated.id));
     },
   );
 };

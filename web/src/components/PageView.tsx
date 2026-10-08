@@ -1,6 +1,6 @@
-import React, { useEffect, useRef, useState } from 'react';
-import type { PDFDocumentProxy } from 'pdfjs-dist';
-import { clientToPage, type Pt } from '../lib/geometry';
+import React, { useEffect, useRef, useState } from "react";
+import type { PDFDocumentProxy } from "pdfjs-dist";
+import { clientToPage, type Pt } from "../lib/geometry";
 
 export interface PageViewProps {
   pdf: PDFDocumentProxy;
@@ -48,7 +48,7 @@ export const PageView: React.FC<PageViewProps> = ({
       const canvas = canvasRef.current;
       canvas.width = Math.floor(viewport.width);
       canvas.height = Math.floor(viewport.height);
-      const ctx = canvas.getContext('2d');
+      const ctx = canvas.getContext("2d");
       if (!ctx) return;
       task = page.render({ canvasContext: ctx, viewport, canvas });
       task.promise.then(
@@ -70,10 +70,14 @@ export const PageView: React.FC<PageViewProps> = ({
   return (
     <div
       className="page-wrap"
-      style={{ width: cssW, height: cssH, cursor: cursor ?? 'default' }}
+      style={{ width: cssW, height: cssH, cursor: cursor ?? "default" }}
       data-testid="page-wrap"
     >
-      <canvas ref={canvasRef} className="page-canvas" style={{ width: cssW, height: cssH }} />
+      <canvas
+        ref={canvasRef}
+        className="page-canvas"
+        style={{ width: cssW, height: cssH }}
+      />
       <svg
         ref={svgRef}
         className="page-overlay"
@@ -81,7 +85,8 @@ export const PageView: React.FC<PageViewProps> = ({
         width={cssW}
         height={cssH}
         onPointerDown={(e) => {
-          if (onPointerDown?.(toPage(e), e)) (e.target as Element).setPointerCapture?.(e.pointerId);
+          if (onPointerDown?.(toPage(e), e))
+            (e.target as Element).setPointerCapture?.(e.pointerId);
         }}
         onPointerMove={(e) => onPointerMove?.(toPage(e), e)}
         onPointerUp={(e) => onPointerUp?.(toPage(e), e)}

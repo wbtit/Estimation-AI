@@ -1,4 +1,4 @@
-import type { Box } from './geometry';
+import type { Box } from "./geometry";
 
 export interface Project {
   id: string;
@@ -53,7 +53,7 @@ export interface LevelInfo {
 export interface ScaleSuggestion {
   ratio: number;
   raw: string;
-  where: 'inside' | 'near';
+  where: "inside" | "near";
   distance_pt: number;
   alternatives: { raw: string; ratio: number; distance_pt: number }[];
   ambiguous: boolean;
@@ -67,9 +67,38 @@ export interface SheetView {
   scale: {
     ratio: number | null;
     text: string | null;
-    source: 'detected_text' | 'user_confirmed' | null;
+    source: "detected_text" | "user_confirmed" | null;
     confirmed: boolean;
   };
   structural_classes: string[];
   suggestion: ScaleSuggestion | null;
+}
+
+export interface ParsedEntry {
+  kind: string;
+  raw?: string;
+  canonical?: string;
+  mm?: number;
+  value_mm?: number | null;
+  ratio?: number | null;
+  [key: string]: unknown;
+}
+
+export interface TextItem {
+  id: string;
+  item_key: string;
+  bbox: Box;
+  text: string | null;
+  level: "word" | "line" | null;
+  angle_deg: number | null;
+  orientation: string;
+  methods: string[];
+  parsed: ParsedEntry[] | null;
+}
+
+export interface NotesSheet {
+  sheet_id: string;
+  page_number: number;
+  sheet_number: string | null;
+  lines: { text: string; bbox: Box }[];
 }

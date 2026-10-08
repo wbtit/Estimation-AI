@@ -34,6 +34,7 @@ class TextScan:
     scale_parsed_ratio: float | None = None
     reasons: list[str] = field(default_factory=list)
     evidence: dict[str, Any] = field(default_factory=dict)
+    view_titles: list[str] = field(default_factory=list)  # for the page type guess; never stored
 
 
 def _bbox(box: Any) -> dict[str, float]:
@@ -96,7 +97,9 @@ def scan_text(words: list[Word], lines: list[Line], page_w: float, page_h: float
         else None
     )
 
-    result = classify(sheet.title, view_titles(lines))
+    titles = view_titles(lines)
+    out.view_titles = titles
+    result = classify(sheet.title, titles)
     out.kind, out.kind_confidence, out.kind_reason = result.kind, result.confidence, result.reason
     reasons.extend(result.flags)
     evidence["classification"] = {

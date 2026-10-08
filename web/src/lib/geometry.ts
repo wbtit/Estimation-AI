@@ -65,7 +65,7 @@ function gcd(a: number, b: number): number {
 
 /** Millimetres as feet-inches to the nearest 1/16 inch: 3810 -> 12'-6", 304.8 -> 1'-0". */
 export function mmToFeetInches(mm: number, denominator = 16): string {
-  if (!Number.isFinite(mm)) return '';
+  if (!Number.isFinite(mm)) return "";
   const negative = mm < 0;
   const units = Math.round((Math.abs(mm) / MM_PER_INCH) * denominator);
   const perFoot = 12 * denominator;
@@ -79,7 +79,7 @@ export function mmToFeetInches(mm: number, denominator = 16): string {
     const fraction = `${numerator / g}/${denominator / g}`;
     inchText = inches === 0 ? fraction : `${inches} ${fraction}`;
   }
-  return `${negative && units !== 0 ? '-' : ''}${feet}'-${inchText}"`;
+  return `${negative && units !== 0 ? "-" : ""}${feet}'-${inchText}"`;
 }
 
 /** Zoom that makes a page of the given width fit a container width (with a little margin). */

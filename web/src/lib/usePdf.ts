@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
-import * as pdfjs from 'pdfjs-dist';
-import type { PDFDocumentProxy } from 'pdfjs-dist';
-import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+import { useEffect, useState } from "react";
+import * as pdfjs from "pdfjs-dist";
+import type { PDFDocumentProxy } from "pdfjs-dist";
+import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
 
@@ -16,14 +16,19 @@ export function usePdf(projectId: string | null): {
     setPdf(null);
     setError(null);
     if (!projectId) return;
-    const task = pdfjs.getDocument({ url: `/api/projects/${projectId}/pdf-file` });
+    const task = pdfjs.getDocument({
+      url: `/api/projects/${projectId}/pdf-file`,
+    });
     let alive = true;
     task.promise.then(
       (doc) => {
         if (alive) setPdf(doc);
       },
       (err: unknown) => {
-        if (alive) setError(err instanceof Error ? err.message : 'the PDF could not be opened');
+        if (alive)
+          setError(
+            err instanceof Error ? err.message : "the PDF could not be opened",
+          );
       },
     );
     return () => {

@@ -9,8 +9,10 @@ from dataclasses import dataclass, field
 
 import pymupdf
 
+from src.pdf_scan.pagetype import guess_page_type
 from src.pdf_scan.textlines import displayed_box, page_words_and_lines
 from src.pdf_scan.textscan import scan_text
+from src.text_layer.parsers.profile import find_profiles
 from src.text_layer.quality import is_usable, text_quality
 
 MIN_TEXT_CHARS = 20  # fewer non-space characters than this: no real text layer
@@ -44,6 +46,9 @@ class PageScan:
     review_reasons: list[str] = field(default_factory=list)
     text_quality: float | None = None
     evidence: dict[str, object] | None = None
+    page_type_guess: str | None = None
+    page_type_reason: str | None = None
+    level_guess: str | None = None
 
     @property
     def needs_review(self) -> bool:
@@ -134,6 +139,20 @@ def analyze_page(page: pymupdf.Page) -> PageScan:
     scan.scale_parsed_ratio = found.scale_parsed_ratio
     scan.evidence = found.evidence if usable else None
     reasons.extend(found.reasons)
+    if usable:
+        guess = guess_page_type(
+            found.title,
+            found.view_titles,
+            len(find_profiles(re.sub(r"\s+", " ", text))),
+            found.kind,
+            text_chars,
+            path_count,
+        )
+        scan.page_type_guess, scan.page_type_reason, scan.level_guess = (
+            guess.page_type,
+            guess.reason,
+            guess.level,
+        )
 
     scan.review_reasons = list(dict.fromkeys(reasons))
     return scan
