@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import type { ColumnInput } from "../lib/useMembers";
 
 export const ColumnForm: React.FC<{
@@ -12,6 +12,12 @@ export const ColumnForm: React.FC<{
   const [base, setBase] = useState("");
   const [top, setTop] = useState("");
   const [busy, setBusy] = useState(false);
+  const first = useRef<HTMLInputElement>(null);
+  // the click on the sheet that opened this form can take the focus back; focus the first field again
+  useEffect(() => {
+    const t = setTimeout(() => first.current?.focus(), 60);
+    return () => clearTimeout(t);
+  }, []);
   return (
     <form
       className="column-form panel"
@@ -36,6 +42,7 @@ export const ColumnForm: React.FC<{
         <input
           value={mark}
           onChange={(e) => setMark(e.target.value)}
+          ref={first}
           autoFocus
           aria-label="column mark"
         />

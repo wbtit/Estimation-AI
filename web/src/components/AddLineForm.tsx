@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 
 export const AddLineForm: React.FC<{
   onSubmit: (input: {
@@ -12,6 +12,11 @@ export const AddLineForm: React.FC<{
   const [profile, setProfile] = useState("");
   const [type, setType] = useState("beam");
   const [busy, setBusy] = useState(false);
+  const first = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    const t = setTimeout(() => first.current?.focus(), 60);
+    return () => clearTimeout(t);
+  }, []);
   return (
     <form
       className="column-form panel"
@@ -42,6 +47,7 @@ export const AddLineForm: React.FC<{
           value={profile}
           onChange={(e) => setProfile(e.target.value)}
           placeholder="W12x26"
+          ref={first}
           autoFocus
           aria-label="new member profile"
         />

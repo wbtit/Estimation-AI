@@ -38,6 +38,7 @@ def main(pid: str) -> None:
     print("pages by type:", dict(types))
     plan_occ = collections.Counter()
     schedule_pages = []
+    mention_pages: list[int] = []
     row_stats = collections.Counter()
     for s in sheets:
         if s["page"]["kind"] != "vector":
@@ -51,7 +52,11 @@ def main(pid: str) -> None:
                 t = clean(w.text)
                 if MARK_RE.match(t) and not find_profiles(w.text):
                     plan_occ[t] += 1
-        is_column_schedule = any("COLUMN" in ln for ln in lines) and any("SCHEDULE" in ln for ln in lines)
+        mentions = any("COLUMN" in ln for ln in lines) and any("SCHEDULE" in ln for ln in lines)
+        if mentions:
+            mention_pages.append(s["page_number"])
+        # a column schedule page: the page type guess says schedule/legend AND the words COLUMN and SCHEDULE are on it
+        is_column_schedule = mentions and eff == "schedule_legend"
         if is_column_schedule:
             schedule_pages.append(s["page_number"])
             parsed = {(r.mark, r.designation_raw) for r in legend_rows(words)}
@@ -72,7 +77,8 @@ def main(pid: str) -> None:
     print(f"mark-shaped words on framing plan pages: {sum(plan_occ.values())} occurrences, {len(distinct)} distinct marks")
     print(f"legend rows in the document: {len(legend)} rows, {len(by_mark)} distinct marks")
     print(f"distinct plan marks: linked (one designation) {linked}, ambiguous (several) {ambiguous}, no legend row {nolegend}")
-    print(f"column schedule pages (words COLUMN and SCHEDULE on the page): {len(schedule_pages)} -> pages {schedule_pages}")
+    print(f"pages with the words COLUMN and SCHEDULE (any page type): {len(mention_pages)}")
+    print(f"column schedule pages (schedule/legend by the page type guess AND those words): {len(schedule_pages)} -> pages {schedule_pages}")
     print("schedule-page rows:", dict(row_stats))
     members = get(f"/api/projects/{pid}/members?include_deleted=true")["members"]
     mm = [m for m in members if m["mark"]]
