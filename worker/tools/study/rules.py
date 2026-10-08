@@ -42,14 +42,20 @@ def score(c: dict, p: Params, preferred_side: int | None) -> float:
     s = float(c["dist"])
     if c["rel_angle"] > p.theta_tol:
         s += p.p_ang
-    if p.side_mode == "learned" and preferred_side is not None and c["side"] not in (0, preferred_side):
+    if (
+        p.side_mode == "learned"
+        and preferred_side is not None
+        and c["side"] not in (0, preferred_side)
+    ):
         s += p.p_side
     return s
 
 
 def rank(cands: list[dict], p: Params, preferred_side: int | None) -> list[tuple[float, int]]:
     """[(score, cand_number)] best first; ties by smaller distance then candidate number."""
-    return sorted(((score(c, p, preferred_side), c["cand"]) for c in cands), key=lambda t: (t[0], t[1]))
+    return sorted(
+        ((score(c, p, preferred_side), c["cand"]) for c in cands), key=lambda t: (t[0], t[1])
+    )
 
 
 def predict(

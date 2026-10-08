@@ -4,3 +4,8 @@ target-version = "py312"
 [lint]
 select = ["E", "F", "I", "B"]
 ignore = []
+
+# Research code of the Phase 4e study: scripts add their own folder to sys.path (they run isolated)
+[lint.per-file-ignores]
+"tools/study/*.py" = ["E402", "I001", "E501", "E741", "B905", "B007"]
+"tests/test_study_tools.py" = ["E402", "I001", "E501", "B905"]

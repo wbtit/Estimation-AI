@@ -37,7 +37,11 @@ def dump_page(job: str, idx: int) -> dict:
             "lines": [ln.to_json() for ln in lines],
             "shapes": [{**s, "bbox": [round(v, 2) for v in s["bbox"]]} for s in shapes],
             "classes": {
-                k: {"lines": v["lines"], "length_pt": round(v["length_pt"], 1), "layers_used": len(v["layers"])}
+                k: {
+                    "lines": v["lines"],
+                    "length_pt": round(v["length_pt"], 1),
+                    "layers_used": len(v["layers"]),
+                }
                 for k, v in sorted(classes.items(), key=lambda kv: -kv[1]["length_pt"])
             },
             "distinct_layers": len(layers),
@@ -56,7 +60,14 @@ def main() -> None:
     pages = (
         [int(p) for p in args.pages.split(",")]
         if args.pages
-        else sorted({*sel["plan_pages"], *sel["schedule_pages"], *sel["legend_pages"], *sel["elevation_pages"]})
+        else sorted(
+            {
+                *sel["plan_pages"],
+                *sel["schedule_pages"],
+                *sel["legend_pages"],
+                *sel["elevation_pages"],
+            }
+        )
     )
     for p in pages:
         d = dump_page(args.job, p)

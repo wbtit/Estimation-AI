@@ -46,18 +46,41 @@ def render(job: str, page_no: int, clip: pymupdf.Rect | None, zoom: float, class
         dump = load_dump(job, page_no)
         colours = class_colours(dump)
         for x0, y0, x1, y1, w, col, layer, dashed, n in dump["lines"]:
-            if max(x0, x1) < clip.x0 or min(x0, x1) > clip.x1 or max(y0, y1) < clip.y0 or min(y0, y1) > clip.y1:
+            if (
+                max(x0, x1) < clip.x0
+                or min(x0, x1) > clip.x1
+                or max(y0, y1) < clip.y0
+                or min(y0, y1) > clip.y1
+            ):
                 continue
-            klass = f"{__import__('linework').width_bucket(w)}|{col}|{'dash' if dashed else 'solid'}"
-            draw.line([px(x0, y0), px(x1, y1)], fill=colours.get(klass, (0, 0, 0)), width=max(1, round(zoom)))
+            klass = (
+                f"{__import__('linework').width_bucket(w)}|{col}|{'dash' if dashed else 'solid'}"
+            )
+            draw.line(
+                [px(x0, y0), px(x1, y1)],
+                fill=colours.get(klass, (0, 0, 0)),
+                width=max(1, round(zoom)),
+            )
     for o in overlays or []:
         if o["kind"] == "box":
             b = o["bbox"]
-            draw.rectangle([px(b[0], b[1]), px(b[2], b[3])], outline=tuple(o["colour"]), width=max(2, round(zoom)))
+            draw.rectangle(
+                [px(b[0], b[1]), px(b[2], b[3])],
+                outline=tuple(o["colour"]),
+                width=max(2, round(zoom)),
+            )
         elif o["kind"] == "line":
-            draw.line([px(*o["p"]), px(*o["q"])], fill=tuple(o["colour"]), width=max(2, round(zoom * 1.5)))
+            draw.line(
+                [px(*o["p"]), px(*o["q"])], fill=tuple(o["colour"]), width=max(2, round(zoom * 1.5))
+            )
         if o.get("text"):
-            pos = px(*(o.get("text_at") or (o["bbox"][0], o["bbox"][1]) if o["kind"] == "box" else o["p"]))
+            pos = px(
+                *(
+                    o.get("text_at") or (o["bbox"][0], o["bbox"][1])
+                    if o["kind"] == "box"
+                    else o["p"]
+                )
+            )
             draw.text((pos[0] + 2, pos[1] - 12), str(o["text"]), fill=tuple(o["colour"]))
     return img
 

@@ -88,4 +88,6 @@ def candidates_for(label: dict, structural_lines: list[dict]) -> list[dict]:
 
 
 def structural_lines_for(job: str, page: int, classes: set[str]) -> list[dict]:
-    return [ln for ln in page_lines(job, page) if ln["klass"] in classes and ln["length"] >= MIN_LINE_PT]
+    return [
+        ln for ln in page_lines(job, page) if ln["klass"] in classes and ln["length"] >= MIN_LINE_PT
+    ]

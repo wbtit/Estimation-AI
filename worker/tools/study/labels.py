@@ -18,7 +18,9 @@ from src.text_layer.parsers.profile import find_profiles  # noqa: E402
 
 TITLE_X, TITLE_Y = 0.84, 0.88
 NOTE_MAX_WORDS = 12  # a line with more words than this is running text, not a member label
-GROUP_WORDS = re.compile(r"\bTYP\b|\bTYPICAL\b|\bSIM\b|\bSIMILAR\b|\bU\.?N\.?O\.?\b|\bEA\b|\bEACH\b", re.I)
+GROUP_WORDS = re.compile(
+    r"\bTYP\b|\bTYPICAL\b|\bSIM\b|\bSIMILAR\b|\bU\.?N\.?O\.?\b|\bEA\b|\bEACH\b", re.I
+)
 QTY_BEFORE = re.compile(r"\(\s*\d+\s*\)\s*$")
 CAMBER_AFTER = re.compile(r"^\s*\(\s*\d+(?:\s*\d/\d|/\d+)?\s*\"?\s*\)")
 
@@ -50,7 +52,9 @@ def page_labels(job: str, page_idx: int) -> tuple[list[dict], dict]:
             if block["type"] != 0:
                 continue
             for ln in block["lines"]:
-                chars = [(c["c"], pymupdf.Rect(c["bbox"])) for sp in ln["spans"] for c in sp["chars"]]
+                chars = [
+                    (c["c"], pymupdf.Rect(c["bbox"])) for sp in ln["spans"] for c in sp["chars"]
+                ]
                 text, rects = "", []
                 for ch, r in chars:
                     if ch.isspace():
@@ -68,7 +72,6 @@ def page_labels(job: str, page_idx: int) -> tuple[list[dict], dict]:
                 angle = _angle(ln["dir"], m)
                 line_box = _union([r for r in rects], m)
                 n_words = len(text.split())
-                cx, cy = (line_box[0] + line_box[2]) / 2, (line_box[1] + line_box[3]) / 2
                 for p in found:
                     box = _union(rects[p.span[0] : p.span[1]], m)
                     mx, my = (box[0] + box[2]) / 2, (box[1] + box[3]) / 2

@@ -21,7 +21,14 @@ from src.text_layer.parsers.profile import find_profiles  # noqa: E402
 HEADER = ("MARK", "SIZE", "QTY", "QUANTITY", "LENGTH", "WEIGHT", "PROFILE", "ELEV")
 N_DOCS = 8
 N_PLAN_PAGES = 4
-FEATURES = ("pages", "median_chars_per_page", "circles", "exploded_dash_segments", "ocg_layers", "file_mb")
+FEATURES = (
+    "pages",
+    "median_chars_per_page",
+    "circles",
+    "exploded_dash_segments",
+    "ocg_layers",
+    "file_mb",
+)
 
 
 def feature_vector(row: dict) -> list[float]:
@@ -97,7 +104,9 @@ def main() -> None:
         schedule = [i for i in pages if stats[i]["header_words"] >= 3 and i not in plan][:2]
         legend = [i for i in pages if stats[i]["legend_word"] and i not in plan][:2]
         elevation = [
-            i for i in pages if stats[i]["elevation_notes"] >= 6 and i not in plan + schedule + legend
+            i
+            for i in pages
+            if stats[i]["elevation_notes"] >= 6 and i not in plan + schedule + legend
         ][:2]
         selection[jid] = {
             "producer_category": inv[jid]["producer_category"],
@@ -106,7 +115,9 @@ def main() -> None:
             "schedule_pages": schedule,
             "legend_pages": legend,
             "elevation_pages": elevation,
-            "page_stats": {str(i): stats[i] for i in sorted({*plan, *schedule, *legend, *elevation})},
+            "page_stats": {
+                str(i): stats[i] for i in sorted({*plan, *schedule, *legend, *elevation})
+            },
         }
     out = common.STUDY / "selection.json"
     out.write_text(json.dumps({"documents": docs, "selection": selection}, indent=1))

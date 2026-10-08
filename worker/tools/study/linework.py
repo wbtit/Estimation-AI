@@ -153,7 +153,7 @@ def _merge_collinear(group: list[tuple]) -> list[tuple[float, float, float, floa
             a, b = x0 * ux + y0 * uy, x1 * ux + y1 * uy
             iv.append((min(a, b), max(a, b), (x0, y0, x1, y1)))
         iv.sort(key=lambda t: t[0])
-        cur_lo, cur_hi, first, n = iv[0][0], iv[0][1], iv[0][2], 1
+        cur_lo, cur_hi, n = iv[0][0], iv[0][1], 1
         ref = iv[0][2]
         base_off = -ref[0] * uy + ref[1] * ux
         for lo, hi, _ in iv[1:]:
