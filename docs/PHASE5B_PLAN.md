@@ -1,0 +1,30 @@
+# Phase 5b plan: make the v1 loop honest, and measure it on more than one document
+
+Branch `phase-5b` (from `phase-5-review-v1`). Baseline before any change: lint clean; API 352 tests, worker 453, web 11, all passing.
+
+Why: Phase 5 v1 was measured on one document, job-005, the easiest of the eight study documents (study validation top-1 85% there against 44% pooled), and the 40 gold labels used for the color check were all of that document, about half of them from the DESIGN half the rule was tuned on. All Phase 5 numbers are optimistic. The frozen linking rule (`worker/src/linking/`, `phase4e-v1-frozen`) and the color thresholds are NOT retuned here.
+
+Out of scope (unchanged): pricing, weights, AISC check, Tekla, computer vision, raster or outlined-text documents, LLM in the pipeline, Bluebeam takeoff import, automatic column detection, a schedule table parser (Phase 5c, proposal only).
+
+## Items (in order; commit after each; lint and all tests after each)
+1. **Double counting.** Measure on the job-005 views how many structural lines carry more than one member (1, 2, 3+), by structural cause where it can be told (counts only). Fix: members sharing the same chosen line get the amber reason `shared_line` and are shown grouped. In the takeoff the best-scoring member of a group stays in the main total; the others go on their own line "possible duplicates (shared line)", out of the main total like red, until a person says "separate members" or merges them. Never auto-merge or delete. Both person actions are `member_edits` with undo.
+2. **Unlinked labels are not red members.** A profile label with no candidate within the rule radius goes to a per-sheet "unlinked labels" list (count on the sheet and a warning on the takeoff), not to a red member. A person can click one to make it a member. `status.ts` and its table test change; red keeps its other meanings.
+3. **Whole-sheet view.** If a sheet has exactly one distinct scale expression, offer a one-click "whole sheet" view with that scale suggested (the person still confirms). Otherwise draw boxes as now. The title block and sheet border are excluded by a documented rule.
+4. **Page types.** Only framing plans take part in the takeoff by default; the link job does not run automatically on other types; a person can switch a sheet to "include in takeoff" (a sheet edit). The takeoff lists included and excluded sheets.
+5. **Joists and not-a-member.** Parser for K, LH, DLH joist series (Python and TypeScript, shared fixture). Member type `joist`, flag `joist_series`, never matched to the AISC catalog, own takeoff section. Action "not a member" with a reason (existing, misc steel, detail, other): leaves the member and unlinked lists, stored as an edit with undo, exported in the corrections JSONL.
+6. **Grade table set by the person.** Migration 008, additive, empty table: shape family to material/grade text with set_by and set_at. The takeoff and Excel show "grade (user-set)" or "not set". Never inferred.
+7. **Confirmed versus system color.** Takeoff page and Excel Summary show (a) the system's own green/amber/red per member (rule result before any human action) and (b) the human state (unreviewed / confirmed / edited / not a member), and how much of the main total is unreviewed system output. The original confidence stays stored and exported.
+8. **Multi-document calibration.** Production flow (views, scales confirmed by the test harness acting as a person, link job) on job-004, job-005, job-008, job-009, job-010, job-020 on the pages the Phase 4e gold covers (job-002 and job-016 are raster: skipped). Compare with the Phase 4e AI gold for the VALIDATION half only. Report parity with the study's top-1, a table of color against correct per document and pooled, the share unlinked, the color mix on whole pages, and what the harness had to do by hand for each scale.
+9. **Marks, legends, columns on job-010.** Counts of mark labels, legend rows, link states, column schedule pages, parsed rows; columns added by hand through the UI to the takeoff including the base-elevation red rule. `docs/PHASE5C_COLUMN_SCHEDULE_NOTES.md`: structure of the schedule page (no text), why the row-based method failed, a proposed column-aware parser and acceptance test. Proposal only.
+10. **Small fixes.** Editor name asked once and stored with every edit; OPEN_QUESTIONS 15 resolved; "Phase map (actual)" note in SPEC section 9; new open questions from 48; Decision Log entries for items 1 to 7.
+
+## Acceptance checks (all run and reported with counts)
+Line-sharing counts reported before the fix; group logic, takeoff lines, confirm/merge and undo tested; status table test updated for unlinked labels; whole-sheet rule and scale-suggestion tests; page-type inclusion tests; joist parser parity (Python and TypeScript, same fixture); not-a-member and corrections-export tests; grade-table tests (empty by default, no seeded rows, "not set" in takeoff and Excel); system versus human tables tested; calibration script re-runnable and its parity result stated; job-010 counts and a UI run through to the takeoff; lint and all tests after each item.
+
+## Risks
+1. Colors are probably less reliable on the other documents than on job-005 (pooled study top-1 is 44%). Reported plainly; no retuning.
+2. The gold is AI-made and no human spot check exists.
+3. Shared-line grouping may hide real members that sit on one line (for example two beams end to end are different lines, but a label pair on one long line may be two members); that is why a person decides, nothing is merged automatically.
+4. A whole-sheet box includes details, notes and legends; the page type rule and the structural class suggestion may behave worse there than in hand-drawn boxes.
+5. Excluding non-framing pages by a guess may hide real steel (the guess picked real framing plans 17 of 31 times); the include switch and the takeoff's list of excluded sheets are the safeguard.
+6. Scope: ten items; each is a separate commit so any can be dropped.
