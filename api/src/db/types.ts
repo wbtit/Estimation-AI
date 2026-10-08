@@ -99,6 +99,8 @@ export interface SheetViewsTable {
   scale_confirmed: Generated<boolean>;
   structural_classes: Generated<string[]>;
   plan_frame: Json | null;
+  class_table: Json<{ key: string; lines: number; length_pt: number }[]> | null;
+  classes_confirmed: Generated<boolean>;
   created_by: string | null;
   created_at: Timestamp;
   updated_at: Timestamp;

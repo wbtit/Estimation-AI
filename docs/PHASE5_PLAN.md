@@ -33,6 +33,8 @@ Existing columns and migrations 001 to 004 are untouched. Original extracted val
 | `members` | `view_id` -> sheet_views, `label_key` text (stable key of the source label), `mark_ref_status` (`linked` / `no_legend_row` / `ambiguous`), `legend_row_id` -> legend_rows, `length_source` (`plan_geometry` / `manual`), `plan_sheet_id`, `plan_start_x_mm`, `plan_start_y_mm`, `plan_end_x_mm`, `plan_end_y_mm`, `plan_bbox` jsonb, `plan_scale_ratio`, `plan_method` (`pdf_geometry` / `manual`), `link_candidates` jsonb (top 3 with scores), `link_confidence` (`high` / `medium` / `low`), `link_margin` numeric, `link_rule` text |
 | `member_edits` | `action_id` uuid (edits of one action share it), `undo_of_action_id` uuid (an undo appends inverse rows; nothing is deleted) |
 
+**Migration 006** (added during slice 3, additive): `sheet_views.class_table` jsonb (the stroke classes seen in the view, written by the link job) and `sheet_views.classes_confirmed` boolean (a person chose the member line classes).
+
 Not in 005: dimensions table, `elevation_source`, `length_source = dimension`, anything priced or weighed.
 
 ## Worker and API

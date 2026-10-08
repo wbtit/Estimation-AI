@@ -260,3 +260,65 @@ button.primary.active {
 mark {
   background: #ffe066;
 }
+
+.counts {
+  margin: 4px 0 8px;
+}
+.member-list,
+.class-list {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0;
+}
+.member-item {
+  width: 100%;
+  text-align: left;
+  margin-bottom: 3px;
+  background: #fff;
+  border: 1px solid #ccc;
+}
+.member-item.selected {
+  border-color: #1768c4;
+  background: #e6f0fc;
+}
+.member-detail {
+  border-top: 1px solid #ddd;
+  margin-top: 8px;
+  padding-top: 4px;
+}
+.kv td {
+  padding: 1px 8px 1px 0;
+  vertical-align: top;
+}
+.cands {
+  padding-left: 18px;
+  margin: 4px 0;
+  font-size: 12px;
+}
+.cands li.chosen {
+  font-weight: 700;
+}
+.column-form label {
+  display: block;
+  margin: 4px 0;
+}
+.column-form input {
+  width: 100%;
+  padding: 3px 6px;
+}
+.class-picker {
+  margin: 10px 0;
+  padding-top: 6px;
+  border-top: 1px solid #ddd;
+}
+.cand-rank {
+  font: 700 16px sans-serif;
+  fill: #1768c4;
+  paint-order: stroke;
+  stroke: #fff;
+  stroke-width: 3px;
+  pointer-events: none;
+}
+.member {
+  cursor: pointer;
+}

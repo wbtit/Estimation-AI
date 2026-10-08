@@ -32,4 +32,23 @@ if _real:
         raise RuntimeError('TEST_DATABASE_URL must name a database ending with "_test"')
     os.environ["DATABASE_URL"] = _test
 
+import pytest  # noqa: E402
 from db_fixtures import dbp  # noqa: E402,F401  (fixture shared by the database tests)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _test_database_is_current() -> None:
+    """Fail early and clearly if the test database is missing or behind the migrations."""
+    import psycopg
+
+    migrations = sorted((worker_root.parent / "db" / "migrations").glob("[0-9][0-9][0-9]_*.sql"))
+    try:
+        with psycopg.connect(os.environ["DATABASE_URL"]) as conn:
+            applied = {r[0] for r in conn.execute("SELECT version FROM schema_migrations")}
+    except Exception as err:  # noqa: BLE001
+        raise RuntimeError(
+            f"the test database is not ready ({type(err).__name__}): run `make test-db`"
+        ) from err
+    missing = [m.name for m in migrations if m.name not in applied]
+    if missing:
+        raise RuntimeError(f"the test database is missing migrations {missing}: run `make test-db`")

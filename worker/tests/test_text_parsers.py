@@ -274,3 +274,17 @@ def test_sheet_numbers_in_a_line_and_non_numbers() -> None:
         s.canonical for s in find_sheet_numbers("B1 S4.1")
     ] == ["S4.1"]
     assert [s.canonical for s in find_sheet_numbers("B1", strict=False)] == ["B1"]
+
+
+def test_the_shared_profile_cases_match_the_parser() -> None:
+    """fixtures/synthetic/profile-cases.json is read by this test and by the TypeScript parser."""
+    import json
+    from pathlib import Path
+
+    path = Path(__file__).resolve().parents[2] / "fixtures" / "synthetic" / "profile-cases.json"
+    cases = json.loads(path.read_text())["cases"]
+    assert len(cases) > 50
+    for c in cases:
+        p = parse_profile(c["text"])
+        assert (p.canonical if p else None) == c["canonical"], c["text"]
+        assert (p.family if p else None) == c["family"], c["text"]

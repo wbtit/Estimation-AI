@@ -1,6 +1,8 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import { bomRoutes, type BomRouteOptions } from './routes/bom.js';
 import { healthRoutes, type HealthRouteOptions } from './routes/health.js';
+import { memberActionRoutes } from './routes/member-actions.js';
+import { memberRoutes } from './routes/members.js';
 import { projectRoutes } from './routes/projects.js';
 import { reviewRoutes } from './routes/review.js';
 import { sheetRoutes } from './routes/sheets.js';
@@ -30,5 +32,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
   app.register(textItemRoutes, {});
   app.register(viewRoutes, { uploadDir: options.uploadDir });
   app.register(reviewRoutes, {});
+  app.register(memberRoutes, {});
+  app.register(memberActionRoutes, {});
   return app;
 }

@@ -19,6 +19,7 @@ from psycopg.types.json import Jsonb
 
 from src.config import WorkerConfig
 from src.queue import Job
+from src.review.legend import WordBox, legend_rows
 from src.text_layer.catalog import load_catalog
 from src.text_layer.items import PageText, extract_page_text, pdf_item_key
 from src.text_layer.quality import GARBLED_BELOW
@@ -47,6 +48,11 @@ INSERT INTO text_items (sheet_id, item_key, x0, y0, x1, y1, orientation, text, m
 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, ARRAY['pdf_text'], %s, %s, %s, %s, %s, 'pdf_text',
         %s, %s, %s)
 ON CONFLICT (sheet_id, item_key) DO NOTHING
+"""
+_DELETE_LEGEND = "DELETE FROM legend_rows WHERE project_id = %s"
+_INSERT_LEGEND = """
+INSERT INTO legend_rows (project_id, sheet_id, mark, designation_raw, profile, remarks_raw, source)
+VALUES (%s, %s, %s, %s, %s, %s, %s)
 """
 _SET_SOURCE = "UPDATE sheets SET text_source = %s, text_quality = %s WHERE id = %s"
 _UPSERT_GLYPH = """
@@ -134,6 +140,7 @@ def read_project(
 
     with conn.cursor() as cur:
         cur.execute(_DELETE_ITEMS, (project_id,))
+        cur.execute(_DELETE_LEGEND, (project_id,))
         for sheet_id, items in sheet_items:
             for it in items:
                 cur.execute(
@@ -158,6 +165,17 @@ def read_project(
                         it.angle_deg, it.level, Jsonb(it.parsed) if it.parsed else None,
                     ),
                 )  # fmt: skip
+        for sheet_id, page_text in pdf_pages:
+            words = [WordBox(it.text, *it.bbox) for it in page_text.items if it.level == "word"]
+            for row in legend_rows(words):
+                cur.execute(
+                    _INSERT_LEGEND,
+                    (
+                        project_id, sheet_id, row.mark, row.designation_raw, row.profile,
+                        row.remarks_raw, Jsonb({"bbox": list(row.bbox)}),
+                    ),
+                )  # fmt: skip
+                totals["legend_rows"] += 1
         for sheet_id, source, quality in sources:
             cur.execute(_SET_SOURCE, (source, quality, sheet_id))
         for h, n in sorted(usage.items()):

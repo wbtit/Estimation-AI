@@ -13,6 +13,8 @@ from src.db import connect
 from src.pdf_scan.job import JOB_TYPE as SCAN_PDF
 from src.pdf_scan.job import run_scan_pdf
 from src.queue import Job, claim_next_job, complete_job, fail_expired_jobs, fail_job
+from src.review.link_job import JOB_TYPE as LINK_VIEW
+from src.review.link_job import run_link_view
 from src.text_reader.job import JOB_TYPE as READ_TEXT
 from src.text_reader.job import run_read_text
 
@@ -20,7 +22,11 @@ log = logging.getLogger("worker")
 
 # Job type -> handler(connection, job, config) -> result stored on the job.
 Handler = Callable[[psycopg.Connection, Job, WorkerConfig], dict[str, Any]]
-HANDLERS: dict[str, Handler] = {SCAN_PDF: run_scan_pdf, READ_TEXT: run_read_text}
+HANDLERS: dict[str, Handler] = {
+    SCAN_PDF: run_scan_pdf,
+    READ_TEXT: run_read_text,
+    LINK_VIEW: run_link_view,
+}
 
 
 def run() -> None:

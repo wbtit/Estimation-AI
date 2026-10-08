@@ -1,7 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { PageList } from "./components/PageList";
 import { PageView } from "./components/PageView";
+import { ClassPicker } from "./components/ClassPicker";
+import { ColumnForm } from "./components/ColumnForm";
 import { LabelsPanel } from "./components/LabelsPanel";
+import { MemberOverlay } from "./components/MemberOverlay";
+import { MembersPanel } from "./components/MembersPanel";
 import { NotesPanel } from "./components/NotesPanel";
 import { SheetHeader } from "./components/SheetHeader";
 import { ViewsPanel } from "./components/ViewsPanel";
@@ -20,6 +24,7 @@ import type {
   SheetView,
   TextItem,
 } from "./lib/types";
+import { useMembers } from "./lib/useMembers";
 import { usePdf } from "./lib/usePdf";
 
 const MIN_BOX_PT = 20;
@@ -44,7 +49,14 @@ export const App: React.FC = () => {
   const [zoom, setZoom] = useState(0.4);
   const [who, setWhoState] = useState(getWho());
   const [message, setMessage] = useState<string | null>(null);
-  const [tab, setTab] = useState<"views" | "labels" | "notes">("views");
+  const [tab, setTab] = useState<"views" | "members" | "labels" | "notes">(
+    "views",
+  );
+  const [addingColumn, setAddingColumn] = useState(false);
+  const [pendingColumn, setPendingColumn] = useState<{
+    viewId: string;
+    point: Pt;
+  } | null>(null);
   const [items, setItems] = useState<TextItem[]>([]);
   const [visible, setVisible] = useState<Set<LabelCategory>>(
     new Set(["profile"]),
@@ -175,15 +187,34 @@ export const App: React.FC = () => {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.target as HTMLElement).tagName === "INPUT") return;
-      if (e.key === "v") setDrawing((d) => !d);
+      if (e.key === "v") {
+        setAddingColumn(false);
+        setDrawing((d) => !d);
+      }
+      if (e.key === "c") {
+        setDrawing(false);
+        setTab("members");
+        setAddingColumn((a) => !a);
+      }
       if (e.key === "Escape") {
         setDrawing(false);
+        setAddingColumn(false);
+        setPendingColumn(null);
         setDrag(null);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
+
+  const {
+    members,
+    selectedId: memberId,
+    setSelectedId: setMemberId,
+    busyView,
+    find,
+    addColumn,
+  } = useMembers(projectId, sheetId, who, fail, loadViews);
 
   const requireWho = (): string | null => {
     if (who.trim() === "") {
@@ -231,6 +262,25 @@ export const App: React.FC = () => {
   };
 
   const onPointerDown = (p: Pt): boolean => {
+    if (addingColumn) {
+      const inside = views.find(
+        (v) =>
+          p.x >= v.box.x0 &&
+          p.x <= v.box.x1 &&
+          p.y >= v.box.y0 &&
+          p.y <= v.box.y1,
+      );
+      if (!inside) {
+        setMessage(
+          "Draw a view around this part of the sheet first; a column is added inside a view.",
+        );
+        return false;
+      }
+      if (!requireWho()) return false;
+      setPendingColumn({ viewId: inside.id, point: p });
+      setAddingColumn(false);
+      return false;
+    }
     if (!drawing) return false;
     setDrag({ a: p, b: p });
     return true;
@@ -322,7 +372,7 @@ export const App: React.FC = () => {
               widthPt={widthPt}
               heightPt={heightPt}
               zoom={zoom}
-              cursor={drawing ? "crosshair" : "default"}
+              cursor={drawing || addingColumn ? "crosshair" : "default"}
               onPointerDown={onPointerDown}
               onPointerMove={onPointerMove}
               onPointerUp={onPointerUp}
@@ -363,6 +413,25 @@ export const App: React.FC = () => {
                     <title>{l.title}</title>
                   </rect>
                 ))}
+              <MemberOverlay
+                members={members}
+                selectedId={memberId}
+                onSelect={(id) => {
+                  setMemberId(id);
+                  setTab("members");
+                }}
+              />
+              {pendingColumn && (
+                <circle
+                  cx={pendingColumn.point.x}
+                  cy={pendingColumn.point.y}
+                  r={8}
+                  fill="none"
+                  stroke="#8a3fc4"
+                  strokeWidth={3}
+                  vectorEffect="non-scaling-stroke"
+                />
+              )}
               {drag && (
                 <rect
                   className="view-box drawing"
@@ -383,7 +452,7 @@ export const App: React.FC = () => {
         </main>
         <aside className="right">
           <div className="tabs" role="tablist">
-            {(["views", "labels", "notes"] as const).map((t) => (
+            {(["views", "members", "labels", "notes"] as const).map((t) => (
               <button
                 key={t}
                 role="tab"
@@ -411,6 +480,28 @@ export const App: React.FC = () => {
             />
           )}
           {tab === "notes" && <NotesPanel sheets={notes} />}
+          {tab === "members" && (
+            <>
+              {pendingColumn && (
+                <ColumnForm
+                  viewId={pendingColumn.viewId}
+                  point={pendingColumn.point}
+                  onSubmit={addColumn}
+                  onCancel={() => setPendingColumn(null)}
+                />
+              )}
+              <MembersPanel
+                members={members}
+                selectedId={memberId}
+                onSelect={setMemberId}
+                addingColumn={addingColumn}
+                onAddColumn={() => {
+                  setDrawing(false);
+                  setAddingColumn((a) => !a);
+                }}
+              />
+            </>
+          )}
           {tab === "views" && (
             <ViewsPanel
               views={views}
@@ -427,6 +518,14 @@ export const App: React.FC = () => {
               onClearScale={(id) =>
                 void patchView(id, { scale: { action: "clear" } })
               }
+              extra={(v) => (
+                <ClassPicker
+                  view={v}
+                  busy={busyView === v.id}
+                  onFind={() => void find(v.id)}
+                  onUse={(classes) => void find(v.id, classes)}
+                />
+              )}
               onDelete={(id) => {
                 const w = requireWho();
                 if (!w || !projectId) return;

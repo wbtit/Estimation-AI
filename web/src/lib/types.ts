@@ -71,6 +71,8 @@ export interface SheetView {
     confirmed: boolean;
   };
   structural_classes: string[];
+  classes_confirmed: boolean;
+  class_table: ClassStat[] | null;
   suggestion: ScaleSuggestion | null;
 }
 
@@ -101,4 +103,53 @@ export interface NotesSheet {
   page_number: number;
   sheet_number: string | null;
   lines: { text: string; bbox: Box }[];
+}
+
+export type Color = "green" | "amber" | "red";
+
+export interface Candidate {
+  rank: number;
+  p: [number, number];
+  q: [number, number];
+  score: number;
+  dist: number;
+  rel_angle: number;
+  length_mm: number | null;
+}
+
+export interface MemberView {
+  id: string;
+  member_id: string;
+  sheet_id: string | null;
+  view_id: string | null;
+  origin: string;
+  type: string;
+  mark: string | null;
+  profile_raw: string | null;
+  profile: string | null;
+  quantity: number;
+  level: string | null;
+  deleted: boolean;
+  review_status: string;
+  bbox: Box | null;
+  mark_ref: { status: string | null; legend_row_id: string | null };
+  link: {
+    source: "rule" | "person" | "none";
+    confidence: "high" | "medium" | "low" | null;
+    margin: number | null;
+    line: { p: [number, number]; q: [number, number] } | null;
+    chosen_rank: number | null;
+    candidates: Candidate[];
+  };
+  length_mm: number | null;
+  length_ft_in: string | null;
+  length_source: string | null;
+  status: { color: Color; confirmed: boolean; reasons: string[] };
+  plan_point: { x_mm: number | null; y_mm: number | null } | null;
+}
+
+export interface ClassStat {
+  key: string;
+  lines: number;
+  length_pt: number;
 }

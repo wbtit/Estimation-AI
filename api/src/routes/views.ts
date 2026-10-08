@@ -104,6 +104,8 @@ export function viewJson(row: Selectable<SheetViewsTable>, suggestion: unknown =
       confirmed: row.scale_confirmed,
     },
     structural_classes: row.structural_classes,
+    classes_confirmed: row.classes_confirmed,
+    class_table: row.class_table,
     plan_frame: row.plan_frame,
     created_by: row.created_by,
     created_at: row.created_at,

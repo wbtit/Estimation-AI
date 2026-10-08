@@ -1,0 +1,320 @@
+{
+ "_comment": "SYNTHETIC strings; expected values are the output of worker/src/text_layer/parsers/profile.py (parse_profile). Both the Python and the TypeScript parsers are tested against this file.",
+ "cases": [
+  {
+   "text": "W12x26",
+   "canonical": "W12X26",
+   "family": "W"
+  },
+  {
+   "text": "W 12 X 26",
+   "canonical": "W12X26",
+   "family": "W"
+  },
+  {
+   "text": "w12x26",
+   "canonical": "W12X26",
+   "family": "W"
+  },
+  {
+   "text": "W12\u00d726",
+   "canonical": "W12X26",
+   "family": "W"
+  },
+  {
+   "text": "W14X90",
+   "canonical": "W14X90",
+   "family": "W"
+  },
+  {
+   "text": "M10x9",
+   "canonical": "M10X9",
+   "family": "M"
+  },
+  {
+   "text": "S12x31.8",
+   "canonical": "S12X31.8",
+   "family": "S"
+  },
+  {
+   "text": "HP12x53",
+   "canonical": "HP12X53",
+   "family": "HP"
+  },
+  {
+   "text": "C10x15.3",
+   "canonical": "C10X15.3",
+   "family": "C"
+  },
+  {
+   "text": "MC12 x 31",
+   "canonical": "MC12X31",
+   "family": "MC"
+  },
+  {
+   "text": "L4x4x1/4",
+   "canonical": "L4X4X1/4",
+   "family": "L"
+  },
+  {
+   "text": "L6X4X3/8",
+   "canonical": "L6X4X3/8",
+   "family": "L"
+  },
+  {
+   "text": "L3-1/2x3x1/4",
+   "canonical": "L3-1/2X3X1/4",
+   "family": "L"
+  },
+  {
+   "text": "L 3 1/2 x 3 x .25",
+   "canonical": "L3-1/2X3X0.25",
+   "family": "L"
+  },
+  {
+   "text": "L3x3x0.25",
+   "canonical": "L3X3X0.25",
+   "family": "L"
+  },
+  {
+   "text": "WT6x20",
+   "canonical": "WT6X20",
+   "family": "WT"
+  },
+  {
+   "text": "MT4x9.25",
+   "canonical": "MT4X9.25",
+   "family": "MT"
+  },
+  {
+   "text": "ST5x10",
+   "canonical": "ST5X10",
+   "family": "ST"
+  },
+  {
+   "text": "HSS6x4x1/4",
+   "canonical": "HSS6X4X1/4",
+   "family": "HSS"
+  },
+  {
+   "text": "HSS 6 X 4 X 1/4",
+   "canonical": "HSS6X4X1/4",
+   "family": "HSS"
+  },
+  {
+   "text": "HSS4x4x1/4",
+   "canonical": "HSS4X4X1/4",
+   "family": "HSS"
+  },
+  {
+   "text": "HSS4.500x0.237",
+   "canonical": "HSS4.500X0.237",
+   "family": "HSS"
+  },
+  {
+   "text": "PIPE4STD",
+   "canonical": "PIPE4STD",
+   "family": "PIPE"
+  },
+  {
+   "text": "PIPE 4 STD",
+   "canonical": "PIPE4STD",
+   "family": "PIPE"
+  },
+  {
+   "text": "PIPE 6 XS",
+   "canonical": "PIPE6XS",
+   "family": "PIPE"
+  },
+  {
+   "text": "PIPE 3-1/2 XXS",
+   "canonical": "PIPE3-1/2XXS",
+   "family": "PIPE"
+  },
+  {
+   "text": "PIPE 4",
+   "canonical": "PIPE4",
+   "family": "PIPE"
+  },
+  {
+   "text": "PL1/2x8",
+   "canonical": "PL1/2X8",
+   "family": "PL"
+  },
+  {
+   "text": "PL 3/4 X 10",
+   "canonical": "PL3/4X10",
+   "family": "PL"
+  },
+  {
+   "text": "PL 1/2\"x8\"",
+   "canonical": "PL1/2X8",
+   "family": "PL"
+  },
+  {
+   "text": "PL.5x6",
+   "canonical": "PL0.5X6",
+   "family": "PL"
+  },
+  {
+   "text": "PL1/2x8x12",
+   "canonical": "PL1/2X8",
+   "family": "PL"
+  },
+  {
+   "text": "PL1/2x8x1'-6\"",
+   "canonical": "PL1/2X8",
+   "family": "PL"
+  },
+  {
+   "text": "ROD3/4",
+   "canonical": "ROD3/4",
+   "family": "ROD"
+  },
+  {
+   "text": "3/4\" ROD",
+   "canonical": "ROD3/4",
+   "family": "ROD"
+  },
+  {
+   "text": "5/8\" DIA THREADED ROD",
+   "canonical": "ROD5/8",
+   "family": "ROD"
+  },
+  {
+   "text": "1 ALL THREAD ROD",
+   "canonical": "ROD1",
+   "family": "ROD"
+  },
+  {
+   "text": "WALL",
+   "canonical": null,
+   "family": null
+  },
+  {
+   "text": "W12",
+   "canonical": null,
+   "family": null
+  },
+  {
+   "text": "12x26",
+   "canonical": null,
+   "family": null
+  },
+  {
+   "text": "L3x3",
+   "canonical": null,
+   "family": null
+  },
+  {
+   "text": "BEAM",
+   "canonical": null,
+   "family": null
+  },
+  {
+   "text": "TYP",
+   "canonical": null,
+   "family": null
+  },
+  {
+   "text": "X26",
+   "canonical": null,
+   "family": null
+  },
+  {
+   "text": "W12x",
+   "canonical": null,
+   "family": null
+  },
+  {
+   "text": "HSS",
+   "canonical": null,
+   "family": null
+  },
+  {
+   "text": "PIPE",
+   "canonical": null,
+   "family": null
+  },
+  {
+   "text": "ROD",
+   "canonical": null,
+   "family": null
+  },
+  {
+   "text": "TYP W12x26",
+   "canonical": null,
+   "family": null
+  },
+  {
+   "text": "W12x26 TYP",
+   "canonical": null,
+   "family": null
+  },
+  {
+   "text": "W12x26.5",
+   "canonical": "W12X26.5",
+   "family": "W"
+  },
+  {
+   "text": "HSS6x4x1/4x12",
+   "canonical": null,
+   "family": null
+  },
+  {
+   "text": "L3x3x1/4 x 12'-0\"",
+   "canonical": null,
+   "family": null
+  },
+  {
+   "text": "W0x26",
+   "canonical": null,
+   "family": null
+  },
+  {
+   "text": "W12x0",
+   "canonical": null,
+   "family": null
+  },
+  {
+   "text": "L3x0x1/4",
+   "canonical": null,
+   "family": null
+  },
+  {
+   "text": "HSS6x4x1/0",
+   "canonical": null,
+   "family": null
+  },
+  {
+   "text": "WT6x20.5",
+   "canonical": "WT6X20.5",
+   "family": "WT"
+  },
+  {
+   "text": "S3x5.7",
+   "canonical": "S3X5.7",
+   "family": "S"
+  },
+  {
+   "text": "C 3 x 4",
+   "canonical": "C3X4",
+   "family": "C"
+  },
+  {
+   "text": "M 4 x 13",
+   "canonical": "M4X13",
+   "family": "M"
+  },
+  {
+   "text": "ROD 0.75",
+   "canonical": "ROD0.75",
+   "family": "ROD"
+  },
+  {
+   "text": "PL 1 1/2 x 12",
+   "canonical": "PL1-1/2X12",
+   "family": "PL"
+  }
+ ]
+}
