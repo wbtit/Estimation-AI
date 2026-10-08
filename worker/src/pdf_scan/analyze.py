@@ -9,10 +9,9 @@ from dataclasses import dataclass, field
 
 import pymupdf
 
-from src.pdf_scan.classify import Classification, classify, view_titles
-from src.pdf_scan.scale import distinct_scales
-from src.pdf_scan.sheet_id import find_sheet_id
 from src.pdf_scan.textlines import displayed_box, page_words_and_lines
+from src.pdf_scan.textscan import scan_text
+from src.text_layer.quality import is_usable, text_quality
 
 MIN_TEXT_CHARS = 20  # fewer non-space characters than this: no real text layer
 MIN_VECTOR_PATHS = 50  # fewer drawing paths than this: not a vector drawing
@@ -43,6 +42,8 @@ class PageScan:
     scale_parsed: str | None
     scale_parsed_ratio: float | None
     review_reasons: list[str] = field(default_factory=list)
+    text_quality: float | None = None
+    evidence: dict[str, object] | None = None
 
     @property
     def needs_review(self) -> bool:
@@ -114,29 +115,25 @@ def analyze_page(page: pymupdf.Page) -> PageScan:
     if not has_text:
         reasons.append("no_text_layer")
 
-    words, lines = page_words_and_lines(page) if has_text else ([], [])
+    # A text layer with broken encodings is not used: nothing is read from it, and the page says so.
+    scan.text_quality = text_quality(text) if has_text else None
+    usable = has_text and is_usable(scan.text_quality)
+    if has_text and not usable:
+        reasons.append("text_layer_garbled")
+    words, lines = page_words_and_lines(page) if usable else ([], [])
 
-    sheet = find_sheet_id(words, lines, rect.width, rect.height)
-    scan.sheet_number = sheet.number
-    scan.sheet_number_source = sheet.number_source
-    scan.title = sheet.title
-    reasons.extend(sheet.flags)
-
-    result: Classification = classify(sheet.title, view_titles(lines))
-    scan.kind = result.kind
-    scan.kind_confidence = result.confidence
-    scan.kind_reason = result.reason
-    reasons.extend(result.flags)
-
-    scan.scales = distinct_scales([ln.text for ln in lines])
-    if len(scan.scales) == 1:
-        scan.scale_parsed = str(scan.scales[0]["raw"])
-        ratio = scan.scales[0]["ratio"]
-        scan.scale_parsed_ratio = float(ratio) if isinstance(ratio, (int, float)) else None
-    elif not scan.scales:
-        reasons.append("scale_not_found")
-    else:
-        reasons.append("multiple_scales")
+    found = scan_text(words, lines, rect.width, rect.height)
+    scan.sheet_number = found.sheet_number
+    scan.sheet_number_source = found.sheet_number_source
+    scan.title = found.title
+    scan.kind = found.kind
+    scan.kind_confidence = found.kind_confidence
+    scan.kind_reason = found.kind_reason
+    scan.scales = found.scales
+    scan.scale_parsed = found.scale_parsed
+    scan.scale_parsed_ratio = found.scale_parsed_ratio
+    scan.evidence = found.evidence if usable else None
+    reasons.extend(found.reasons)
 
     scan.review_reasons = list(dict.fromkeys(reasons))
     return scan

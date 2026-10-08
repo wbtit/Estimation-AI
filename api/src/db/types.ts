@@ -61,6 +61,9 @@ export interface SheetsTable {
   needs_review: Generated<boolean>;
   review_reasons: Generated<string[]>;
   thumbnail_path: string | null;
+  text_source: 'pdf_text' | 'glyph' | 'none' | null;
+  text_quality: Numeric | null;
+  scan_evidence: Json | null;
   scanned_at: Timestamp | null;
 }
 
@@ -122,6 +125,9 @@ export interface TextItemsTable {
   char_count: Generated<number>;
   unknown_count: Generated<number>;
   font_id: string;
+  angle_deg: Numeric | null;
+  level: 'word' | 'line' | null;
+  parsed: Json | null;
   created_at: Timestamp;
 }
 

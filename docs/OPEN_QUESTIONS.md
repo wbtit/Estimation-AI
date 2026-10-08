@@ -45,4 +45,11 @@ Each item is an assumption I made so Phase 1 could proceed while you were away. 
 29. **Confidence values are constants,** not calibrated probabilities (0.8 glyph only, 0.3 unknown shapes, 0.95 OCR agrees, 0.5 OCR disagrees). Say if you want different numbers.
 30. **`POST read-text` was added** (not in your list) because the job needs a way to be started; it only enqueues `read_text` for a project whose scan is done and refuses duplicates while one is queued or running.
 31. **Schema proposal waits for approval:** docs/SCHEMA_CHANGE_PROPOSAL.md, section 8 lists the five questions.
+32. **AISC catalog not supplied yet.** Profile validation compares canonical names (uppercase, no spaces, `X`, fractions and decimals equal only by exact numeric value) with `catalog_shapes.shape_name`. When the AISC file arrives, confirm which column holds the nomenclature; the importer already takes column names as arguments. Until then every profile is `unvalidated`.
+33. **Pipe, plate, rod naming.** Canonical forms `PIPE4STD`, `PL1/2X8`, `ROD3/4` are my convention, matched to the catalog only by exact name. Say if your catalog or estimating practice uses other forms.
+34. **Sheet-number rules fail on one document layout** (0 of 16 pages, `docs/PHASE4D_COVERAGE.md`): its title block is not in the assumed corner or strip. Needs a decision on whether to learn more layouts or leave those pages to review.
+35. **Titles are only taken next to a TITLE label** and are not found at all in two of the six documents; same question.
+36. **Multi-scale pages** (most pages have several scales) stay `multiple_scales` for review; mapping a scale to its view is not attempted.
+37. **Text-quality threshold (0.90)** that decides pdf_text versus the glyph reader is a tunable default, not measured. No page in the six documents fell below it.
+38. **Rotated pdf_text items** are stored with their angle (`angle_deg`) and read normally; they are not flagged for review. Say if rotated text should always be reviewed.
 

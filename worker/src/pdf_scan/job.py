@@ -35,14 +35,14 @@ INSERT INTO sheets (
     width_pt, height_pt, rotation, page_kind, has_text_layer, has_vector_paths,
     text_char_count, vector_path_count, image_count, image_coverage, sheet_number_source,
     scales, scale_parsed, scale_parsed_ratio, scale_source, needs_review, review_reasons,
-    thumbnail_path, scanned_at
+    thumbnail_path, text_quality, scan_evidence, scanned_at
 ) VALUES (
     %(project_id)s, %(page_index)s, %(sheet_number)s, %(title)s, %(kind)s, %(kind_confidence)s,
     %(kind_reason)s, %(width_pt)s, %(height_pt)s, %(rotation)s, %(page_kind)s,
     %(has_text_layer)s, %(has_vector_paths)s, %(text_char_count)s, %(vector_path_count)s,
     %(image_count)s, %(image_coverage)s, %(sheet_number_source)s, %(scales)s, %(scale_parsed)s,
     %(scale_parsed_ratio)s, %(scale_source)s, %(needs_review)s, %(review_reasons)s,
-    %(thumbnail_path)s, NOW()
+    %(thumbnail_path)s, %(text_quality)s, %(scan_evidence)s, NOW()
 )
 ON CONFLICT (project_id, page_index) DO UPDATE SET
     sheet_number = EXCLUDED.sheet_number, title = EXCLUDED.title, kind = EXCLUDED.kind,
@@ -58,7 +58,8 @@ ON CONFLICT (project_id, page_index) DO UPDATE SET
     scale_source = CASE WHEN sheets.scale_override IS NOT NULL THEN 'manual'
                         ELSE EXCLUDED.scale_source END,
     needs_review = EXCLUDED.needs_review, review_reasons = EXCLUDED.review_reasons,
-    thumbnail_path = EXCLUDED.thumbnail_path, scanned_at = NOW()
+    thumbnail_path = EXCLUDED.thumbnail_path, text_quality = EXCLUDED.text_quality,
+    scan_evidence = EXCLUDED.scan_evidence, scanned_at = NOW()
 """
 
 
@@ -81,6 +82,7 @@ def _row(project_id: str, scan: PageScan, thumbnail_path: str) -> dict[str, Any]
         scale_source="pdf_text" if scan.scale_parsed else None,
         needs_review=scan.needs_review,
         thumbnail_path=thumbnail_path,
+        scan_evidence=Jsonb(scan.evidence) if scan.evidence else None,
     )
     return values
 

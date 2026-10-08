@@ -118,6 +118,45 @@ describe('GET text-items', () => {
     expect(res.json().count).toBe(3);
   });
 
+  it('returns pdf_text items with level, angle and parser output; glyph items have none', async () => {
+    const own = await insertSheet(getDb(), projectId, { page_index: 2 });
+    await getDb()
+      .insertInto('text_items')
+      .values({
+        sheet_id: own,
+        item_key: 'p1',
+        x0: 10,
+        y0: 20,
+        x1: 80,
+        y1: 30,
+        orientation: 'vertical',
+        text: 'W12x26',
+        ocr_text: null,
+        methods: ['pdf_text'],
+        confidence: 1,
+        agree: null,
+        needs_review: false,
+        review_reasons: [],
+        char_count: 6,
+        unknown_count: 0,
+        font_id: 'pdf_text',
+        angle_deg: 90,
+        level: 'line',
+        parsed: JSON.stringify([{ kind: 'profile', canonical: 'W12X26' }]),
+      })
+      .execute();
+    const item = (await list(projectId, own)).json().items[0];
+    expect(item).toMatchObject({
+      methods: ['pdf_text'],
+      level: 'line',
+      angle_deg: 90,
+      orientation: 'vertical',
+      parsed: [{ kind: 'profile', canonical: 'W12X26' }],
+    });
+    const glyph = (await list(projectId, sheetId)).json().items[0];
+    expect(glyph).toMatchObject({ level: null, angle_deg: null, parsed: null });
+  });
+
   it('returns an empty list for a sheet with nothing read', async () => {
     const empty = await insertSheet(getDb(), projectId, { page_index: 1 });
     expect((await list(projectId, empty)).json()).toMatchObject({ count: 0, items: [] });

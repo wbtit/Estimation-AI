@@ -4,6 +4,8 @@
 //
 // text is what the deterministic glyph reader decoded; ocr_text (if the optional cross-check ran)
 // is kept beside it and never replaces it. A null text means "not read" (for example vertical text).
+// Items read from the PDF text layer (methods ['pdf_text']) also carry level (word|line), the
+// baseline angle and the deterministic parser output (`parsed`); mark candidates never claim a member.
 import type { FastifyPluginAsync } from 'fastify';
 import type { Kysely, Selectable } from 'kysely';
 import { sql } from 'kysely';
@@ -55,6 +57,9 @@ export function textItemView(item: Selectable<TextItemsTable>) {
     char_count: item.char_count,
     unknown_count: item.unknown_count,
     font_id: item.font_id,
+    level: item.level,
+    angle_deg: item.angle_deg === null ? null : num(item.angle_deg),
+    parsed: item.parsed,
   };
 }
 

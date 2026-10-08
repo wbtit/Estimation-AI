@@ -89,3 +89,6 @@ Only `confirmed` labels decode text; unknown shapes stay `?` and are counted. Op
 
 Review helpers: `contact-sheets --no-guess --limit 200` (shape only), `revoke-labels --who NAME --dry-run` (undo one reviewer's labels), `truth-accept` (copy reviewed `draft_text` / typed `correction` into `truth_text`; the report says `draft source: AI, verified by human`).
 
+## Phase 4d (PDF text-layer reader and parsers)
+`read_text` now reads a page from its PDF text layer when it has a usable one (`pdf_text` items with word and line boxes, angle and parser output in `parsed`) and uses the glyph reader for every other vector page; the reader used is stored per sheet (`text_source`). Optional payload field `catalog_edition` selects the catalog edition used to validate profile strings (a single loaded edition is used automatically; without one profiles are `unvalidated`). Migration 004 adds the nullable columns. Private tools, counts only: `worker/tools/text_coverage.py` (coverage of the parsers on your own PDFs; see `docs/PHASE4D_COVERAGE.md`), `worker/tools/text_survey.py`, `worker/tools/pdf_inventory.py`. Details and decisions: `docs/PHASE4D_PLAN.md`.
+

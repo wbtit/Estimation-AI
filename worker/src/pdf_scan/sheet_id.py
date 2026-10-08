@@ -47,6 +47,7 @@ class SheetId:
     number_source: str | None = None  # "label" | "title_block_region"
     title: str | None = None
     flags: list[str] = field(default_factory=list)
+    alternatives: list[str] = field(default_factory=list)  # other candidates that conflict
 
 
 def _clean(text: str) -> str:
@@ -111,9 +112,15 @@ def _find_number(
     if len(distinct) > 1:
         return None, None, ["sheet_number_ambiguous"]
 
+    number, flags = _region_number(words, page_w, page_h)
+    return number, ("title_block_region" if number else None), flags
+
+
+def _region_number(words: list[Word], page_w: float, page_h: float) -> tuple[str | None, list[str]]:
+    """The sheet number from the title-block region alone: clearly the largest candidate."""
     region = [w for w in words if _in_title_block_region(w, page_w, page_h)]
     if not region:
-        return None, None, ["sheet_number_not_found"]
+        return None, ["sheet_number_not_found"]
     typical = median(w.box.height for w in region)
     sizes: dict[str, float] = {}
     for w in region:
@@ -121,11 +128,11 @@ def _find_number(
         if token is not None and w.box.height >= REGION_SIZE_FACTOR * typical:
             sizes[token] = max(sizes.get(token, 0.0), w.box.height)
     if not sizes:
-        return None, None, ["sheet_number_not_found"]
+        return None, ["sheet_number_not_found"]
     ranked = sorted(sizes.items(), key=lambda item: item[1], reverse=True)
     if len(ranked) == 1 or ranked[0][1] >= REGION_UNIQUE_FACTOR * ranked[1][1]:
-        return ranked[0][0], "title_block_region", []
-    return None, None, ["sheet_number_ambiguous"]
+        return ranked[0][0], []
+    return None, ["sheet_number_ambiguous"]
 
 
 def _find_title(lines: list[Line]) -> tuple[str | None, list[str]]:
@@ -187,9 +194,18 @@ def _find_title(lines: list[Line]) -> tuple[str | None, list[str]]:
 def find_sheet_id(words: list[Word], lines: list[Line], page_w: float, page_h: float) -> SheetId:
     number, source, number_flags = _find_number(words, lines, page_w, page_h)
     title, title_flags = _find_title(lines)
+    flags = [*number_flags, *title_flags]
+    alternatives: list[str] = []
+    if source == "label":
+        # a label-anchored number that disagrees with a clear title-block candidate is a conflict
+        other, _ = _region_number(words, page_w, page_h)
+        if other is not None and other != number:
+            alternatives = [other]
+            flags.append("sheet_number_conflict")
     return SheetId(
         number=number,
         number_source=source,
         title=title,
-        flags=[*number_flags, *title_flags],
+        flags=flags,
+        alternatives=alternatives,
     )
