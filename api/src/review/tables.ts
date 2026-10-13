@@ -286,7 +286,7 @@ export function buildJobTable(input: TableInput): JobTable {
       if (n > 0) summary.push({ kind: k.kind, scope, quantity: n, groups: 0, note });
     }
   };
-  apartLine(c.misc, 'misc', 'misc steel is reserved: listed, not computed');
+  apartLine(c.misc, 'misc', 'not computed (misc steel is reserved)');
   apartLine(c.notCounted, 'excluded', 'not counted');
   return {
     rows,

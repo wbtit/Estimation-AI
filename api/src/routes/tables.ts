@@ -2,6 +2,7 @@
 //   GET  /api/projects/:projectId/tables                   page tables, job table, summary by kind, draft label
 //   GET  /api/projects/:projectId/tables.xlsx              job sheet, one sheet per page, corrections sheet
 //   POST /api/projects/:projectId/rows/kind                { member_ids, kind, who }  set the kind of a table row (one action)
+//   POST /api/projects/:projectId/grades/apply-suggested   { who }  one click: set the suggested grade for each shape family of the job that has none
 //   POST /api/projects/:projectId/rows/name                { member_ids, name, who }  set the Name of a table row (one action)
 import type { FastifyPluginAsync } from 'fastify';
 import type { Kysely } from 'kysely';
@@ -9,11 +10,11 @@ import { getDb } from '../db/client.js';
 import type { Database } from '../db/types.js';
 import { buildTablesWorkbook, exportFileName, type CorrectionRow } from '../excel/tables.js';
 import { draftStatus, loadSheetFlags } from '../review/flags.js';
-import { loadGrades } from '../review/grades.js';
+import { familyOf, loadGrades, setGrade } from '../review/grades.js';
 import { loadKinds } from '../review/kinds.js';
 import { applyEntries, kindEntries, OpError } from '../review/member-ops.js';
 import { loadSheetInclusions } from '../review/takeoff-sheets.js';
-import { buildJobTable, buildPageTables } from '../review/tables.js';
+import { buildJobTable, buildPageTables, GRADE_SUGGESTION } from '../review/tables.js';
 import { HttpError } from './http-error.js';
 import { loadMemberViews } from './members.js';
 
@@ -262,5 +263,51 @@ export const tableRoutes: FastifyPluginAsync<TableRouteOptions> = async (app, op
             status: 'edited' as const,
           }));
       }),
+  );
+
+  /**
+   * "Apply suggested grades": a person presses it, and only then does a grade appear. Nothing is
+   * pre-filled. For each shape family of the job's pieces that has a suggestion and no grade yet, the
+   * suggestion is saved as that person's grade (the same append-only table as a typed grade).
+   */
+  app.post<{ Params: { projectId: string }; Body: { who: string } }>(
+    '/api/projects/:projectId/grades/apply-suggested',
+    {
+      schema: {
+        params,
+        body: {
+          type: 'object',
+          required: ['who'],
+          additionalProperties: false,
+          properties: { who: { type: 'string', minLength: 1, maxLength: 100 } },
+        },
+      },
+    },
+    async (request) => {
+      const who = request.body.who.trim();
+      if (who === '') throw new HttpError(400, { error: 'who must not be blank' });
+      const { projectId } = request.params;
+      const project = await db()
+        .selectFrom('projects')
+        .select('id')
+        .where('id', '=', projectId)
+        .executeTakeFirst();
+      if (!project) throw new HttpError(404, { error: 'project not found' });
+      const grades = await loadGrades(db(), projectId);
+      const present = new Set(
+        (await loadMemberViews(db(), projectId))
+          .filter((m) => !m.deleted && m.not_member === null)
+          .map((m) => familyOf(m))
+          .filter((f): f is NonNullable<ReturnType<typeof familyOf>> => f !== null),
+      );
+      const applied: { family: string; grade: string }[] = [];
+      for (const family of [...present].sort()) {
+        const suggestion = GRADE_SUGGESTION[family];
+        if (!suggestion || grades.has(family)) continue;
+        await setGrade(db(), projectId, family, suggestion, who);
+        applied.push({ family, grade: suggestion });
+      }
+      return { applied };
+    },
   );
 };

@@ -158,6 +158,6 @@ What exists, with the section of this spec it implements. Everything below is de
 
 Choices made while building (each can be reversed by the owner):
 - **Colour is the confidence of the identification** (link, size, mark, kind), not of the length. A kind found in the label's own text line does not change the colour; a kind from nearby text, the legend or the sheet title makes the piece amber until a person confirms it; an ambiguous kind is amber; no kind is a grey symbol (the piece is still counted, in the row "no kind").
-- **Sheet default:** a sheet with no person decision is in the takeoff when its page type guess is a framing plan, out otherwise; each such default is a flag and the out sheets are listed in the totals footer.
-- **Excluded kinds in nearby text are ignored** (a wall note next to a beam must not remove the beam); they count only in the label's own line or the legend.
+- **Sheet default (changed in Phase 6b):** a sheet with no person decision is in the takeoff when it is a vector page; a raster or unknown page is out, with a flag. The page type guess only raises "likely not a framing sheet"; the sheet list shows each sheet's piece count.
+- **Kind sources (changed in Phase 6b):** only the label's own text line and the legend row set a kind; a word in nearby text or the sheet title is a grey hint and the kind stays empty. Excluded-kind words nearby are ignored.
 - **Grade** is the person-set grade of the shape family; the estimators' family default is only shown as a suggestion.

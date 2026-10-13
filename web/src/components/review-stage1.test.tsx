@@ -301,7 +301,7 @@ describe("ExplanationPanel", () => {
     ])
       expect(within(panel).getByText(label)).toBeTruthy();
     expect(panel.textContent).toContain("not parsed");
-    expect(panel.textContent).toContain("no kind word near the label");
+    expect(panel.textContent).toContain("no kind word in the label's own line");
     expect(panel.textContent).toContain("not in the catalog");
     expect(panel.textContent).toContain("no line found within reach");
     expect(panel.textContent).toContain("guessed, not confirmed");
@@ -440,6 +440,92 @@ describe("MembersPanel", () => {
   });
 });
 
+describe("kind hint and sheet list", () => {
+  it("shows a nearby-text hint as grey text beside an empty kind, marked as not used", () => {
+    render(
+      <ExplanationPanel
+        member={member("a", {
+          kind: {
+            name: null,
+            scope: null,
+            state: "missing",
+            source: null,
+            evidence: null,
+            hint: { kind: "Truss", keyword: "truss", where: "sheet_title" },
+          },
+        })}
+        sheet={null}
+        view={null}
+        legend={[]}
+        history={[]}
+        onJump={() => undefined}
+        onGotoPage={() => undefined}
+        actions={null}
+      />,
+    );
+    const text = screen.getByTestId("explanation").textContent ?? "";
+    expect(text).toContain("hint only, not used");
+    expect(text).toContain("in the sheet title");
+  });
+
+  it("lists each sheet with its piece count and the likely-not-framing flag", async () => {
+    const { PageList } = await import("./PageList");
+    const sheet = (id: string, n: number) =>
+      ({
+        id,
+        page_number: n,
+        sheet_number: `S${n}`,
+        kind: "plan",
+        page_type: { effective: "detail", overridden: false },
+        review_reasons: [],
+        needs_review: false,
+        thumbnail_url: null,
+        takeoff: { decision: "undecided", included: true },
+      }) as never;
+    const flags = new Map([
+      [
+        "a",
+        {
+          sheet_id: "a",
+          page_number: 1,
+          included: true,
+          by_default: true,
+          piece_count: 12,
+          likely_not_framing: false,
+          flags: [],
+          confirmed_by: null,
+          confirmed_at: null,
+        },
+      ],
+      [
+        "b",
+        {
+          sheet_id: "b",
+          page_number: 2,
+          included: true,
+          by_default: true,
+          piece_count: 0,
+          likely_not_framing: true,
+          flags: [],
+          confirmed_by: null,
+          confirmed_at: null,
+        },
+      ],
+    ]);
+    render(
+      <PageList
+        sheets={[sheet("a", 1), sheet("b", 2)]}
+        selectedId="a"
+        onSelect={() => undefined}
+        flags={flags as never}
+      />,
+    );
+    expect(screen.getByText("12 pcs")).toBeTruthy();
+    expect(screen.getByText("0 pcs")).toBeTruthy();
+    expect(screen.getAllByTitle(/likely not a framing sheet/)).toHaveLength(1);
+  });
+});
+
 describe("PipelineBar", () => {
   const draft = {
     unconfirmed_sheets: 3,
@@ -549,7 +635,7 @@ describe("TablesPanel", () => {
           scope: "misc",
           quantity: 1,
           groups: 0,
-          note: "misc steel is reserved: listed, not computed",
+          note: "not computed (misc steel is reserved)",
         },
       ],
       red: apart(2),

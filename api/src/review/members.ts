@@ -142,6 +142,8 @@ export interface KindState {
     where: string | null;
     candidates: string[];
   } | null;
+  /** A kind word seen only in nearby text or the sheet title: a grey hint, the kind stays empty. */
+  hint: { kind: string; keyword: string; where: string } | null;
 }
 
 export interface Tag {
@@ -254,6 +256,7 @@ export function memberView(
     keyword?: string | null;
     where?: string | null;
     candidates?: string[];
+    hint?: { kind: string; keyword: string; where: string } | null;
   } | null;
   const kindState: KindState['state'] =
     kindEdited ||
@@ -527,6 +530,7 @@ export function memberView(
                 candidates: evidence.candidates ?? [],
               }
             : null,
+      hint: kindName === null ? (evidence?.hint ?? null) : null,
     },
     tag,
     symbol_group: kindInfo?.symbol_group ?? symbolGroupOfType(type),

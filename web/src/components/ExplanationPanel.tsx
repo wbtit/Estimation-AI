@@ -163,7 +163,17 @@ export const ExplanationPanel: React.FC<ExplanationProps> = ({
           <Row label="Kind" onJump={labelJump}>
             {m.kind.name ?? "not found"}
             {m.kind.state === "missing" &&
-              " (no kind word near the label: choose it)"}
+              " (no kind word in the label's own line or its legend row: choose it)"}
+            {m.kind.state === "missing" && m.kind.hint && (
+              <span className="hint-grey">
+                {" "}
+                hint only, not used: the word "{m.kind.hint.keyword}" (
+                {m.kind.hint.kind}) was seen{" "}
+                {m.kind.hint.where === "sheet_title"
+                  ? "in the sheet title"
+                  : "in nearby text"}
+              </span>
+            )}
             {m.kind.state === "ambiguous" &&
               ` (ambiguous word "${m.kind.evidence?.keyword}": ${m.kind.evidence?.candidates.join(", ")})`}
             {m.kind.state === "guessed" &&

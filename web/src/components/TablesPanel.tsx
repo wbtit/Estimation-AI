@@ -219,7 +219,7 @@ export const TablesPanel: React.FC<{
       <ApartLine label="Red, not counted" a={red} red />
       <ApartLine label="Existing, not counted" a={existing} />
       <ApartLine label="Not counted (excluded kinds)" a={notCounted} />
-      <ApartLine label="Misc, reserved (not computed)" a={misc} />
+      <ApartLine label="Not computed (misc)" a={misc} />
       {unlinked > 0 && (
         <tr className="apart-row">
           <td colSpan={2}>Unlinked labels (in no total)</td>
@@ -239,6 +239,20 @@ export const TablesPanel: React.FC<{
         >
           {data.draft.label}
         </b>
+        <button
+          title="Sets the suggested grade (HSS A500, W A992) for each shape family of this job that has none. Nothing is filled in until you press this."
+          onClick={() => {
+            if (who.trim() === "")
+              return onError(new Error("Type your name at the top first."));
+            send("POST", `/api/projects/${projectId}/grades/apply-suggested`, {
+              who: who.trim(),
+            })
+              .then(() => load())
+              .catch(onError);
+          }}
+        >
+          Apply suggested grades
+        </button>
         <a href={`/api/projects/${projectId}/tables.xlsx`} download>
           Export Excel{data.draft.reviewed ? "" : " (draft)"}
         </a>

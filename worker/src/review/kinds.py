@@ -74,8 +74,10 @@ class KindResult:
     status: str  # "set" | "ambiguous" | "missing"
     source: str | None  # "keyword" | "legend" | "sheet_context"
     keyword: str | None
-    where: str | None  # "same_line" | "near" | "legend" | "sheet_title" | "designation"
+    where: str | None  # "same_line" | "legend" | "designation"
     candidates: tuple[str, ...] = ()
+    # a kind word seen only nearby or in the sheet title: (kind, keyword, "near" | "sheet_title")
+    hint: tuple[str, str, str] | None = None
 
     def evidence(self) -> dict[str, object]:
         """What the screen shows; the matched keyword and where it was found, never page text."""
@@ -85,6 +87,9 @@ class KindResult:
             "keyword": self.keyword,
             "where": self.where,
             "candidates": list(self.candidates),
+            "hint": None
+            if self.hint is None
+            else {"kind": self.hint[0], "keyword": self.hint[1], "where": self.hint[2]},
         }
 
 
@@ -123,21 +128,24 @@ def detect_kind(
     legend_text: str | None = None,
     sheet_text: str | None = None,
 ) -> KindResult:
-    """First source with a keyword wins. `near_lines` is nearest first and excludes the own line."""
+    """The own line, then the legend row. Nearby lines and the sheet title give a hint only."""
     res = match_text(same_line)
     if res is not None:
         return _tag(res, "keyword", "same_line")
-    for line in near_lines or []:
-        res = match_text(line, allow_excluded=False)
-        if res is not None:
-            return _tag(res, "keyword", "near")
     res = match_text(legend_text)
     if res is not None:
         return _tag(res, "legend", "legend")
-    res = match_text(sheet_text)
-    if res is not None:
-        return _tag(res, "sheet_context", "sheet_title")
-    return MISSING
+    hint = None
+    for line in near_lines or []:
+        res = match_text(line, allow_excluded=False)
+        if res is not None and res.status == "set" and res.kind is not None:
+            hint = (res.kind, res.keyword or "", "near")
+            break
+    if hint is None:
+        res = match_text(sheet_text, allow_excluded=False)
+        if res is not None and res.status == "set" and res.kind is not None:
+            hint = (res.kind, res.keyword or "", "sheet_title")
+    return KindResult(None, "missing", None, None, None, hint=hint)
 
 
 def joist_kind() -> KindResult:

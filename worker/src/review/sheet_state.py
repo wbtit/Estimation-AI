@@ -1,8 +1,9 @@
 """Facts about a sheet that the pipeline needs and that a person can override.
 
-Mirrors api/src/review/takeoff-sheets.ts: a person's takeoff decision wins; with none, a sheet is in
-the takeoff by default when its (possibly overridden) page type is a framing plan. Page type
-overrides and decisions are the latest `sheet_edits` rows of the sheet (null = cleared).
+Mirrors api/src/review/takeoff-sheets.ts: a person's takeoff decision wins; with none (Phase 6b), a
+sheet is in the takeoff by default when it is a vector page, whatever its page type. A raster or
+unknown page is out by default. The page type only raises a "likely not a framing sheet" flag.
+Decisions are the latest `sheet_edits` rows of the sheet (null = cleared).
 """
 
 from typing import Any
@@ -36,4 +37,4 @@ def sheet_included(conn: psycopg.Connection, sheet: dict[str, Any]) -> bool:
     decision = sheet_decision(conn, str(sheet["id"]))
     if decision is not None:
         return decision == "include"
-    return effective_page_type(conn, sheet) == SUGGESTED_INCLUDE_PAGE_TYPE
+    return sheet.get("page_kind") == "vector"

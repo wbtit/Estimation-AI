@@ -10,6 +10,8 @@ describe('draft status', () => {
     page_number: n,
     included,
     by_default: true,
+    piece_count: 0,
+    likely_not_framing: false,
     flags: Array.from({ length: codes }, () => ({ code: 'CLASSES_SUGGESTED', text: 'x' })),
     confirmed_by: null,
     confirmed_at: null,
@@ -33,6 +35,7 @@ describe('flags and one-click confirmation', () => {
   let projectId: string;
   let plan: string;
   let detail: string;
+  let raster: string;
   const box = JSON.stringify({ x0: 10, y0: 10, x1: 900, y1: 700 });
   const flags = async () =>
     (await app.inject({ method: 'GET', url: `/api/projects/${projectId}/flags` })).json();
@@ -50,6 +53,17 @@ describe('flags and one-click confirmation', () => {
       page_type_guess: 'detail',
       ...size,
     });
+    raster = await insertSheet(db, projectId, {
+      page_index: 2,
+      page_type_guess: 'framing_plan',
+      width_pt: 1200,
+      height_pt: 800,
+      page_kind: 'scanned',
+    });
+    await db
+      .insertInto('sheet_views')
+      .values({ sheet_id: detail, box, scale_ratio: 96, structural_classes: ['x|black|solid'] })
+      .execute();
     await db
       .insertInto('sheet_views')
       .values({
@@ -71,7 +85,7 @@ describe('flags and one-click confirmation', () => {
 
   it('lists a flag for every unconfirmed guess and labels the totals draft', async () => {
     const f = await flags();
-    expect(f.draft).toMatchObject({ unconfirmed_sheets: 2, label: 'draft, 2 sheets unconfirmed' });
+    expect(f.draft).toMatchObject({ unconfirmed_sheets: 3, label: 'draft, 3 sheets unconfirmed' });
     const codes = (id: string) =>
       f.sheets
         .find((s: SheetFlags) => s.sheet_id === id)
@@ -81,11 +95,21 @@ describe('flags and one-click confirmation', () => {
       'SCALE_GUESSED',
       'CLASSES_SUGGESTED',
     ]);
-    expect(codes(detail)).toEqual(['SHEET_EXCLUDED_BY_DEFAULT']);
+    // a vector sheet is in by default; a detail sheet only gets the "likely not framing" flag
+    expect(codes(detail)).toEqual([
+      'SHEET_INCLUDED_BY_DEFAULT',
+      'LIKELY_NOT_FRAMING',
+      'SCALE_GUESSED',
+      'CLASSES_SUGGESTED',
+    ]);
+    expect(codes(raster)).toEqual(['SHEET_NOT_VECTOR']);
+    const byId = (id: string) => f.sheets.find((s: SheetFlags) => s.sheet_id === id);
+    expect([byId(detail).likely_not_framing, byId(plan).likely_not_framing]).toEqual([true, false]);
+    expect([byId(plan).piece_count, byId(raster).included]).toEqual([0, false]);
     const takeoff = (
       await app.inject({ method: 'GET', url: `/api/projects/${projectId}/takeoff` })
     ).json();
-    expect(takeoff.draft.label).toBe('draft, 2 sheets unconfirmed');
+    expect(takeoff.draft.label).toBe('draft, 3 sheets unconfirmed');
   });
 
   it('"these guesses are right" confirms scale, classes and the decision, and records who', async () => {
@@ -96,7 +120,7 @@ describe('flags and one-click confirmation', () => {
     });
     expect(res.statusCode).toBe(200);
     expect(res.json().sheet).toMatchObject({ flags: [], confirmed_by: 'alice' });
-    expect(res.json().draft.unconfirmed_sheets).toBe(1);
+    expect(res.json().draft.unconfirmed_sheets).toBe(2);
     const view = await db
       .selectFrom('sheet_views')
       .selectAll()
@@ -117,13 +141,19 @@ describe('flags and one-click confirmation', () => {
   });
 
   it('confirms every sheet excluded by default in one call; the label becomes reviewed', async () => {
+    // the detail sheet is in by default: its flags clear with its own confirmation
+    await app.inject({
+      method: 'POST',
+      url: `/api/projects/${projectId}/sheets/${detail}/confirm-guesses`,
+      payload: { who: 'bob' },
+    });
     const res = await app.inject({
       method: 'POST',
       url: `/api/projects/${projectId}/confirm-excluded-defaults`,
       payload: { who: 'bob' },
     });
     expect(res.json()).toMatchObject({
-      confirmed: [2],
+      confirmed: [3],
       draft: { reviewed: true, label: 'reviewed' },
     });
     const f = await flags();

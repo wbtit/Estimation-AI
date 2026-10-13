@@ -10,6 +10,7 @@ export interface SheetListRow {
   sheet_number: string | null;
   page_type: string | null;
   decision: 'include' | 'exclude' | 'undecided';
+  included?: boolean;
   decided_by: string | null;
   decided_at: string | null;
   members_not_counted: number;
@@ -195,7 +196,7 @@ export async function buildTakeoffWorkbook(input: TakeoffExportInput): Promise<B
   ]);
   const und = (takeoff.sheets ?? []).filter((s) => s.decision === 'undecided');
   sum.addRow([]);
-  bold(sum.addRow(['Sheets not decided yet (not in the totals)', und.length]));
+  bold(sum.addRow(['Sheets no person has decided yet (in or out by default)', und.length]));
   sum.addRow([`${und.length} sheets undecided`, und.map((s) => s.page_number).join(', ')]);
   const rv = takeoff.review;
   const nm = takeoff.not_member_reasons;
@@ -444,7 +445,9 @@ export async function buildTakeoffWorkbook(input: TakeoffExportInput): Promise<B
           ? 'in the takeoff'
           : s.decision === 'exclude'
             ? 'excluded'
-            : 'UNDECIDED (not in the totals)',
+            : s.included === false
+              ? 'UNDECIDED (not in the totals)'
+              : 'UNDECIDED (in the totals by default)',
         s.decided_by,
         s.decided_at,
         s.members_not_counted,

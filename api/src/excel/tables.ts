@@ -136,7 +136,7 @@ export async function buildTablesWorkbook(input: TablesExportInput): Promise<Buf
   addApart(job, 'Red, not counted', input.job.red);
   addApart(job, 'Existing, not counted', input.job.existing);
   addApart(job, 'Not counted (excluded kinds)', input.job.not_counted);
-  addApart(job, 'Misc, reserved (not computed)', input.job.misc);
+  addApart(job, 'Not computed (misc)', input.job.misc);
   if (input.job.unlinked > 0) job.addRow(['Unlinked labels (in no total)', '', input.job.unlinked]);
   if (input.job.sheets_excluded.length > 0)
     job.addRow([
@@ -163,7 +163,7 @@ export async function buildTablesWorkbook(input: TablesExportInput): Promise<Buf
     addApart(ws, 'Red, not counted', p.red);
     addApart(ws, 'Existing, not counted', p.existing);
     addApart(ws, 'Not counted (excluded kinds)', p.not_counted);
-    addApart(ws, 'Misc, reserved (not computed)', p.misc);
+    addApart(ws, 'Not computed (misc)', p.misc);
     if (p.unlinked > 0) ws.addRow(['Unlinked labels (in no total)', '', p.unlinked]);
   }
 

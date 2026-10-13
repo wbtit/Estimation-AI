@@ -135,6 +135,8 @@ export interface KindState {
     where: string | null;
     candidates: string[];
   } | null;
+  /** A kind word seen only nearby or in the sheet title: a grey hint, the kind stays empty. */
+  hint: { kind: string; keyword: string; where: string } | null;
 }
 
 export interface Tag {
@@ -179,6 +181,8 @@ export interface SheetFlags {
   page_number: number;
   included: boolean;
   by_default: boolean;
+  piece_count: number;
+  likely_not_framing: boolean;
   flags: SheetFlag[];
   confirmed_by: string | null;
   confirmed_at: string | null;

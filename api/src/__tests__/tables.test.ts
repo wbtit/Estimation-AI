@@ -310,6 +310,42 @@ describe('job table and summary', () => {
   });
 });
 
+describe('apply suggested grades', () => {
+  const apply = (who = 'dana') =>
+    app.inject({
+      method: 'POST',
+      url: `/api/projects/${projectId}/grades/apply-suggested`,
+      payload: { who },
+    });
+
+  it('sets nothing by itself: a grade appears only when a person presses the button', async () => {
+    const before = await db
+      .selectFrom('project_grade_rules')
+      .select('shape_family')
+      .where('project_id', '=', projectId)
+      .where('set_by', '=', 'dana')
+      .execute();
+    expect(before).toEqual([]);
+  });
+
+  it('fills the suggested grade for each family of the job that has none, never over a typed one', async () => {
+    const res = await apply();
+    expect(res.statusCode).toBe(200);
+    // W was typed earlier by a person (kept); HSS had none
+    expect(res.json().applied).toEqual([{ family: 'HSS', grade: 'A500' }]);
+    const row = (await tables()).job.rows.find((r: { shape: string }) => r.shape === 'HSS');
+    expect(row.grade).toBe('A500');
+    expect((await tables()).job.rows.find((r: { size: string }) => r.size === '12X26').grade).toBe(
+      'A572 Gr50',
+    );
+    expect((await apply()).json().applied).toEqual([]); // pressing again changes nothing
+  });
+
+  it('refuses a blank name', async () => {
+    expect((await apply('  ')).statusCode).toBe(400);
+  });
+});
+
 describe('row actions', () => {
   const act = (path: string, payload: object) =>
     app.inject({ method: 'POST', url: `/api/projects/${projectId}/rows/${path}`, payload });
@@ -405,7 +441,7 @@ describe('Excel export', () => {
     const text = JSON.stringify(job.getRows(1, job.rowCount)!.map((r) => r.values));
     expect(text).toContain('Red, not counted');
     expect(text).toContain('Not counted (excluded kinds)');
-    expect(text).toContain('Misc, reserved (not computed)');
+    expect(text).toContain('Not computed (misc)');
   });
 
   it('lists corrections on their own sheet with who and what', async () => {

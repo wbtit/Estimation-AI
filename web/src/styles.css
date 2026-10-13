@@ -600,3 +600,13 @@ mark {
   display: inline-block;
   margin: 0 8px;
 }
+.hint-grey {
+  color: #888;
+  font-size: 11px;
+}
+.piece-count {
+  color: #556;
+}
+.flag-badge.not-framing {
+  background: #8d8d8d;
+}

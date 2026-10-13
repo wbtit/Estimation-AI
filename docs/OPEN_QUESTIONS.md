@@ -145,3 +145,15 @@ Each item is an assumption I made so Phase 1 could proceed while you were away. 
 95. **Apply to all pieces with this tag.** "Same tag" is the same mark on the sheet, or the same size text when there is no mark (tags themselves are unique per piece). Is that the meaning the estimators expect?
 96. **Prefix list.** The owner's abbreviations are still empty; `npm run kinds:load-abbreviations -- --file <csv>` (kind,abbreviation) loads them without a migration. Existing tags are not renamed by the load.
 
+### Answers to questions 90 to 96 (owner decisions, Phase 6b Part A, 2026-10-13)
+- **90 (kind colour).** Changed: a kind is set ONLY by the label's own text line or the legend or note the tag points to. A kind word seen in nearby text (the old 150 pt window) or in the sheet title is a grey HINT shown beside an empty kind; it is never used. A kind from the own line stays green; a kind from the legend stays amber until confirmed; an ambiguous kind is amber; no kind is a grey symbol.
+- **91 (excluded kinds in nearby text).** Confirmed: ignored (not even a hint). They count only in the label's own line or the legend.
+- **92 (pages the page type guess leaves out).** Changed: EVERY vector sheet is in by default and a person excludes; a raster or unknown page is out by default with a flag. The sheet list shows each sheet's piece count and a "likely not a framing sheet" flag from the page type guess, so outliers are one click away.
+- **93 (row Name).** Name = the kind only (editable, flagged "system wording").
+- **94 (grade).** No automatic pre-fill. The suggestion (HSS A500, W A992) stays a flag. One button, "Apply suggested grades", that a person presses, saves the suggestion as that person's grade for each shape family of the job that has none (never over a typed grade).
+- **95 (apply to all with this tag).** Same mark on the sheet, or the same size text when there is no mark; the number of pieces is shown on the button before the click.
+- **96 (prefix list).** Unchanged: still the owner's to supply.
+- **Misc kinds.** The 12 reserved misc kinds are not in the main total; they are listed on a row "not computed (misc)".
+- **AISC weight unit (checked).** PROVEN from the Readme sheet of the file: the row for column `W` reads "Nominal weight, lb/ft (kg/m)", and the note "[a] Values in parentheses are for metric data". The first block of the data sheet (used) is imperial, so the unit is pounds per foot.
+- **Stray duplicate project.** A project named like the first job of the Phase 6a measurement exists twice: the aborted first attempt (created first, 20 sheets, no views, no pieces: the old API ran stale code and the run stopped there) and the real run. Nothing was deleted; the owner may delete the empty one.
+

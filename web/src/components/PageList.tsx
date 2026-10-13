@@ -70,6 +70,20 @@ export const PageList: React.FC<{
                 }
               />
             )}
+            {flags?.get(s.id) && (
+              <small className="piece-count" title="pieces on this page">
+                {" "}
+                {flags.get(s.id)?.piece_count} pcs
+              </small>
+            )}
+            {flags?.get(s.id)?.likely_not_framing && (
+              <span
+                className="flag-badge not-framing"
+                title="likely not a framing sheet (page type guess): exclude it if it is not"
+              >
+                ?
+              </span>
+            )}
             {(flags?.get(s.id)?.flags.length ?? 0) > 0 && (
               <span
                 className="flag-badge"

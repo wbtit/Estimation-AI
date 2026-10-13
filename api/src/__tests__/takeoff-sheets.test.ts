@@ -5,30 +5,31 @@ import { decisionOf, inclusionOf, suggestionOf } from '../review/takeoff-sheets.
 import { deleteProject, insertProject, insertSheet, loadWorkbook } from './helpers.js';
 
 describe('the decision of a sheet', () => {
-  it('is undecided until a person decides; the page type decides by default (a flag)', () => {
-    expect(inclusionOf('framing_plan', null)).toMatchObject({
-      decision: 'undecided',
-      included: true,
-      by_default: true,
-      suggestion: 'include',
-    });
-    for (const t of [
-      'foundation_plan',
-      'elevation',
-      'detail',
-      'schedule_legend',
-      'general_notes',
-      'other',
-      null,
-    ]) {
+  it('is undecided until a person decides; every vector sheet is in by default (a flag)', () => {
+    for (const t of ['framing_plan', 'foundation_plan', 'elevation', 'detail', 'other', null]) {
       expect(inclusionOf(t, null)).toMatchObject({
         decision: 'undecided',
-        included: false,
+        included: true,
         by_default: true,
-        suggestion: 'exclude',
+        not_vector: false,
+        likely_not_framing: t !== 'framing_plan',
       });
     }
     expect(suggestionOf('framing_plan')).toBe('include');
+    expect(suggestionOf('detail')).toBe('exclude');
+  });
+
+  it('a raster or unknown page is out by default, with a flag', () => {
+    for (const kind of ['scanned', 'unknown', null]) {
+      expect(inclusionOf('framing_plan', null, null, null, kind)).toMatchObject({
+        included: false,
+        not_vector: true,
+        likely_not_framing: false,
+        by_default: true,
+      });
+    }
+    // a person can still include it
+    expect(inclusionOf('framing_plan', 'include', 'a', 't', 'scanned').included).toBe(true);
   });
 
   it('a person decision wins in both directions, whatever the guess says', () => {
@@ -36,6 +37,8 @@ describe('the decision of a sheet', () => {
       decision: 'include',
       included: true,
       by_default: false,
+      not_vector: false,
+      likely_not_framing: true,
       suggestion: 'exclude',
       decided_by: 'alice',
       decided_at: 't',
@@ -128,9 +131,9 @@ describe('sheet decision routes', () => {
     await closeDatabaseConnection();
   });
 
-  it('every sheet starts undecided; a framing plan is in the totals by default, the others are out, and all are listed', async () => {
+  it('every sheet starts undecided and every vector sheet is in the totals by default', async () => {
     const t = await takeoff();
-    expect(t.totals.pieces).toBe(1);
+    expect(t.totals.pieces).toBe(2); // the framing plan and the detail sheet
     expect(t.undecided_sheets).toEqual({ count: 3, pages: [1, 2, 3] });
     expect(t.sheets.map((s: { decision: string }) => s.decision)).toEqual([
       'undecided',
@@ -138,21 +141,25 @@ describe('sheet decision routes', () => {
       'undecided',
     ]);
     expect(t.sheets[0]).toMatchObject({ suggestion: 'include', members_not_counted: 0 });
-    expect(t.sheets[1]).toMatchObject({ suggestion: 'exclude' });
+    expect(t.sheets[1]).toMatchObject({ suggestion: 'exclude', members_not_counted: 0 });
     expect((await sheetJson(plan)).takeoff).toMatchObject({
       decision: 'undecided',
       suggestion: 'include',
+      likely_not_framing: false,
+    });
+    expect((await sheetJson(detail)).takeoff).toMatchObject({
+      included: true,
+      likely_not_framing: true,
     });
   });
 
-  it('the link job is allowed on a sheet included by default and refused on an excluded sheet, with a clear message', async () => {
+  it('the link job is allowed on a sheet included by default and refused once a person excludes it', async () => {
     const url = `/api/projects/${projectId}/views/${planView}/link`;
-    const byDefault = await app.inject({ method: 'POST', url });
-    expect(byDefault.json().error).toContain('scan is not finished'); // the sheet check passed
     const detailUrl = `/api/projects/${projectId}/views/${detailView}/link`;
-    const defaultOut = await app.inject({ method: 'POST', url: detailUrl });
-    expect(defaultOut.statusCode).toBe(409);
-    expect(defaultOut.json().error).toContain('excluded by default');
+    for (const u of [url, detailUrl]) {
+      const byDefault = await app.inject({ method: 'POST', url: u });
+      expect(byDefault.json().error).toContain('scan is not finished'); // the sheet check passed
+    }
     await decide(plan, 'exclude');
     const excluded = await app.inject({ method: 'POST', url });
     expect(excluded.statusCode).toBe(409);
@@ -160,20 +167,25 @@ describe('sheet decision routes', () => {
     await decide(plan, null);
   });
 
-  it('a decision stores who and when, puts the sheet in the totals, and the others stay out', async () => {
+  it('a decision stores who and when; a person can take a sheet out of the totals', async () => {
     expect((await decide(plan, 'include', 'bob')).statusCode).toBe(200);
-    const t = await takeoff();
-    expect(t.totals.pieces).toBe(1);
+    let t = await takeoff();
+    expect(t.totals.pieces).toBe(2);
     expect(t.undecided_sheets.count).toBe(2);
     const row = t.sheets.find((s: { page_number: number }) => s.page_number === 1);
     expect(row).toMatchObject({ decision: 'include', decided_by: 'bob', members_not_counted: 0 });
     expect(typeof row.decided_at).toBe('string');
+    expect((await decide(detail, 'exclude', 'bob')).statusCode).toBe(200);
+    t = await takeoff();
+    expect(t.totals.pieces).toBe(1);
     expect(
       t.sheets.find((s: { page_number: number }) => s.page_number === 2).members_not_counted,
     ).toBe(1);
+    await undo(detail, 'bob');
+    expect((await takeoff()).totals.pieces).toBe(2);
   });
 
-  it('the link job is allowed on an included sheet (a detail sheet too, when a person says so)', async () => {
+  it('the link job is allowed on a detail sheet a person included', async () => {
     await decide(detail, 'include');
     const res = await app.inject({
       method: 'POST',
@@ -188,7 +200,7 @@ describe('sheet decision routes', () => {
     // decisions of the detail sheet so far: include
     expect((await undo(detail, 'carol')).statusCode).toBe(200);
     expect((await sheetJson(detail)).takeoff.decision).toBe('undecided');
-    expect((await takeoff()).totals.pieces).toBe(1);
+    expect((await takeoff()).totals.pieces).toBe(2); // undecided again: in by default
     expect((await decide(detail, 'exclude')).statusCode).toBe(200);
     expect((await decide(detail, 'include')).statusCode).toBe(200);
     expect((await undo(detail)).statusCode).toBe(200); // back to exclude
@@ -204,7 +216,7 @@ describe('sheet decision routes', () => {
       .orderBy('created_at')
       .orderBy('id')
       .execute();
-    expect(history.length).toBe(6); // nothing was deleted
+    expect(history.length).toBe(8); // nothing was deleted
     expect(history.some((h) => h.editor === 'carol' && h.reason?.startsWith('undo:'))).toBe(true);
   });
 
@@ -217,7 +229,7 @@ describe('sheet decision routes', () => {
       (r, n) => n > 1 && rows.push([r.getCell(1).value, r.getCell(4).value, r.getCell(5).value]),
     );
     expect(rows[0]).toEqual([1, 'in the takeoff', 'bob']);
-    expect(rows[1][1]).toBe('UNDECIDED (not in the totals)');
+    expect(rows[1][1]).toBe('UNDECIDED (in the totals by default)');
     const sum = wb.getWorksheet('Summary')!;
     const cells: string[] = [];
     sum.eachRow((r) => cells.push(String(r.getCell(1).value)));

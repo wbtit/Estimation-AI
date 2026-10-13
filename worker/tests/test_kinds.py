@@ -43,15 +43,24 @@ def test_a_bare_brace_rail_or_ladder_is_ambiguous_and_names_its_candidates() -> 
     assert kind("kicker brace") == "Kicker/Knee Brace"  # a specific word wins over the bare one
 
 
-def test_first_source_wins_and_the_source_is_stored() -> None:
+def test_only_the_own_line_and_the_legend_set_a_kind_in_that_order() -> None:
     r = detect_kind("W12x26 COLUMN", ["beam"], "girt", "truss")
     assert (r.kind, r.source, r.where, r.keyword) == ("Column", "keyword", "same_line", "column")
+    r = detect_kind("W12x26", ["see beam note"], "purlin schedule", "truss plan")
+    assert (r.kind, r.source, r.where) == ("Girt & Purlin", "legend", "legend")
+    assert r.hint is None
+
+
+def test_nearby_text_and_the_sheet_title_are_a_hint_only_and_the_kind_stays_empty() -> None:
     r = detect_kind("W12x26", ["no words", "see beam note", "column"], None, None)
-    assert (r.kind, r.source, r.where) == ("Beams", "keyword", "near")  # nearest line first
-    r = detect_kind("W12x26", ["nothing"], "purlin schedule", "truss plan")
-    assert (r.kind, r.source) == ("Girt & Purlin", "legend")
+    assert (r.kind, r.status, r.source) == (None, "missing", None)
+    assert r.hint == ("Beams", "beam", "near")  # nearest line first
     r = detect_kind("W12x26", [], None, "TRUSS FRAMING")
-    assert (r.kind, r.source, r.where) == ("Truss", "sheet_context", "sheet_title")
+    assert (r.kind, r.status) == (None, "missing")
+    assert r.hint == ("Truss", "truss", "sheet_title")
+    assert r.evidence()["hint"] == {"kind": "Truss", "keyword": "truss", "where": "sheet_title"}
+    r = detect_kind("W12x26", ["x"], None, None)
+    assert r.hint is None and r.evidence()["hint"] is None
 
 
 def test_no_keyword_leaves_the_kind_empty_never_defaulted() -> None:
@@ -60,8 +69,10 @@ def test_no_keyword_leaves_the_kind_empty_never_defaulted() -> None:
 
 
 def test_an_excluded_kind_in_a_nearby_line_is_ignored_but_counts_in_the_own_line() -> None:
-    assert detect_kind("W12x26", ["cont. at wall"]).kind is None
-    assert detect_kind("W12x26", ["bearing wall"]).kind == "Embed Plate/Bearing Plates"
+    r = detect_kind("W12x26", ["cont. at wall"])
+    assert r.kind is None and r.hint is None  # not even a hint
+    r = detect_kind("W12x26", ["bearing wall"])
+    assert r.kind is None and r.hint == ("Embed Plate/Bearing Plates", "bearing", "near")
     assert detect_kind("24K7 joist").kind == "Joist"
     assert detect_kind("W12x26 wall angle").kind == "Wall"  # the own line is trusted
     assert joist_kind().kind == "Joist" and joist_kind().where == "designation"
@@ -75,6 +86,7 @@ def test_evidence_carries_no_page_text_only_the_keyword_and_where() -> None:
         "keyword": "truss",
         "where": "same_line",
         "candidates": [],
+        "hint": None,
     }
 
 

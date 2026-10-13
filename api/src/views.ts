@@ -75,7 +75,13 @@ export function wholeSheetOffer(sheet: Selectable<SheetsTable>) {
 /** The explicit decision of the sheet (include, exclude, or undecided) and what the guess suggests. */
 export function takeoffOf(sheet: Selectable<SheetsTable>, overrides: SheetOverrides) {
   const pageType = overrides.page_type ?? sheet.page_type_guess;
-  return inclusionOf(pageType, overrides.takeoff, overrides.takeoff_by, overrides.takeoff_at);
+  return inclusionOf(
+    pageType,
+    overrides.takeoff,
+    overrides.takeoff_by,
+    overrides.takeoff_at,
+    sheet.page_kind,
+  );
 }
 
 export function sheetView(sheet: Selectable<SheetsTable>, overrides: SheetOverrides = {}) {

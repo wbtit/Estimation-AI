@@ -1,8 +1,9 @@
-// Which sheets take part in the takeoff. Phase 6a (flags instead of gates, owner decision): a sheet
-// with no person decision is `undecided` and is included or excluded BY DEFAULT from its page type
-// guess (framing plans in, everything else out), with a flag "included/excluded by default" that
-// stays until a person decides or clicks "these guesses are right". The guess was wrong on 6 of 24
-// pages, so every sheet excluded by default is listed in the totals footer. A decision is a
+// Which sheets take part in the takeoff. Phase 6b (owner decision, replaces the Phase 6a page type
+// default): a sheet with no person decision is `undecided` and is INCLUDED BY DEFAULT when it is a
+// vector page, whatever its page type guess says (the guess left out 66 of the 136 pages the
+// estimators marked). A raster or unknown page stays excluded by default, with a flag. The page type
+// guess only raises the flag "likely not a framing sheet" so outliers are one click away. The flag
+// stays until a person decides or clicks "these guesses are right". A decision is a
 // sheet_edits row with who and when; the latest one wins and an undo appends the previous value
 // (nothing is deleted).
 import type { Kysely } from 'kysely';
@@ -26,6 +27,10 @@ export interface SheetInclusion {
   by_default: boolean;
   /** The suggestion from the page type guess (shown as a guess). */
   suggestion: 'include' | 'exclude';
+  /** The page is a raster or unknown page: it cannot be read as vectors and is excluded by default. */
+  not_vector: boolean;
+  /** A vector sheet whose page type guess is not a framing plan (flag only, the sheet is still in). */
+  likely_not_framing: boolean;
   decided_by: string | null;
   decided_at: string | null;
 }
@@ -43,12 +48,15 @@ export function inclusionOf(
   override: string | null | undefined,
   by: string | null = null,
   at: string | null = null,
+  pageKind: string | null = 'vector',
 ) {
   const decision = decisionOf(override);
+  const vector = pageKind === 'vector';
   return {
     decision,
-    included:
-      decision === 'include' || (decision === 'undecided' && suggestionOf(pageType) === 'include'),
+    included: decision === 'include' || (decision === 'undecided' && vector),
+    not_vector: !vector,
+    likely_not_framing: vector && suggestionOf(pageType) !== 'include',
     by_default: decision === 'undecided',
     suggestion: suggestionOf(pageType),
     decided_by: decision === 'undecided' ? null : by,
@@ -62,7 +70,7 @@ export async function loadSheetInclusions(
 ): Promise<SheetInclusion[]> {
   const sheets = await db
     .selectFrom('sheets')
-    .select(['id', 'page_index', 'sheet_number', 'page_type_guess'])
+    .select(['id', 'page_index', 'sheet_number', 'page_type_guess', 'page_kind'])
     .where('project_id', '=', projectId)
     .orderBy('page_index')
     .execute();
@@ -78,7 +86,13 @@ export async function loadSheetInclusions(
       page_number: s.page_index + 1,
       sheet_number: s.sheet_number,
       page_type: pageType,
-      ...inclusionOf(pageType, o?.takeoff, o?.takeoff_by ?? null, o?.takeoff_at ?? null),
+      ...inclusionOf(
+        pageType,
+        o?.takeoff,
+        o?.takeoff_by ?? null,
+        o?.takeoff_at ?? null,
+        s.page_kind,
+      ),
     };
   });
 }

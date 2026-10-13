@@ -356,7 +356,7 @@ def by_profile(dbp: DbProject) -> dict[str, dict]:
     return {m["profile_raw"]: m for m in members(dbp)}
 
 
-def test_the_kind_comes_from_the_text_around_the_label_and_the_source_is_stored(
+def test_only_the_own_line_sets_a_kind_nearby_text_is_a_hint_and_the_source_is_stored(
     dbp: DbProject,
 ) -> None:
     kinds_doc(dbp)
@@ -366,25 +366,30 @@ def test_the_kind_comes_from_the_text_around_the_label_and_the_source_is_stored(
     got = by_profile(dbp)
     assert (got["W12x26"]["kind"], got["W12x26"]["kind_source"]) == ("Beams", "keyword")
     assert got["W12x26"]["kind_evidence"]["where"] == "same_line"
-    assert (got["W14x30"]["kind"], got["W14x30"]["kind_evidence"]["where"]) == (
-        "Vertical Brace",
-        "near",
-    )
-    assert got["W10x12"]["kind"] is None and got["W10x12"]["kind_source"] is None
+    # a kind word in a nearby line is a hint; the kind stays empty
+    assert got["W14x30"]["kind"] is None and got["W14x30"]["kind_source"] is None
+    assert got["W14x30"]["kind_evidence"]["hint"] == {
+        "kind": "Vertical Brace",
+        "keyword": "vertical brace",
+        "where": "near",
+    }
+    assert got["W10x12"]["kind"] is None and got["W10x12"]["kind_evidence"]["hint"] is None
     assert got["W10x12"]["kind_evidence"]["status"] == "missing"
     assert got["W8x10"]["kind"] is None and got["W8x10"]["kind_evidence"]["status"] == "ambiguous"
-    assert result["kind_set"] == 2 and result["kind_missing"] == 1 and result["kind_ambiguous"] == 1
+    assert result["kind_set"] == 1 and result["kind_missing"] == 2 and result["kind_ambiguous"] == 1
     assert all(not m["kind_confirmed"] for m in got.values())
 
 
-def test_the_sheet_title_is_the_last_source_of_a_kind(dbp: DbProject) -> None:
+def test_the_sheet_title_is_a_hint_only(dbp: DbProject) -> None:
     kinds_doc(dbp, title="TRUSS FRAMING PLAN")
     dbp.scan()
     read_project(dbp.conn, dbp.config, dbp.project_id, dbp.document_id, dbp.font_id)
     link_view(dbp.conn, dbp.config, make_view(dbp))
     got = by_profile(dbp)
-    assert got["W10x12"]["kind"] == "Truss" and got["W10x12"]["kind_source"] == "sheet_context"
-    assert got["W12x26"]["kind"] == "Beams"  # a nearer source still wins
+    assert got["W10x12"]["kind"] is None and got["W10x12"]["kind_source"] is None
+    assert got["W10x12"]["kind_evidence"]["hint"]["where"] == "sheet_title"
+    assert got["W10x12"]["kind_evidence"]["hint"]["kind"] == "Truss"
+    assert got["W12x26"]["kind"] == "Beams"  # the label's own line still sets the kind
 
 
 def test_tags_are_running_numbers_per_sheet_and_prefix_and_are_stable(dbp: DbProject) -> None:
@@ -399,8 +404,9 @@ def test_tags_are_running_numbers_per_sheet_and_prefix_and_are_stable(dbp: DbPro
     }
     got = by_profile(dbp)
     assert (got["W12x26"]["tag_prefix"], got["W12x26"]["tag_number"]) == (prefix["Beams"], 1)
-    assert got["W10x12"]["tag_prefix"] is None and got["W8x10"]["tag_prefix"] is None
-    assert sorted(m["tag_number"] for m in got.values() if m["tag_prefix"] is None) == [1, 2]
+    no_kind = [m for m in got.values() if m["tag_prefix"] is None]
+    assert {m["profile_raw"] for m in no_kind} == {"W14x30", "W10x12", "W8x10"}
+    assert sorted(m["tag_number"] for m in no_kind) == [1, 2, 3]
     before = {m["id"]: (m["tag_prefix"], m["tag_number"]) for m in members(dbp)}
     link_view(dbp.conn, dbp.config, view)  # a second run changes nothing
     assert {m["id"]: (m["tag_prefix"], m["tag_number"]) for m in members(dbp)} == before

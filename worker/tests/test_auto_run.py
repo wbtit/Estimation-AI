@@ -62,11 +62,40 @@ def test_a_second_run_keeps_the_view_and_everything_a_person_did(dbp: DbProject)
     assert float(view["scale_ratio"]) == 48 and view["scale_confirmed"] is True
 
 
-def test_sheets_out_of_the_takeoff_are_left_alone(dbp: DbProject) -> None:
+def test_every_vector_sheet_is_in_by_default_even_a_detail_sheet(dbp: DbProject) -> None:
     doc = new_doc()
     vector_page(doc, "S5.1", "DETAILS", texts=[((100, 100), "W12x26", 10)])
     dbp.pdf_path.write_bytes(doc.tobytes())
     dbp.scan()
     result = auto_run(dbp.conn, dbp.config, dbp.project_id, dbp.document_id)
+    assert result["sheets_in_takeoff"] == 1 and result["views_created"] == 1
+
+
+def test_a_sheet_a_person_excluded_is_left_alone(dbp: DbProject) -> None:
+    import json
+
+    build_pdf(dbp)
+    dbp.scan()
+    sheet = dbp.conn.execute(
+        "SELECT id FROM sheets WHERE project_id = %s", (dbp.project_id,)
+    ).fetchone()
+    dbp.conn.execute(
+        "INSERT INTO sheet_edits (sheet_id, field_name, original_value, corrected_value, editor)"
+        " VALUES (%s, 'takeoff', 'null', %s, 'tester')",
+        (sheet["id"], json.dumps("exclude")),
+    )
+    dbp.conn.commit()
+    result = auto_run(dbp.conn, dbp.config, dbp.project_id, dbp.document_id)
     assert result["sheets_out_of_takeoff"] == 1 and "views_created" not in result
     assert dbp.conn.execute("SELECT 1 FROM sheet_views").fetchone() is None
+
+
+def test_a_raster_sheet_is_out_by_default(dbp: DbProject) -> None:
+    from pdf_factory import scanned_page
+
+    doc = new_doc()
+    scanned_page(doc)
+    dbp.pdf_path.write_bytes(doc.tobytes())
+    dbp.scan()
+    result = auto_run(dbp.conn, dbp.config, dbp.project_id, dbp.document_id)
+    assert result["sheets_not_vector"] == 1 and "views_created" not in result

@@ -12,6 +12,8 @@ import { loadSheetInclusions, type SheetInclusion } from './takeoff-sheets.js';
 export type FlagCode =
   | 'SHEET_INCLUDED_BY_DEFAULT'
   | 'SHEET_EXCLUDED_BY_DEFAULT'
+  | 'LIKELY_NOT_FRAMING'
+  | 'SHEET_NOT_VECTOR'
   | 'NO_VIEW'
   | 'SCALE_GUESSED'
   | 'SCALE_NEEDED'
@@ -28,14 +30,20 @@ export interface SheetFlags {
   page_number: number;
   included: boolean;
   by_default: boolean;
+  /** Pieces of the sheet (live members), so an outlier sheet is easy to see. */
+  piece_count: number;
+  /** A vector sheet whose page type guess is not a framing plan (flag only). */
+  likely_not_framing: boolean;
   flags: SheetFlag[];
   confirmed_by: string | null;
   confirmed_at: string | null;
 }
 
 const TEXT: Record<FlagCode, string> = {
-  SHEET_INCLUDED_BY_DEFAULT: 'sheet included by default (page type guess)',
-  SHEET_EXCLUDED_BY_DEFAULT: 'sheet excluded by default (page type guess)',
+  SHEET_INCLUDED_BY_DEFAULT: 'sheet included by default (every vector sheet is in)',
+  SHEET_EXCLUDED_BY_DEFAULT: 'sheet excluded by default',
+  LIKELY_NOT_FRAMING: 'likely not a framing sheet (page type guess); exclude it if it is not',
+  SHEET_NOT_VECTOR: 'raster or unknown page: it cannot be read as vectors, so it is excluded',
   NO_VIEW: 'no view yet: the pipeline has not run on this sheet',
   SCALE_GUESSED: 'scale guessed from the printed scales, not confirmed',
   SCALE_NEEDED: 'scale needed: none was found on this sheet',
@@ -69,12 +77,26 @@ export async function loadSheetFlags(
   const viewsOf = new Map<string, typeof views>();
   for (const v of views) viewsOf.set(v.sheet_id, [...(viewsOf.get(v.sheet_id) ?? []), v]);
   const meta = new Map(sheets.map((s) => [s.id, s] as const));
+  const counts = sheets.length
+    ? await db
+        .selectFrom('members')
+        .select(['sheet_id', (eb) => eb.fn.countAll<string>().as('n')])
+        .where('project_id', '=', projectId)
+        .where('review_status', '!=', 'rejected')
+        .groupBy('sheet_id')
+        .execute()
+    : [];
+  const pieces = new Map(counts.map((c) => [c.sheet_id, Number(c.n)] as const));
   return incl.map((i) => {
     const flags: SheetFlag[] = [];
     const push = (code: FlagCode, view_id?: string) =>
       flags.push({ code, text: TEXT[code], ...(view_id ? { view_id } : {}) });
     const m = meta.get(i.sheet_id);
-    if (i.by_default) push(i.included ? 'SHEET_INCLUDED_BY_DEFAULT' : 'SHEET_EXCLUDED_BY_DEFAULT');
+    if (i.by_default) {
+      if (i.not_vector) push('SHEET_NOT_VECTOR');
+      else push(i.included ? 'SHEET_INCLUDED_BY_DEFAULT' : 'SHEET_EXCLUDED_BY_DEFAULT');
+    }
+    if (i.included && i.likely_not_framing && i.by_default) push('LIKELY_NOT_FRAMING');
     if (i.included && m?.page_kind === 'vector') {
       const vs = viewsOf.get(i.sheet_id) ?? [];
       if (vs.length === 0) push('NO_VIEW');
@@ -89,6 +111,8 @@ export async function loadSheetFlags(
       page_number: i.page_number,
       included: i.included,
       by_default: i.by_default,
+      piece_count: pieces.get(i.sheet_id) ?? 0,
+      likely_not_framing: i.likely_not_framing,
       flags,
       confirmed_by: m?.guesses_confirmed_by ?? null,
       confirmed_at: m?.guesses_confirmed_at

@@ -118,6 +118,14 @@ beforeAll(async () => {
     }),
     tag_number: 2,
   });
+  await member('hinted', {
+    kind_evidence: JSON.stringify({
+      status: 'missing',
+      candidates: [],
+      hint: { kind: 'Truss', keyword: 'truss', where: 'sheet_title' },
+    }),
+    tag_number: 4,
+  });
   await member('uncat', { profile_raw: 'W99x99', profile: 'W99X99', tag_number: 3 });
 });
 
@@ -173,6 +181,23 @@ describe('kind, tag, symbol and flags of a member', () => {
     const bad = await get('uncat');
     expect(bad.catalog).toMatchObject({ found: false, unit_w_lb_ft: null, shape: null });
     expect(bad.flags.map((f) => f.code)).toContain('PROFILE_NOT_IN_CATALOG');
+  });
+});
+
+describe('a kind word from nearby text or the title is only a hint', () => {
+  it('leaves the kind empty and shows the hint beside it', async () => {
+    const m = await get('hinted');
+    expect(m.kind).toMatchObject({
+      name: null,
+      state: 'missing',
+      hint: { kind: 'Truss', keyword: 'truss', where: 'sheet_title' },
+    });
+    expect(m.symbol_color).toBe('grey');
+    expect((await get('none')).kind.hint).toBeNull();
+  });
+  it('a kind set by a person drops the hint', async () => {
+    await post(`${ids.hinted}/kind`, { who: 'alice', kind: 'Beams' });
+    expect((await get('hinted')).kind.hint).toBeNull();
   });
 });
 
