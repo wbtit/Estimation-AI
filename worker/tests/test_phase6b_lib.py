@@ -144,3 +144,19 @@ def test_piece_miss_reasons_and_lines_near_point() -> None:
     segs = np.array([[0.0, 0.0, 10.0, 0.0], [0.0, 30.0, 10.0, 30.0]])
     assert lines_near_point(5, 5, segs, 24) == [(0.0, 0.0, 10.0, 0.0)]
     assert lines_near_point(5, 5, np.zeros((0, 4)), 24) == []
+
+
+def test_pooled_scores_over_synthetic_pages() -> None:
+    from tools.takeoff.phase6b_report import fmt, pooled
+
+    def page(theirs, pieces, m12):
+        sc = {"pieces": pieces, "matched_6": m12, "matched_12": m12, "matched_24": m12}
+        return {"theirs": theirs, "bases": {"label_first": {"suggested": sc}}}
+
+    pages = [page(10, 10, 6), page(10, 11, 8), page(10, 4, 4), page(5, 0, 0)]
+    x = pooled(pages, "label_first", "suggested")
+    assert (x["pages"], x["theirs"], x["ours"]) == (4, 35, 25)
+    assert x["equal_n"] == 1 and x["within1_n"] == 2 and x["within20_n"] == 2
+    assert (x["matched12"], round(x["P12"], 3), round(x["R12"], 3)) == (18, 0.72, 0.514)
+    assert x["verdict"] == "promising"  # within1 0.5, P 0.72 but R 0.51
+    assert x["within1"] == 0.5 and fmt(0.5, True) == "50.0%" and fmt(None) == "-"
