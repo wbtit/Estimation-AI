@@ -1,7 +1,7 @@
 // Members of the review screen (effective values with colors) and the link job for a view.
 //   GET  /api/projects/:projectId/members[?sheet_id=&view_id=&include_deleted=true]
 //   POST /api/projects/:projectId/views/:viewId/classes     enqueue classes_view (stroke classes + a suggestion)
-//   POST /api/projects/:projectId/views/:viewId/link        enqueue link_view (scale AND line classes must be confirmed)
+//   POST /api/projects/:projectId/views/:viewId/link        enqueue link_view (the sheet must be included; scale and classes are flags)
 //   GET  /api/projects/:projectId/views/:viewId/link-status  latest link job of the view
 import type { FastifyPluginAsync } from 'fastify';
 import { sql, type Kysely } from 'kysely';
@@ -162,7 +162,7 @@ export const memberRoutes: FastifyPluginAsync<MemberRouteOptions> = async (app, 
     const view = await db()
       .selectFrom('sheet_views as v')
       .innerJoin('sheets as s', 's.id', 'v.sheet_id')
-      .select(['v.id', 'v.sheet_id', 'v.scale_confirmed', 'v.classes_confirmed', 's.project_id'])
+      .select(['v.id', 'v.sheet_id', 's.project_id'])
       .where('v.id', '=', viewId)
       .where('s.project_id', '=', projectId)
       .executeTakeFirst();
@@ -176,17 +176,6 @@ export const memberRoutes: FastifyPluginAsync<MemberRouteOptions> = async (app, 
     async (request, reply) => {
       const { projectId, viewId } = request.params;
       const view = await loadView(projectId, viewId);
-      if (!view.scale_confirmed) {
-        throw new HttpError(409, {
-          error: 'confirm the scale of this view before finding members',
-        });
-      }
-      if (!view.classes_confirmed) {
-        throw new HttpError(409, {
-          error:
-            'confirm the line classes of this view before finding members (show the classes, tick the beam lines, confirm)',
-        });
-      }
       const inclusion = (await loadSheetInclusions(db(), projectId)).find(
         (s) => s.sheet_id === view.sheet_id,
       );
@@ -195,7 +184,7 @@ export const memberRoutes: FastifyPluginAsync<MemberRouteOptions> = async (app, 
           error:
             inclusion.decision === 'exclude'
               ? 'this sheet is excluded from the takeoff; include it first'
-              : `this sheet is not decided yet (page type guess: ${inclusion.page_type ?? 'unknown'}); decide "include in takeoff" first`,
+              : `this sheet is excluded by default (page type guess: ${inclusion.page_type ?? 'unknown'}); include it first`,
         });
       }
       const file = await db()

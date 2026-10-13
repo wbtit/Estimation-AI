@@ -69,6 +69,8 @@ export interface SheetsTable {
   page_type_reason: string | null;
   level_guess: string | null;
   plan_frame: Json | null;
+  guesses_confirmed_by: string | null;
+  guesses_confirmed_at: Timestamp | null;
   scanned_at: Timestamp | null;
 }
 
@@ -102,6 +104,7 @@ export interface SheetViewsTable {
   class_table: Json<{ key: string; lines: number; length_pt: number }[]> | null;
   classes_confirmed: Generated<boolean>;
   structural_lines: Json<number[][]> | null;
+  auto_created: Generated<boolean>;
   created_by: string | null;
   created_at: Timestamp;
   updated_at: Timestamp;

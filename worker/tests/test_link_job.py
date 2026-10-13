@@ -142,25 +142,24 @@ def test_the_proposed_line_gives_plan_geometry_in_the_view_frame(prepared: DbPro
     assert set(m["plan_bbox"]) == {"x0", "y0", "x1", "y1"}
 
 
-def test_the_link_job_waits_for_an_explicit_include_decision_of_the_sheet(
+def test_the_link_job_follows_the_decision_of_the_sheet_or_the_page_type_default(
     prepared: DbProject,
 ) -> None:
-    for decided in (None, "exclude"):
-        view = make_view(prepared, decided=decided)
-        with pytest.raises(LinkError, match="decision to include"):
-            link_view(prepared.conn, prepared.config, view)
-        prepared.conn.execute("DELETE FROM sheet_views WHERE id = %s", (view,))
-        prepared.conn.commit()
+    view = make_view(prepared, decided="exclude")  # a person said exclude: refused
+    with pytest.raises(LinkError, match="not in the takeoff"):
+        link_view(prepared.conn, prepared.config, view)
+    prepared.conn.execute("DELETE FROM sheet_views WHERE id = %s", (view,))
+    prepared.conn.commit()
     assert members(prepared) == []
     result = link_view(prepared.conn, prepared.config, make_view(prepared))
     assert result["created"] > 0
 
 
-def test_the_classes_are_suggested_by_their_own_job_and_the_link_job_waits_for_a_person(
+def test_the_classes_are_suggested_by_their_own_job_and_the_suggestion_is_used(
     prepared: DbProject,
 ) -> None:
     view = make_view(prepared, classes=[])  # no classes chosen yet
-    with pytest.raises(LinkError, match="line classes"):
+    with pytest.raises(LinkError, match="no line class"):
         link_view(prepared.conn, prepared.config, view)
     assert members(prepared) == []
     result = classes_view(prepared.conn, prepared.config, view)
@@ -169,10 +168,10 @@ def test_the_classes_are_suggested_by_their_own_job_and_the_link_job_waits_for_a
     assert row["structural_classes"] == ["1.5-2.5|black|solid"]  # suggested, not confirmed
     keys = {c["key"] for c in row["class_table"]}
     assert "1.5-2.5|black|solid" in keys and any(k.startswith("1-1.5|black") for k in keys)
-    # a suggestion is not a confirmation: the link job still refuses
-    with pytest.raises(LinkError, match="line classes"):
-        link_view(prepared.conn, prepared.config, view)
-    assert members(prepared) == []
+    # a suggestion is not a confirmation, but it is used (a flag, not a gate)
+    assert link_view(prepared.conn, prepared.config, view)["created"] > 0
+    row = prepared.conn.execute("SELECT * FROM sheet_views WHERE id = %s", (view,)).fetchone()
+    assert not row["classes_confirmed"]
 
 
 def test_a_confirmed_choice_is_used_and_never_replaced_by_the_suggestion(
@@ -233,13 +232,41 @@ def test_members_outside_a_smaller_box_are_removed_unless_a_person_touched_them(
     assert str(touched["id"]) in ids  # kept although outside the new box
 
 
-def test_an_unconfirmed_scale_is_refused_and_nothing_is_written(prepared: DbProject) -> None:
+def test_a_view_without_a_scale_still_finds_members_but_has_no_plan_frame(
+    prepared: DbProject,
+) -> None:
+    """The scale is a flag, not a gate (Phase 6a): members come with no plan coordinates."""
     view = make_view(prepared, confirmed=False)
-    with pytest.raises(LinkError, match="not confirmed"):
-        link_view(prepared.conn, prepared.config, view)
-    assert members(prepared) == []
+    result = link_view(prepared.conn, prepared.config, view)
+    got = members(prepared)
+    assert result["created"] == len(got) == 9
+    assert all(
+        m["plan_start_x_mm"] is None
+        and m["plan_scale_ratio"] is None
+        and m["length_source"] is None
+        for m in got
+    )
+    assert any(m["plan_bbox"] is not None for m in got)  # the proposed line is still known
     with pytest.raises(LinkError, match="not found"):
         link_view(prepared.conn, prepared.config, "00000000-0000-4000-8000-000000000000")
+
+
+def test_a_sheet_out_of_the_takeoff_or_a_view_without_classes_is_refused(
+    prepared: DbProject,
+) -> None:
+    view = make_view(prepared, decided="exclude")
+    with pytest.raises(LinkError, match="not in the takeoff"):
+        link_view(prepared.conn, prepared.config, view)
+    assert members(prepared) == []
+    view = make_view(prepared, decided="include", classes=[])
+    with pytest.raises(LinkError, match="no line class"):
+        link_view(prepared.conn, prepared.config, view)
+    assert members(prepared) == []
+
+
+def test_a_framing_plan_is_in_the_takeoff_by_default(prepared: DbProject) -> None:
+    view = make_view(prepared, decided=None)  # nobody decided; the page type guess is framing plan
+    assert link_view(prepared.conn, prepared.config, view)["created"] == 9
 
 
 def test_a_rotated_page_gives_the_same_proposals(dbp: DbProject) -> None:

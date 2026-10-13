@@ -140,7 +140,11 @@ describe('PDF upload', () => {
     const jobs = await jobsFor(getDb(), id);
     expect(jobs).toHaveLength(1);
     expect(jobs[0]).toMatchObject({ status: 'pending', attempts: 0 });
-    expect(jobs[0]?.payload).toEqual({ project_id: id, document_id: body.document.id });
+    expect(jobs[0]?.payload).toEqual({
+      project_id: id,
+      document_id: body.document.id,
+      auto_run: true,
+    });
 
     expect((await a.inject({ method: 'GET', url: `/api/projects/${id}` })).json().document.id).toBe(
       body.document.id,

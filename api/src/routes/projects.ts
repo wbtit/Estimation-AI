@@ -186,7 +186,11 @@ export const projectRoutes: FastifyPluginAsync<ProjectRouteOptions> = async (app
               .insertInto('jobs')
               .values({
                 type: 'scan_pdf',
-                payload: JSON.stringify({ project_id: project.id, document_id: row.id }),
+                payload: JSON.stringify({
+                  project_id: project.id,
+                  document_id: row.id,
+                  auto_run: true,
+                }),
               })
               .execute();
             await trx

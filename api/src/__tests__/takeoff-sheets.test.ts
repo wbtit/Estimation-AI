@@ -5,10 +5,11 @@ import { decisionOf, inclusionOf, suggestionOf } from '../review/takeoff-sheets.
 import { deleteProject, insertProject, insertSheet, loadWorkbook } from './helpers.js';
 
 describe('the decision of a sheet', () => {
-  it('is undecided until a person decides; the page type only suggests', () => {
+  it('is undecided until a person decides; the page type decides by default (a flag)', () => {
     expect(inclusionOf('framing_plan', null)).toMatchObject({
       decision: 'undecided',
-      included: false,
+      included: true,
+      by_default: true,
       suggestion: 'include',
     });
     for (const t of [
@@ -23,6 +24,7 @@ describe('the decision of a sheet', () => {
       expect(inclusionOf(t, null)).toMatchObject({
         decision: 'undecided',
         included: false,
+        by_default: true,
         suggestion: 'exclude',
       });
     }
@@ -33,6 +35,7 @@ describe('the decision of a sheet', () => {
     expect(inclusionOf('detail', 'include', 'alice', 't')).toEqual({
       decision: 'include',
       included: true,
+      by_default: false,
       suggestion: 'exclude',
       decided_by: 'alice',
       decided_at: 't',
@@ -125,16 +128,16 @@ describe('sheet decision routes', () => {
     await closeDatabaseConnection();
   });
 
-  it('every sheet starts undecided, even a framing plan: nothing is in the totals, and they are listed', async () => {
+  it('every sheet starts undecided; a framing plan is in the totals by default, the others are out, and all are listed', async () => {
     const t = await takeoff();
-    expect(t.totals.pieces).toBe(0);
+    expect(t.totals.pieces).toBe(1);
     expect(t.undecided_sheets).toEqual({ count: 3, pages: [1, 2, 3] });
     expect(t.sheets.map((s: { decision: string }) => s.decision)).toEqual([
       'undecided',
       'undecided',
       'undecided',
     ]);
-    expect(t.sheets[0]).toMatchObject({ suggestion: 'include', members_not_counted: 1 });
+    expect(t.sheets[0]).toMatchObject({ suggestion: 'include', members_not_counted: 0 });
     expect(t.sheets[1]).toMatchObject({ suggestion: 'exclude' });
     expect((await sheetJson(plan)).takeoff).toMatchObject({
       decision: 'undecided',
@@ -142,11 +145,14 @@ describe('sheet decision routes', () => {
     });
   });
 
-  it('the link job is refused on an undecided or excluded sheet, with a clear message', async () => {
+  it('the link job is allowed on a sheet included by default and refused on an excluded sheet, with a clear message', async () => {
     const url = `/api/projects/${projectId}/views/${planView}/link`;
-    const undecided = await app.inject({ method: 'POST', url });
-    expect(undecided.statusCode).toBe(409);
-    expect(undecided.json().error).toContain('not decided yet');
+    const byDefault = await app.inject({ method: 'POST', url });
+    expect(byDefault.json().error).toContain('scan is not finished'); // the sheet check passed
+    const detailUrl = `/api/projects/${projectId}/views/${detailView}/link`;
+    const defaultOut = await app.inject({ method: 'POST', url: detailUrl });
+    expect(defaultOut.statusCode).toBe(409);
+    expect(defaultOut.json().error).toContain('excluded by default');
     await decide(plan, 'exclude');
     const excluded = await app.inject({ method: 'POST', url });
     expect(excluded.statusCode).toBe(409);

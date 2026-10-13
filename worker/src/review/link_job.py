@@ -1,8 +1,10 @@
 """The `link_view` job: propose members and links for one view of a sheet.
 
-Payload: {"view_id": "<uuid>"}. The view must have a confirmed scale AND line classes confirmed by a
-person (the `classes_view` job only suggests them), and its sheet must be explicitly included in
-the takeoff by a person. Steps: reconstruct the page lines, tabulate
+Payload: {"view_id": "<uuid>"}. Phase 6a (flags instead of gates): the scale and the line classes
+of the view are used as they stand, confirmed or only guessed (an unconfirmed scale, or classes
+that are only a suggestion, are flags the screen shows; no scale means no plan coordinates), and
+the sheet must be in the takeoff: a person's decision, else by default from the page type. Steps:
+reconstruct the page lines, tabulate
 the stroke classes inside the view, take profile labels and legend-linked mark labels inside the
 view, and propose for each the best of its nearest structural lines with the frozen Phase 4e rule.
 Members are upserted by label key; a member a person has touched (reviewed, edited, or with any
@@ -27,6 +29,7 @@ from src.linking.lines import page_lines
 from src.linking.rules import Proposal, propose
 from src.linking.structural import class_table, lines_in_box
 from src.queue import Job
+from src.review.sheet_state import sheet_included
 
 log = logging.getLogger("worker.link")
 
@@ -89,18 +92,12 @@ def link_view(conn: psycopg.Connection, config: WorkerConfig, view_id: str) -> d
     ).fetchone()
     if row is None:
         raise LinkError("view not found")
-    if not row["scale_confirmed"] or row["scale_ratio"] is None:
-        raise LinkError("the scale of this view is not confirmed")
-    decision = conn.execute(
-        "SELECT corrected_value FROM sheet_edits WHERE sheet_id = %s AND field_name = 'takeoff'"
-        " ORDER BY created_at DESC, id DESC LIMIT 1",
-        (row["sheet_id"],),
-    ).fetchone()
-    if decision is None or decision["corrected_value"] != "include":
-        raise LinkError("the sheet has no explicit decision to include it in the takeoff")
-    if not row["classes_confirmed"] or not row["structural_classes"]:
-        raise LinkError("the line classes of this view are not confirmed by a person")
-    ratio = float(row["scale_ratio"])
+    sheet = conn.execute("SELECT * FROM sheets WHERE id = %s", (row["sheet_id"],)).fetchone()
+    if sheet is None or not sheet_included(conn, sheet):
+        raise LinkError("the sheet is not in the takeoff (excluded by a person or by default)")
+    if not row["structural_classes"]:
+        raise LinkError("no line class is chosen or suggested for this view")
+    ratio = None if row["scale_ratio"] is None else float(row["scale_ratio"])
     box_json = row["box"]
     box = (
         float(box_json["x0"]),
@@ -195,7 +192,7 @@ def _member_fields(
     proposal: Proposal,
     legend: dict[str, list[dict[str, Any]]],
     box: tuple[float, float, float, float],
-    ratio: float,
+    ratio: float | None,
 ) -> dict[str, Any] | None:
     f: dict[str, Any] = {
         "mark": None,
@@ -231,11 +228,14 @@ def _member_fields(
     f["link_margin"] = None if proposal.margin is None else round(proposal.margin, 2)
     f["link_candidates"] = candidates_json(proposal)
     f["link_rule"] = RULE_VERSION
-    if best is None:
+    if best is None or ratio is None:
         f.update(
             plan_start_x_mm=None, plan_start_y_mm=None, plan_end_x_mm=None, plan_end_y_mm=None,
             plan_bbox=None, plan_scale_ratio=None, plan_method=None, length_source=None,
         )  # fmt: skip
+        if best is not None:  # no scale: the line is still proposed, only its plan frame is not
+            a, b, c, d = best.candidate.line.bbox
+            f["plan_bbox"] = {"x0": a, "y0": b, "x1": c, "y1": d}
     else:
         ln = best.candidate.line
         sx, sy = plan_xy(box, ratio, ln.x0, ln.y0)

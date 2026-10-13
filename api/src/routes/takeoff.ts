@@ -11,6 +11,7 @@ import { XLSX_MIME } from '../excel/index.js';
 import { loadGrades, setGrade } from '../review/grades.js';
 import { buildTakeoff } from '../review/takeoff.js';
 import { loadSheetInclusions } from '../review/takeoff-sheets.js';
+import { draftStatus, loadSheetFlags } from '../review/flags.js';
 import { HttpError } from './http-error.js';
 import { loadMemberViews } from './members.js';
 
@@ -119,6 +120,7 @@ export const takeoffRoutes: FastifyPluginAsync<TakeoffRouteOptions> = async (app
           new Map([...grades].map(([f, r]) => [f, r.grade] as const)),
         ),
         grades: [...grades.values()],
+        draft: draftStatus(await loadSheetFlags(db(), projectId, inclusions)),
         undecided_sheets: { count: undecided.length, pages: undecided.map((s) => s.page_number) },
         sheets: inclusions.map((s) => ({ ...s, members_not_counted: held.get(s.sheet_id) ?? 0 })),
       },

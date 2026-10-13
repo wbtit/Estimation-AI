@@ -1,9 +1,10 @@
-// Which sheets take part in the takeoff. Every sheet needs ONE EXPLICIT DECISION, include or exclude
-// (Phase 5c). Until a person decides, a sheet is `undecided`: it is not in the totals, the link job
-// refuses to run on it, and the takeoff lists it. The page type guess is only a suggestion shown
-// pre-selected in the control (it was wrong on 6 of 24 pages, and hiding real steel is the costly
-// silent error). A decision is a sheet_edits row with who and when; the latest one wins and an undo
-// appends the previous value (nothing is deleted).
+// Which sheets take part in the takeoff. Phase 6a (flags instead of gates, owner decision): a sheet
+// with no person decision is `undecided` and is included or excluded BY DEFAULT from its page type
+// guess (framing plans in, everything else out), with a flag "included/excluded by default" that
+// stays until a person decides or clicks "these guesses are right". The guess was wrong on 6 of 24
+// pages, so every sheet excluded by default is listed in the totals footer. A decision is a
+// sheet_edits row with who and when; the latest one wins and an undo appends the previous value
+// (nothing is deleted).
 import type { Kysely } from 'kysely';
 import type { Database } from '../db/types.js';
 import { loadSheetOverrides } from './overrides.js';
@@ -19,8 +20,10 @@ export interface SheetInclusion {
   sheet_number: string | null;
   page_type: string | null;
   decision: Decision;
-  /** True only after a person said include. */
+  /** True after a person said include, or when nobody decided and the guess says include. */
   included: boolean;
+  /** True while no person has decided (the sheet is in or out by the page type guess). */
+  by_default: boolean;
   /** The suggestion from the page type guess (shown as a guess). */
   suggestion: 'include' | 'exclude';
   decided_by: string | null;
@@ -44,7 +47,9 @@ export function inclusionOf(
   const decision = decisionOf(override);
   return {
     decision,
-    included: decision === 'include',
+    included:
+      decision === 'include' || (decision === 'undecided' && suggestionOf(pageType) === 'include'),
+    by_default: decision === 'undecided',
     suggestion: suggestionOf(pageType),
     decided_by: decision === 'undecided' ? null : by,
     decided_at: decision === 'undecided' ? null : at,

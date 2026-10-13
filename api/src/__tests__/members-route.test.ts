@@ -250,10 +250,10 @@ describe('line classes before linking', () => {
     if (jobs.length) await db.deleteFrom('jobs').where('id', 'in', jobs).execute();
   });
 
-  it('the link job is refused until a person confirmed the classes of the view', async () => {
+  it('the classes are a flag, not a gate: the link job no longer asks for their confirmation', async () => {
     const res = await post(`/views/${noClassesViewId}/link`);
     expect(res.statusCode).toBe(409);
-    expect(res.json().error).toMatch(/confirm the line classes/);
+    expect(res.json().error).toMatch(/scan is not finished/); // the next check, not the classes
   });
 
   it('the classes job only suggests; choosing the classes is the confirmation', async () => {
@@ -282,28 +282,43 @@ describe('line classes before linking', () => {
       })
     ).json();
     expect(status.job).toMatchObject({ id: queued.json().job_id, status: 'pending' });
-    // still refused: a suggestion is not a confirmation
-    expect((await post(`/views/${noClassesViewId}/link`)).statusCode).toBe(409);
+    // accepted without a confirmation: the suggestion is used and stays a flag
+    const unconfirmed = await post(`/views/${noClassesViewId}/link`);
+    expect(unconfirmed.statusCode).toBe(202);
+    jobs.push(unconfirmed.json().job_id);
     const patched = await app.inject({
       method: 'PATCH',
       url: `/api/projects/${projectId}/views/${noClassesViewId}`,
       payload: { who: 'alice', structural_classes: ['1.5-2.5|black|solid'] },
     });
     expect(patched.json()).toMatchObject({ classes_confirmed: true });
+    // choosing the classes is still the confirmation; a second request meets the open job
     const link = await post(`/views/${noClassesViewId}/link`);
-    expect(link.statusCode).toBe(202);
-    jobs.push(link.json().job_id);
+    expect(link.statusCode).toBe(409);
+    expect(link.json().job_id).toBe(unconfirmed.json().job_id);
   });
 });
 
 describe('link job', () => {
-  it('refuses to find members before the scale is confirmed', async () => {
+  it('finds members before the scale is confirmed (the scale is a flag)', async () => {
+    await db
+      .insertInto('project_files')
+      .values({
+        project_id: projectId,
+        original_filename: 'x.pdf',
+        stored_path: 'x/y.pdf',
+        sha256: '2'.repeat(64),
+        size_bytes: 1,
+        scan_status: 'done',
+      })
+      .onConflict((oc) => oc.doNothing())
+      .execute();
     const res = await app.inject({
       method: 'POST',
       url: `/api/projects/${projectId}/views/${unconfirmedViewId}/link`,
     });
-    expect(res.statusCode).toBe(409);
-    expect(res.json().error).toMatch(/confirm the scale/);
+    expect(res.statusCode).toBe(202);
+    await db.deleteFrom('jobs').where('id', '=', res.json().job_id).execute();
   });
 
   it('queues one job per view and reports its status', async () => {

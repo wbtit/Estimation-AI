@@ -109,7 +109,7 @@ def run_scan_pdf(conn: psycopg.Connection, job: Job, config: WorkerConfig) -> di
     project_id = str(job.payload.get("project_id", ""))
     document_id = str(job.payload.get("document_id", ""))
     try:
-        return _scan(conn, project_id, document_id, config)
+        return _scan(conn, project_id, document_id, config, bool(job.payload.get("auto_run")))
     except Exception as err:
         # Only after the last allowed attempt does the scan count as failed for the user.
         if job.attempts >= job.max_attempts:
@@ -121,7 +121,11 @@ def run_scan_pdf(conn: psycopg.Connection, job: Job, config: WorkerConfig) -> di
 
 
 def _scan(
-    conn: psycopg.Connection, project_id: str, document_id: str, config: WorkerConfig
+    conn: psycopg.Connection,
+    project_id: str,
+    document_id: str,
+    config: WorkerConfig,
+    auto_run: bool = False,
 ) -> dict[str, Any]:
     with conn.cursor() as cur:
         cur.execute(
@@ -183,6 +187,11 @@ def _scan(
             (page_count, document_id),
         )
         cur.execute("UPDATE projects SET status = 'scanned' WHERE id = %s", (project_id,))
+        if auto_run:  # Phase 6a: the pipeline runs on its own after the scan (flags, not gates)
+            cur.execute(
+                "INSERT INTO jobs (type, payload) VALUES ('auto_run', %s)",
+                (Jsonb({"project_id": project_id, "document_id": document_id}),),
+            )
     conn.commit()
 
     kinds = [s.page_kind for s, _ in scans]

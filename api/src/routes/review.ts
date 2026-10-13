@@ -297,7 +297,7 @@ export const reviewRoutes: FastifyPluginAsync<ReviewRouteOptions> = async (app, 
         .insertInto('jobs')
         .values({
           type: 'scan_pdf',
-          payload: JSON.stringify({ project_id: projectId, document_id: file.id }),
+          payload: JSON.stringify({ project_id: projectId, document_id: file.id, auto_run: true }),
         })
         .returning('id')
         .executeTakeFirstOrThrow();
