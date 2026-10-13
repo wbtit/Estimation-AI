@@ -44,3 +44,32 @@ Population, sample and seed as in V3 above: MAIN-steel rows of the workbook in f
 - **Measures.** r = |n_lbl - n_circle| / n_circle and r_W = |n_lbl_W - n_circle| / n_circle, per page with n_circle >= 1. Bands: equal (0), up to 10%, up to 25%, up to 50%, beyond. Pages with no circle symbols are counted apart ("no circles") and are not in the bands. Reported pooled, per job, and for the six viewed job-018 pages separately.
 - **Reading of the circles.** Circles are taken as beams ONLY on the six job-018 pages viewed in Phase 5u; elsewhere they are only "circle symbols" and a band says nothing about beams.
 - **Not done:** no tuning, no new rule, no change to the frozen rule or thresholds. The numbers are context for a counting design, nothing is chosen from them.
+
+---
+
+# Addition 2026-10-13 (second): K kind mapping, P prefix inventory, L length as written (committed BEFORE the kind mapping, the prefix inventory and the length-source re-trace were run)
+
+**Disclosure.** Before this addition I had already read the aggregates of the workbook's main-steel sheet (Phase 5u W1: counts by shape, quantity and length band, name length classes and a keyword count for the words beam, column, brace, girt, stair and rail). So the keyword table below is NOT blind to the data; it is fixed here before the mapping is run, and it is not changed afterwards. No cost, price or rate cell was read, and none will be.
+
+## Owner's scope list (the vocabulary)
+- **MAIN steel kinds (21):** Column; Beams; Curved Beam/Rolled Beam; Truss; Horizontal Brace; Vertical Brace; Kicker/Knee Brace; Girt & Purlin; Lintel/Brick Veneer Supports; Posts/Pipe; Hangers; Deck edge Angle / Bent plate; Misc. Attachments; Outriggers; Sag rod; Turn Buckle; Dock Levellers; RTU Frame/Roof Hatch Frame; Roof Drain Frame; Embed Plate/Bearing Plates; Embeds Angle.
+- **MISC steel kinds (12, secondary, later):** Stair; Dock Stair; Guardrail; Handrail/Wallrails; Landing Frame; Roof Ladder; Ship Ladder/Cage Ladder; Pit Ladder; Bollard; Gates; Grating; Bike Rack.
+- **EXCLUDED kinds (not needed):** Joist; Wall; Other trades.
+- Each kind has an hours-per-quantity rate used by the estimators for hours. That is a pricing rule, out of scope for v1, and nothing of it is built or recorded.
+- The letter prefixes of the estimators' Bluebeam tags are abbreviations of these kinds (the full list is not known); the meaning is to be filled by the owner and the estimators.
+
+## K. Workbook rows by kind (aggregates only, no strings)
+- **Rule (fixed).** For every row with a Quantity, take the Name text, lower case, and look for the keywords below in THIS order; the first kind with a keyword found in the text wins (substring match). No other column is used to decide the kind (Size and SHAPE are not used). A row with no keyword is **unmapped**. Rows are counted and also weighted by Quantity (pieces).
+- **Keyword table (in priority order):**
+  1. Dock Stair: dock stair. 2. Stair: stair. 3. Roof Ladder: roof ladder. 4. Pit Ladder: pit ladder. 5. Ship Ladder/Cage Ladder: ship ladder, cage. 6. Guardrail: guardrail, guard rail. 7. Handrail/Wallrails: handrail, hand rail, wallrail, wall rail. 8. Landing Frame: landing. 9. Bollard: bollard. 10. Gates: gate. 11. Grating: grating. 12. Bike Rack: bike.
+  13. Curved Beam/Rolled Beam: curved, rolled. 14. Truss: truss. 15. Girt & Purlin: girt, purlin. 16. Lintel/Brick Veneer Supports: lintel, brick, veneer. 17. Deck edge Angle / Bent plate: deck edge, edge angle, bent plate. 18. Kicker/Knee Brace: kicker, knee. 19. Horizontal Brace: horizontal brace, horiz. 20. Vertical Brace: vertical brace, x-brace, chevron. 21. Embeds Angle: embed angle, embeds angle. 22. Embed Plate/Bearing Plates: embed, bearing plate, bearing. 23. RTU Frame/Roof Hatch Frame: rtu, hatch. 24. Roof Drain Frame: drain. 25. Dock Levellers: dock level, leveller, leveler. 26. Sag rod: sag. 27. Turn Buckle: turn buckle, turnbuckle. 28. Outriggers: outrigger. 29. Hangers: hanger. 30. Misc. Attachments: attachment. 31. Posts/Pipe: post, pipe. 32. Column: column. 33. Beams: beam. 34. Joist (excluded): joist. 35. Wall (excluded): wall.
+  36. Words that name a family only, reported as separate **ambiguous** buckets (not forced into a kind): "brace" or "bracing" alone (brace, direction not stated: MAIN); "rail" alone (misc); "ladder" alone (misc).
+- **Reported:** rows and pieces per kind; unmapped share; shares of MAIN, MISC, EXCLUDED, ambiguous and unmapped (rows and pieces); the same split for the rows before the workbook's total row and for the block after it. Section or category label rows are counted by the same keywords (rows with no Quantity).
+
+## P. Private prefix inventory
+- File `fixtures/private/takeoffs/prefix_inventory.csv` (git-ignored). The tag of a count symbol is the nearest FreeText within 40 pt (as in `tag_study`); the prefix is its leading letters, upper case ("(none)" when it has no letters). One row per distinct prefix over all 20 marked-up PDFs with: symbols, pages, files, jobs (distinct matched job ids), dominant stroke colour and its share, dominant vertex count and its share, and an EMPTY column `meaning`. The file may hold the prefix letters; no prefix, tag text or drawing text is written in docs or chat (only the number of prefixes and the shares).
+
+## L. Length is the length WRITTEN
+- The Length of a row is the value written in the PDF (schedule column, dimension on the plan, callout), not computed from the drawing scale. The V3 trace is re-run with the source split fixed here: **schedule** = the value is in a text line that shares its row (vertical band of 3 pt) with a profile text on the same page; **plan dimension** = a text line that consists only of the dimension; **callout** = a text line with the dimension and other words that is not a schedule row; **takeoff markup text** = the value appears in the text of a markup of the takeoff PDF; **none written** = none of these on the pages referenced by the row (the index page, the first page of the document, is not a referenced page). A value that is found only on another sheet is reported apart as "elsewhere only" and counts as not written for that row. Tolerance 0.5 in. Same 15 rows (seed 5021). Counts per source type only.
+
+Nothing above is redefined after the results are seen.
