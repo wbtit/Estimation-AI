@@ -99,3 +99,11 @@ Each item is an assumption I made so Phase 1 could proceed while you were away. 
 69. **Four takeoff PDFs and one spreadsheet match none of our documents.** They may belong to jobs we do not hold. The spreadsheet is a pricing-like estimate workbook (6 sheets); its values were not read. Do you want it tied to a job, and by whom (it holds no drawing text to fingerprint)?
 70. **The study's class dependence.** 70 of 98 measured markups not matched to a structural line lie on a line of another stroke class, and I used the rule's class suggestion on 12 of 16 pages. A re-run with classes chosen to fit the markups would be choosing after seeing results; with classes confirmed by a person for these pages it would be fair. Is a person available to confirm the line classes for a few of these pages?
 
+
+## Phase 5u
+
+71. **Where are the estimator CSV files?** None was found on this machine (the only csv files outside the repository are our own inventory map and a 118-byte file). V3 (where Size and Length come from, 15 rows by seed 5021) and the CSV job's half of V1b wait for them. Please give the path or put them in Downloads.
+72. **Does colour mean the member type?** In the takeoffs colour plus shape follows the tag prefix (96.5% of 6,194 symbols), and no page shows a status use. An estimator should confirm, and say what the prefix letters stand for, before we copy the convention.
+73. **How should a TYP or a double-quantity note become pieces?** The estimators draw one symbol per piece and tag each; the drawing states a repeat once (a note, or "take double per the model"). The target screen needs a rule (explicit extra pieces with an evidence line); the owner should say how estimators want these shown.
+74. **Flags instead of gates (V4, section 5).** Approve, change or reject: the pipeline runs on upload with the best guesses and the totals read "draft, N sheets unconfirmed".
+75. **Joists and secondary members are drawn but not counted in the six pages studied.** Is that the estimators' scope (main steel only) or a gap in what we saw?

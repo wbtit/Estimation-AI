@@ -100,3 +100,33 @@ def test_measurement_scale_is_read_from_the_number_format(tmp_path: Path) -> Non
         got = measure_scale(obj, d2)
     assert got is not None and got[1] == "ft" and abs(got[0] - 0.02777778) < 1e-9
     assert abs(ratio_from_measure(got) - 24.0) < 1e-3  # 1/2 in = 1 ft is a ratio of 24
+
+
+def test_colour_key_and_tag_class() -> None:
+    from tools.takeoff.colour_study import colour_key, tag_class
+
+    assert colour_key((1, 0, 0.333)) == "1.00/0.00/0.33"
+    assert colour_key(None) == "none"
+    assert [tag_class(t) for t in ("B12", "12", "AB", "", "two words", "B-12", "#1")] == [
+        "letters+digits",
+        "digits",
+        "letters",
+        "none",
+        "long",
+        "letters+digits",
+        "other",
+    ]
+
+
+def test_tag_study_pairs_symbols_with_nearest_tag(tmp_path: Path) -> None:
+    from tools.takeoff.tag_study import page_study
+
+    doc = pymupdf.open()
+    page = doc.new_page(width=600, height=400)
+    for i, x in enumerate((50, 200, 350)):
+        page.add_polygon_annot([(x, 50), (x + 20, 50), (x + 10, 70)])
+        page.add_freetext_annot(pymupdf.Rect(x, 75, x + 30, 90), f"B{i + 1}")
+    page.add_polygon_annot([(500, 300), (520, 300), (510, 320)])  # no tag within the radius
+    r = page_study(page, {})
+    assert r["symbols"] == 4 and r["tagged"] == 3 and r["distinct_tags"] == 3
+    assert sum(r["by_colour_shape_prefix"].values()) == 4
