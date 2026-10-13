@@ -16,6 +16,7 @@ import { NameGate } from "./components/NameGate";
 import { SymbolOverlay, type Highlight } from "./components/SymbolOverlay";
 import { ExplanationPanel } from "./components/ExplanationPanel";
 import { PipelineBar } from "./components/PipelineBar";
+import { TablesPanel } from "./components/TablesPanel";
 import { MembersPanel } from "./components/MembersPanel";
 import { NotesPanel } from "./components/NotesPanel";
 import { SheetHeader } from "./components/SheetHeader";
@@ -68,8 +69,10 @@ export const App: React.FC = () => {
   const [who, setWhoState] = useState(getWho());
   const [message, setMessage] = useState<string | null>(null);
   const [tab, setTab] = useState<
-    "views" | "members" | "labels" | "notes" | "takeoff"
-  >("views");
+    "views" | "members" | "tables" | "labels" | "notes" | "takeoff"
+  >("members");
+  const [rowIds, setRowIds] = useState<ReadonlySet<string>>(new Set());
+  const [rowKeys, setRowKeys] = useState<ReadonlySet<string>>(new Set());
   const [addingColumn, setAddingColumn] = useState(false);
   const [addingBeam, setAddingBeam] = useState(false);
   const [pendingBeam, setPendingBeam] = useState<{
@@ -849,6 +852,7 @@ export const App: React.FC = () => {
                 selectedId={memberId}
                 zoom={zoom}
                 highlight={highlight}
+                markedIds={rowIds}
                 onSelect={(id) => {
                   if (pickedClick.current) return;
                   setMemberId(id);
@@ -912,19 +916,26 @@ export const App: React.FC = () => {
         </main>
         <aside className="right">
           <div className="tabs" role="tablist">
-            {(["views", "members", "labels", "notes", "takeoff"] as const).map(
-              (t) => (
-                <button
-                  key={t}
-                  role="tab"
-                  aria-selected={tab === t}
-                  className={tab === t ? "tab on" : "tab"}
-                  onClick={() => setTab(t)}
-                >
-                  {t}
-                </button>
-              ),
-            )}
+            {(
+              [
+                "members",
+                "tables",
+                "views",
+                "labels",
+                "notes",
+                "takeoff",
+              ] as const
+            ).map((t) => (
+              <button
+                key={t}
+                role="tab"
+                aria-selected={tab === t}
+                className={tab === t ? "tab on" : "tab"}
+                onClick={() => setTab(t)}
+              >
+                {t}
+              </button>
+            ))}
           </div>
           {tab === "labels" && (
             <LabelsPanel
@@ -957,6 +968,28 @@ export const App: React.FC = () => {
                   setSheetId(row.source.sheet_id);
                 }
                 setTab("members");
+              }}
+            />
+          )}
+          {tab === "tables" && projectId && (
+            <TablesPanel
+              projectId={projectId}
+              pageNumber={sheet?.page_number ?? null}
+              version={members}
+              kinds={kinds}
+              who={who}
+              onError={fail}
+              selectedKeys={rowKeys}
+              onChanged={() => void reloadMembers()}
+              onSelectRow={(row, page) => {
+                setRowKeys(new Set([row.key]));
+                setRowIds(new Set(row.member_ids));
+                if (page !== null && page !== sheet?.page_number) {
+                  jumpTo.current = row.member_ids[0] ?? null;
+                  gotoPage(page);
+                } else if (row.member_ids[0]) {
+                  setMemberId(row.member_ids[0]);
+                }
               }}
             />
           )}

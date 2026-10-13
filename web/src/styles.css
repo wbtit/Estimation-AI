@@ -559,3 +559,40 @@ mark {
     fill-opacity: 0.6;
   }
 }
+.grid-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 12px;
+  margin: 4px 0 10px;
+}
+.grid-table th,
+.grid-table td {
+  border: 1px solid #d5d9e2;
+  padding: 2px 4px;
+  text-align: left;
+}
+.grid-table tr.sel td {
+  background: #e8f1fc;
+}
+.grid-table .num {
+  text-align: right;
+}
+.grid-table .total td {
+  font-weight: 700;
+  background: #f3f5f9;
+}
+.apart-row td {
+  color: #555;
+  font-style: italic;
+}
+.apart-row.red td {
+  color: #a11;
+}
+.system-wording {
+  font-style: italic;
+  color: #556;
+}
+.row-flags {
+  font-size: 10px;
+  color: #a15c00;
+}

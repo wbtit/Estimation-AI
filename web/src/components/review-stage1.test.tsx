@@ -492,3 +492,188 @@ describe("PipelineBar", () => {
     expect(screen.queryByText(/Confirm all/)).toBeNull();
   });
 });
+
+describe("TablesPanel", () => {
+  const row = (over: Record<string, unknown> = {}) => ({
+    key: "k1",
+    kind: "Beams",
+    quantity: 3,
+    reference: "S1.1 (+1)",
+    sheets: [1, 2],
+    shape: "W",
+    size: "12X26",
+    name: "Beams",
+    name_is_system: true,
+    length_ft: null,
+    length_in: null,
+    unit_w: 26,
+    total_w: null,
+    grade: null,
+    grade_suggestion: "A992",
+    colour: "amber",
+    flags: ["system wording"],
+    tags: ["XX1", "XX2", "XX3"],
+    member_ids: ["a", "b", "c"],
+    ...over,
+  });
+  const apart = (pieces = 0) => ({
+    pieces,
+    by_kind: pieces ? [{ kind: "Beams", pieces }] : [],
+    member_ids: [],
+  });
+  const data = {
+    project: { id: "p", name: "n", number: null },
+    draft: {
+      unconfirmed_sheets: 1,
+      unconfirmed_included: 1,
+      unconfirmed_excluded_by_default: 0,
+      reviewed: false,
+      label: "draft, 1 sheet unconfirmed",
+    },
+    stage_note:
+      "Lengths and Total W are added in Stage 2; those cells are empty on purpose.",
+    job: {
+      rows: [row()],
+      quantity: 3,
+      summary: [
+        { kind: "Beams", scope: "main", quantity: 3, groups: 1, note: null },
+        {
+          kind: null,
+          scope: null,
+          quantity: 0,
+          groups: 0,
+          note: "kind not set yet: choose it",
+        },
+        {
+          kind: "Stair",
+          scope: "misc",
+          quantity: 1,
+          groups: 0,
+          note: "misc steel is reserved: listed, not computed",
+        },
+      ],
+      red: apart(2),
+      existing: apart(),
+      not_counted: apart(1),
+      misc: apart(),
+      unlinked: 0,
+      sheets_excluded: [3],
+    },
+    pages: [
+      {
+        sheet_id: "s",
+        page_number: 1,
+        sheet_number: "S1.1",
+        rows: [row({ reference: "S1.1" })],
+        quantity: 3,
+        red: apart(),
+        existing: apart(),
+        not_counted: apart(),
+        misc: apart(),
+        unlinked: 0,
+      },
+    ],
+  };
+
+  async function mount(over: Partial<{ onSelectRow: () => void }> = {}) {
+    const { TablesPanel } = await import("./TablesPanel");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify(data),
+      })),
+    );
+    const onSelectRow = over.onSelectRow ?? vi.fn();
+    render(
+      <TablesPanel
+        projectId="p"
+        pageNumber={1}
+        version={0}
+        kinds={KINDS}
+        who="alice"
+        onError={() => undefined}
+        onSelectRow={onSelectRow}
+        selectedKeys={new Set()}
+        onChanged={() => undefined}
+      />,
+    );
+    await screen.findByTestId("tables-draft");
+    return onSelectRow;
+  }
+
+  it("shows the estimator's columns with Kind first, empty length and Total W cells, and the draft label", async () => {
+    await mount();
+    const table = screen.getByLabelText("page table");
+    const heads = [...table.querySelectorAll("th")].map((h) => h.textContent);
+    expect(heads).toEqual([
+      "Kind",
+      "Reference Dwg No.",
+      "Quantity",
+      "SHAPE",
+      "Size",
+      "Name",
+      "Length ft",
+      "Length In",
+      "Unit W",
+      "Total W",
+      "Grade",
+    ]);
+    const cells = [...table.querySelectorAll("tbody tr td")].map(
+      (c) => c.textContent,
+    );
+    expect(cells[2]).toBe("3");
+    expect(cells[6]).toBe(""); // Length ft
+    expect(cells[7]).toBe(""); // Length In
+    expect(cells[9]).toBe(""); // Total W
+    expect(cells[10]).toBe("(A992?)"); // grade only suggested, never filled in
+    expect(screen.getByTestId("tables-draft").textContent).toBe(
+      "draft, 1 sheet unconfirmed",
+    );
+    expect(screen.getByText(/Export Excel \(draft\)/)).toBeTruthy();
+  });
+
+  it("lists the summary by kind with misc reserved, and the red pieces on their own line", async () => {
+    await mount();
+    const summary = screen.getByLabelText("summary by kind");
+    expect(summary.textContent).toContain("Stair");
+    expect(summary.textContent).toContain("Red, not counted");
+    expect(summary.textContent).toContain("weight is added in Stage 2");
+    expect(screen.getByLabelText("job table").textContent).toContain(
+      "1 sheets excluded: pages 3",
+    );
+  });
+
+  it("clicking a row selects its pieces on the page", async () => {
+    const onSelectRow = await mount();
+    fireEvent.click(
+      screen
+        .getByLabelText("page table")
+        .querySelector("tbody tr") as HTMLElement,
+    );
+    expect(onSelectRow).toHaveBeenCalled();
+    expect(
+      (onSelectRow as ReturnType<typeof vi.fn>).mock.calls[0]?.[0].member_ids,
+    ).toEqual(["a", "b", "c"]);
+  });
+
+  it("changing a row's kind posts one action for all its pieces", async () => {
+    await mount();
+    const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+    fireEvent.change(
+      screen.getAllByLabelText("kind of 12X26")[0] as HTMLElement,
+      { target: { value: "Column" } },
+    );
+    await Promise.resolve();
+    const call = fetchMock.mock.calls.find((c) =>
+      String(c[0]).endsWith("/rows/kind"),
+    );
+    expect(call).toBeTruthy();
+    expect(JSON.parse(call?.[1].body)).toEqual({
+      member_ids: ["a", "b", "c"],
+      kind: "Column",
+      who: "alice",
+    });
+  });
+});

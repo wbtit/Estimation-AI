@@ -43,6 +43,8 @@ export interface MemberPatch {
   quantity?: number;
   /** A typed length (feet-inch or mm); empty clears it. */
   length?: string | null;
+  /** The Name of the table row (empty = back to the system wording). */
+  name?: string | null;
 }
 
 /** Edits for changed fields only; the profile text is re-parsed into the canonical profile. */
@@ -71,6 +73,7 @@ export function patchEntries(
   if (patch.level !== undefined) push('level', memberLevelOverride, patch.level?.trim() || null);
   if (patch.type !== undefined) push('type', m.type, patch.type);
   if (patch.quantity !== undefined) push('quantity', m.quantity, patch.quantity);
+  if (patch.name !== undefined) push('name', m.name, patch.name?.trim() || null);
   if (patch.length !== undefined) {
     const text = patch.length === null ? '' : patch.length.trim();
     let mm: number | null = null;

@@ -25,8 +25,10 @@ export const SymbolOverlay: React.FC<{
   selectedId: string | null;
   zoom: number;
   highlight: Highlight | null;
+  /** Pieces of the table row the person clicked: ringed in yellow. */
+  markedIds?: ReadonlySet<string>;
   onSelect: (id: string) => void;
-}> = ({ members, selectedId, zoom, highlight, onSelect }) => {
+}> = ({ members, selectedId, zoom, highlight, markedIds, onSelect }) => {
   const r = SYMBOL_PX / zoom;
   const offset = OFFSET_PX / zoom;
   const font = 11 / zoom;
@@ -78,6 +80,17 @@ export const SymbolOverlay: React.FC<{
             data-group={m.symbol_group}
             data-colour={m.symbol_color}
           >
+            {markedIds?.has(m.id) && (
+              <circle
+                r={r * 2.1}
+                fill="#ffe14d"
+                fillOpacity={0.35}
+                stroke="#c79a00"
+                strokeWidth={2.5}
+                vectorEffect="non-scaling-stroke"
+                data-testid="row-mark"
+              />
+            )}
             {reviewed && (
               <circle
                 r={r * 1.55}

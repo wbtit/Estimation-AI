@@ -408,3 +408,70 @@ export interface TakeoffData extends TakeoffSection {
     by_sheet: { sheet_id: string; page_number: number | null; count: number }[];
   };
 }
+
+export interface TableRowS1 {
+  key: string;
+  kind: string | null;
+  quantity: number;
+  reference: string;
+  sheets: number[];
+  shape: string | null;
+  size: string | null;
+  name: string;
+  name_is_system: boolean;
+  length_ft: null;
+  length_in: null;
+  unit_w: number | null;
+  total_w: null;
+  grade: string | null;
+  grade_suggestion: string | null;
+  colour: "green" | "amber" | "grey";
+  flags: string[];
+  tags: string[];
+  member_ids: string[];
+}
+
+export interface Apart {
+  pieces: number;
+  by_kind: { kind: string | null; pieces: number }[];
+  member_ids: string[];
+}
+
+export interface PageTableS1 {
+  sheet_id: string;
+  page_number: number;
+  sheet_number: string | null;
+  rows: TableRowS1[];
+  quantity: number;
+  red: Apart;
+  existing: Apart;
+  not_counted: Apart;
+  misc: Apart;
+  unlinked: number;
+}
+
+export interface KindSummaryLine {
+  kind: string | null;
+  scope: "main" | "misc" | "excluded" | null;
+  quantity: number;
+  groups: number;
+  note: string | null;
+}
+
+export interface TablesResponse {
+  project: { id: string; name: string; number: string | null };
+  draft: DraftStatus;
+  stage_note: string;
+  job: {
+    rows: TableRowS1[];
+    quantity: number;
+    summary: KindSummaryLine[];
+    red: Apart;
+    existing: Apart;
+    not_counted: Apart;
+    misc: Apart;
+    unlinked: number;
+    sheets_excluded: number[];
+  };
+  pages: PageTableS1[];
+}

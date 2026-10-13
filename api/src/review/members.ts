@@ -127,6 +127,8 @@ export interface MemberView {
   flags: MemberFlag[];
   /** When the system or a person last changed this member (the stored row or the latest edit). */
   changed_at: string;
+  /** The Name a person typed for the table row (an edit), or null for the system wording. */
+  name: string | null;
 }
 
 export interface KindState {
@@ -536,5 +538,6 @@ export function memberView(
     catalog,
     flags,
     changed_at: changedAt,
+    name: pick<string | null>('name', null),
   };
 }
