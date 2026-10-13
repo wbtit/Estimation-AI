@@ -288,6 +288,13 @@ export interface MembersTable {
   link_confidence: 'high' | 'medium' | 'low' | null;
   link_margin: Numeric | null;
   link_rule: string | null;
+  // Phase 6a (migration 010)
+  kind: string | null;
+  kind_source: 'keyword' | 'legend' | 'sheet_context' | 'person' | null;
+  kind_confirmed: Generated<boolean>;
+  kind_evidence: Json | null;
+  tag_prefix: string | null;
+  tag_number: number | null;
   created_at: Timestamp;
   updated_at: Timestamp;
 }
@@ -329,6 +336,18 @@ export interface CatalogShapesTable {
   created_at: Timestamp;
 }
 
+export type KindScope = 'main' | 'misc' | 'excluded';
+export type SymbolGroup = 'linear' | 'column' | 'plate' | 'other' | 'none';
+
+export interface MemberKindsTable {
+  kind: string;
+  scope: KindScope;
+  abbreviation: string | null;
+  symbol_group: SymbolGroup;
+  sort: number;
+  provisional_prefix: string;
+}
+
 export type JobStatus = 'pending' | 'processing' | 'completed' | 'failed';
 
 export interface JobsTable {
@@ -353,6 +372,7 @@ export interface Database {
   member_edits: MemberEditsTable;
   rate_table: RateTableTable;
   catalog_shapes: CatalogShapesTable;
+  member_kinds: MemberKindsTable;
   jobs: JobsTable;
   project_files: ProjectFilesTable;
   sheet_edits: SheetEditsTable;

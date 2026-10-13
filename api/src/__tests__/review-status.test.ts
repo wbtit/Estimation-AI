@@ -6,16 +6,13 @@ const base: StatusInput = {
   linkConfidence: 'high',
   hasLine: true,
   humanConfirmed: false,
-  scaleConfirmed: true,
-  lengthMm: 3000,
   profileParsed: true,
   profileOnLabel: true,
   markStatus: null,
-  columnBaseKnown: true,
 };
 const s = (over: Partial<StatusInput>) => statusOf({ ...base, ...over });
 
-describe('color rules', () => {
+describe('color rules (Stage 1: identification only; length and scale are not part of it)', () => {
   it('green: high confidence, parsed profile, profile on the label', () => {
     expect(s({})).toEqual({ color: 'green', confirmed: false, reasons: [] });
   });
@@ -43,7 +40,7 @@ describe('color rules', () => {
     expect(s({ profileOnLabel: false, markStatus: null }).color).toBe('amber');
   });
 
-  it('red: low confidence, ambiguous mark, scale not confirmed, no length', () => {
+  it('red: low confidence or an ambiguous mark; nothing about the scale or the length', () => {
     expect(s({ linkConfidence: 'low' })).toMatchObject({
       color: 'red',
       reasons: [REASONS.confidenceLow],
@@ -51,20 +48,15 @@ describe('color rules', () => {
     expect(s({ markStatus: 'ambiguous', profileOnLabel: false }).reasons).toEqual([
       REASONS.markAmbiguous,
     ]);
-    expect(s({ scaleConfirmed: false, lengthMm: null })).toMatchObject({
-      color: 'red',
-      reasons: [REASONS.scaleNotConfirmed],
-    });
-    expect(s({ lengthMm: null })).toMatchObject({ color: 'red', reasons: [REASONS.noLength] });
   });
 
   it('red conditions are listed together', () => {
-    const r = s({ linkConfidence: 'low', scaleConfirmed: false, lengthMm: null });
+    const r = s({ linkConfidence: 'low', markStatus: 'ambiguous', profileOnLabel: false });
     expect(r.color).toBe('red');
-    expect(r.reasons).toEqual([REASONS.scaleNotConfirmed, REASONS.confidenceLow]);
+    expect(r.reasons).toEqual([REASONS.confidenceLow, REASONS.markAmbiguous]);
   });
 
-  it('a person confirming turns a medium or low proposal green, but not a missing scale or length', () => {
+  it('a person confirming turns a medium or low proposal green, but not an ambiguous mark', () => {
     expect(s({ humanConfirmed: true, linkConfidence: 'medium' })).toEqual({
       color: 'green',
       confirmed: true,
@@ -72,48 +64,63 @@ describe('color rules', () => {
     });
     expect(s({ humanConfirmed: true, linkConfidence: 'low' }).color).toBe('green');
     expect(s({ humanConfirmed: true, profileParsed: false }).color).toBe('green');
-    expect(s({ humanConfirmed: true, scaleConfirmed: false, lengthMm: null }).color).toBe('red');
     expect(s({ humanConfirmed: true, markStatus: 'ambiguous' }).color).toBe('red');
-    expect(
-      s({ humanConfirmed: true, scaleConfirmed: false, manualLength: true, lengthMm: 3000 }).color,
-    ).toBe('red');
   });
 
   it('unlinked: a profile label with no candidate line is not a red member', () => {
-    expect(s({ linkConfidence: 'low', hasLine: false, lengthMm: null })).toEqual({
+    expect(s({ linkConfidence: 'low', hasLine: false })).toEqual({
       color: 'unlinked',
       confirmed: false,
       reasons: [REASONS.noLine],
     });
-    // even when the scale is not confirmed or a person pressed "looks right"
-    expect(s({ hasLine: false, lengthMm: null, scaleConfirmed: false }).color).toBe('unlinked');
-    expect(s({ hasLine: false, lengthMm: null, humanConfirmed: true }).color).toBe('unlinked');
+    expect(s({ hasLine: false, humanConfirmed: true }).color).toBe('unlinked');
   });
 
   it('a typed length makes a label without a line a member (green once a person set it)', () => {
-    expect(s({ hasLine: false, manualLength: true, lengthMm: 3000, humanConfirmed: true })).toEqual(
-      { color: 'green', confirmed: true, reasons: [] },
-    );
+    expect(s({ hasLine: false, manualLength: true, humanConfirmed: true })).toEqual({
+      color: 'green',
+      confirmed: true,
+      reasons: [],
+    });
   });
 
   it('a link fixed by hand has no proposal confidence but is green', () => {
     expect(s({ humanConfirmed: true, linkConfidence: null }).color).toBe('green');
   });
 
-  it('columns: no line needed, red without a determinable base elevation, green with one', () => {
+  it('columns need no line and no elevations in Stage 1', () => {
     const col = {
       memberType: 'column',
       linkConfidence: null,
       hasLine: false,
       humanConfirmed: true,
-      lengthMm: 4000,
     } as const;
-    expect(s({ ...col, columnBaseKnown: true }).color).toBe('green');
-    expect(s({ ...col, columnBaseKnown: false, lengthMm: null })).toMatchObject({
-      color: 'red',
-      reasons: [REASONS.columnBase],
-    });
-    // a column is never red for lacking a candidate line
+    expect(s({ ...col }).color).toBe('green');
     expect(s({ ...col }).reasons).not.toContain(REASONS.noLine);
+  });
+});
+
+describe('kind doubts', () => {
+  it('an ambiguous kind makes a sure member amber until a person chooses', () => {
+    expect(s({ kind: { state: 'ambiguous', weak: true } })).toMatchObject({
+      color: 'amber',
+      reasons: [REASONS.kindAmbiguous],
+    });
+    expect(s({ kind: { state: 'ambiguous', weak: true }, humanConfirmed: true }).color).toBe(
+      'green',
+    );
+  });
+
+  it("a kind guessed from the label's own line does not change the colour, a weaker one does", () => {
+    expect(s({ kind: { state: 'guessed', weak: false } }).color).toBe('green');
+    expect(s({ kind: { state: 'guessed', weak: true } })).toMatchObject({
+      color: 'amber',
+      reasons: [REASONS.kindWeak],
+    });
+  });
+
+  it('a missing kind is a grey symbol and a flag, not a change of the confidence colour', () => {
+    expect(s({ kind: { state: 'missing', weak: true } }).color).toBe('green');
+    expect(s({ kind: { state: 'confirmed', weak: false } }).color).toBe('green');
   });
 });

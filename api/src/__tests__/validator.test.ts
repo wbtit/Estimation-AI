@@ -347,3 +347,37 @@ describe('validator: a column must have a base elevation', () => {
     expect(codesFor([col()], 'c9', { supportExemptTypes: [] })).toEqual(['UNSUPPORTED_MEMBER']);
   });
 });
+
+describe('validator: kind (contract v1)', () => {
+  it('raises no kind issue for a member without the kind fields (a converted v0 member)', () => {
+    expect(codesFor([column, beam()], 'b1')).toEqual([]);
+  });
+
+  it('flags an empty kind as grey (a person must choose) without changing the status colour', () => {
+    const report = validateMembers([column, beam({ kind: null })], catalog);
+    const r = report.results.find((x) => x.member_id === 'b1');
+    expect(r?.issues.map((i) => [i.code, i.severity])).toEqual([['KIND_MISSING', 'grey']]);
+    expect(r?.status).toBe('green');
+  });
+
+  it('flags a guessed kind as amber until a person confirms it', () => {
+    const guessed = beam({ kind: 'Beams', kind_confirmed: false });
+    const r = validateMembers([column, guessed], catalog).results.find((x) => x.member_id === 'b1');
+    expect(r?.issues.map((i) => [i.code, i.severity])).toEqual([['KIND_GUESSED', 'amber']]);
+    expect(r?.status).toBe('amber');
+    expect(codesFor([column, beam({ kind: 'Beams', kind_confirmed: true })], 'b1')).toEqual([]);
+  });
+
+  it('lists the new codes in the issue counts', () => {
+    const report = validateMembers([column, beam({ kind: null })], catalog);
+    expect(report.issue_counts.KIND_MISSING).toBe(1);
+    expect(ISSUE_CODES).toEqual(
+      expect.arrayContaining([
+        'KIND_MISSING',
+        'KIND_GUESSED',
+        'KIND_AMBIGUOUS',
+        'PREFIX_PROVISIONAL',
+      ]),
+    );
+  });
+});

@@ -133,7 +133,7 @@ describe('members', () => {
   it('lists effective members with colors, lengths and the top candidates', async () => {
     const res = await list();
     expect(res.count).toBe(5);
-    expect(res.colors).toEqual({ green: 1, amber: 1, red: 2, unlinked: 1 });
+    expect(res.colors).toEqual({ green: 2, amber: 1, red: 1, unlinked: 1 });
     const g = byKey(res.members, 'green');
     expect(g.status).toEqual({ color: 'green', confirmed: false, reasons: [] });
     // 600 pt of paper at 1/8" = 1'-0" is 600/72 in x 96 = 800 in = 66'-8"
@@ -150,7 +150,7 @@ describe('members', () => {
       reasons: ['no candidate line'],
     });
     const ns = byKey(res.members, 'noscale');
-    expect(ns.status.reasons).toEqual(['scale of the view is not confirmed']);
+    expect(ns.status).toMatchObject({ color: 'green', reasons: [] }); // the scale is a flag, not a colour
     expect(ns.length_mm).toBeNull();
   });
 

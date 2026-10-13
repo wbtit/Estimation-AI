@@ -11,6 +11,8 @@ import { annotateSharedLines } from '../review/shared-line.js';
 import { memberView, type EditRow, type ViewContext } from '../review/members.js';
 import { loadSheetInclusions } from '../review/takeoff-sheets.js';
 import { loadSheetOverrides } from '../review/overrides.js';
+import { loadKinds } from '../review/kinds.js';
+import { defaultCatalogLookup } from '../catalog/lookup.js';
 import { HttpError } from './http-error.js';
 
 export interface MemberRouteOptions {
@@ -112,12 +114,14 @@ export async function loadMemberViews(
   const levelOf = new Map(
     sheets.map((s) => [s.id, overrides.get(s.id)?.level ?? s.level_guess ?? null] as const),
   );
+  const lookups = { kinds: await loadKinds(db), catalog: await defaultCatalogLookup(db) };
   const out = rows.map((r) =>
     memberView(
       r,
       editsOf.get(r.id) ?? [],
       r.view_id ? (ctx.get(r.view_id) ?? null) : null,
       r.sheet_id ? (levelOf.get(r.sheet_id) ?? null) : null,
+      lookups,
     ),
   );
   return annotateSharedLines(out).filter((m) => wanted.has(m.id));

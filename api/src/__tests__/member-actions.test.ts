@@ -81,7 +81,7 @@ describe('adding a column by hand', () => {
     expect(edits[0].action_id).toBeTruthy();
   });
 
-  it('is red when the base elevation cannot be determined', async () => {
+  it('is not red for a missing base elevation in Stage 1: the length stays empty', async () => {
     const res = await post({
       view_id: viewId,
       type: 'column',
@@ -91,10 +91,7 @@ describe('adding a column by hand', () => {
       top_elevation: '12\'-6"',
       who: 'alice',
     });
-    expect(res.json().status).toMatchObject({
-      color: 'red',
-      reasons: ['column base elevation unknown'],
-    });
+    expect(res.json().status).toMatchObject({ color: 'green', reasons: [] });
     expect(res.json().length_mm).toBeNull();
   });
 

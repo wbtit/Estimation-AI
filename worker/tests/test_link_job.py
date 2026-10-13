@@ -335,3 +335,101 @@ def test_a_joist_designation_becomes_a_joist_member_without_a_profile(dbp: DbPro
     assert got["W12x26"]["type"] == "beam" and got["W12x26"]["profile"] == "W12X26"
     assert not any(k.startswith("K1") or k == "K1" for k in got)
     assert len([m for m in members(dbp) if m["type"] == "joist"]) == 1
+
+
+def kinds_doc(dbp: DbProject, title: str = "SECOND FLOOR FRAMING PLAN") -> None:
+    doc = new_doc()
+    page = vector_page(doc, "S4.1", title, texts=[])
+    for k in range(5):
+        y = 120 + 100 * k
+        page.draw_line((100, y), (700, y), width=2.0)
+    page.insert_text((300, 114), "W12x26 BEAM", fontsize=8)  # keyword in the same line
+    page.insert_text((300, 214), "W14x30", fontsize=8)  # keyword only in a line nearby
+    page.insert_text((330, 240), "VERTICAL BRACE AT GRID 3", fontsize=8)
+    page.insert_text((300, 514), "W10x12", fontsize=8)  # nothing around
+    page.draw_line((800, 520), (1000, 520), width=2.0)
+    page.insert_text((850, 514), "W8x10 BRACE", fontsize=8)  # a bare brace: ambiguous
+    dbp.pdf_path.write_bytes(doc.tobytes())
+
+
+def by_profile(dbp: DbProject) -> dict[str, dict]:
+    return {m["profile_raw"]: m for m in members(dbp)}
+
+
+def test_the_kind_comes_from_the_text_around_the_label_and_the_source_is_stored(
+    dbp: DbProject,
+) -> None:
+    kinds_doc(dbp)
+    dbp.scan()
+    read_project(dbp.conn, dbp.config, dbp.project_id, dbp.document_id, dbp.font_id)
+    result = link_view(dbp.conn, dbp.config, make_view(dbp))
+    got = by_profile(dbp)
+    assert (got["W12x26"]["kind"], got["W12x26"]["kind_source"]) == ("Beams", "keyword")
+    assert got["W12x26"]["kind_evidence"]["where"] == "same_line"
+    assert (got["W14x30"]["kind"], got["W14x30"]["kind_evidence"]["where"]) == (
+        "Vertical Brace",
+        "near",
+    )
+    assert got["W10x12"]["kind"] is None and got["W10x12"]["kind_source"] is None
+    assert got["W10x12"]["kind_evidence"]["status"] == "missing"
+    assert got["W8x10"]["kind"] is None and got["W8x10"]["kind_evidence"]["status"] == "ambiguous"
+    assert result["kind_set"] == 2 and result["kind_missing"] == 1 and result["kind_ambiguous"] == 1
+    assert all(not m["kind_confirmed"] for m in got.values())
+
+
+def test_the_sheet_title_is_the_last_source_of_a_kind(dbp: DbProject) -> None:
+    kinds_doc(dbp, title="TRUSS FRAMING PLAN")
+    dbp.scan()
+    read_project(dbp.conn, dbp.config, dbp.project_id, dbp.document_id, dbp.font_id)
+    link_view(dbp.conn, dbp.config, make_view(dbp))
+    got = by_profile(dbp)
+    assert got["W10x12"]["kind"] == "Truss" and got["W10x12"]["kind_source"] == "sheet_context"
+    assert got["W12x26"]["kind"] == "Beams"  # a nearer source still wins
+
+
+def test_tags_are_running_numbers_per_sheet_and_prefix_and_are_stable(dbp: DbProject) -> None:
+    kinds_doc(dbp)
+    dbp.scan()
+    read_project(dbp.conn, dbp.config, dbp.project_id, dbp.document_id, dbp.font_id)
+    view = make_view(dbp)
+    link_view(dbp.conn, dbp.config, view)
+    prefix = {
+        r["kind"]: r["provisional_prefix"]
+        for r in dbp.conn.execute("SELECT kind, provisional_prefix FROM member_kinds")
+    }
+    got = by_profile(dbp)
+    assert (got["W12x26"]["tag_prefix"], got["W12x26"]["tag_number"]) == (prefix["Beams"], 1)
+    assert got["W10x12"]["tag_prefix"] is None and got["W8x10"]["tag_prefix"] is None
+    assert sorted(m["tag_number"] for m in got.values() if m["tag_prefix"] is None) == [1, 2]
+    before = {m["id"]: (m["tag_prefix"], m["tag_number"]) for m in members(dbp)}
+    link_view(dbp.conn, dbp.config, view)  # a second run changes nothing
+    assert {m["id"]: (m["tag_prefix"], m["tag_number"]) for m in members(dbp)} == before
+
+
+def test_a_member_a_person_touched_keeps_its_kind_on_a_rerun(dbp: DbProject) -> None:
+    kinds_doc(dbp)
+    dbp.scan()
+    read_project(dbp.conn, dbp.config, dbp.project_id, dbp.document_id, dbp.font_id)
+    view = make_view(dbp)
+    link_view(dbp.conn, dbp.config, view)
+    m = by_profile(dbp)["W12x26"]
+    dbp.conn.execute("UPDATE members SET review_status = 'approved' WHERE id = %s", (m["id"],))
+    dbp.conn.execute(
+        "UPDATE members SET kind = 'Column', kind_source = 'person' WHERE id = %s", (m["id"],)
+    )
+    dbp.conn.commit()
+    link_view(dbp.conn, dbp.config, view)
+    assert by_profile(dbp)["W12x26"]["kind"] == "Column"
+
+
+def test_a_joist_designation_is_the_excluded_kind_joist(dbp: DbProject) -> None:
+    doc = new_doc()
+    page = vector_page(doc, "S4.1", "SECOND FLOOR FRAMING PLAN", texts=[])
+    page.draw_line((100, 200), (700, 200), width=2.0)
+    page.insert_text((300, 194), "24K7", fontsize=8)
+    dbp.pdf_path.write_bytes(doc.tobytes())
+    dbp.scan()
+    read_project(dbp.conn, dbp.config, dbp.project_id, dbp.document_id, dbp.font_id)
+    link_view(dbp.conn, dbp.config, make_view(dbp))
+    (m,) = members(dbp)
+    assert (m["kind"], m["kind_source"], m["type"]) == ("Joist", "keyword", "joist")

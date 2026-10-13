@@ -277,6 +277,12 @@ describe('takeoff routes', () => {
       },
     });
     expect(red.statusCode).toBe(201);
+    // Stage 1 colours do not depend on lengths: make it red by an ambiguous mark instead
+    await db
+      .updateTable('members')
+      .set({ mark_ref_status: 'ambiguous' })
+      .where('id', '=', red.json().id)
+      .execute();
   });
 
   afterAll(async () => {

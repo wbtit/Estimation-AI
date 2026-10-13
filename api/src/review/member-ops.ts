@@ -10,6 +10,7 @@ import { parseLengthMm } from '../units/parse.js';
 import { parseJoist } from './joist.js';
 import { parseProfile } from './profile.js';
 import { groupOf } from './shared-line.js';
+import type { KindIndex } from './kinds.js';
 
 type Db = Kysely<Database> | Transaction<Database>;
 
@@ -290,4 +291,101 @@ export async function applyEntries(
 ): Promise<string | null> {
   if (entries.length === 0) return null;
   return recordAction(db, who, entries);
+}
+
+/** The kind as an edit value: the person's own choice, or {reset} when the rule's guess is in force. */
+export function kindValue(m: MemberView): string | null | { reset: true } {
+  return m.kind.source === 'person' ? m.kind.name : { reset: true };
+}
+
+/**
+ * Next free tag number of a prefix on a sheet, from the effective tags of its members.
+ * Numbers are never reused, so a tag stays stable once seen.
+ */
+export function nextTagNumber(sheetMembers: readonly MemberView[], prefix: string | null): number {
+  let max = 0;
+  for (const m of sheetMembers) {
+    if (m.tag.prefix === prefix && m.tag.number !== null && m.tag.number > max) max = m.tag.number;
+  }
+  return max + 1;
+}
+
+export interface KindChoice {
+  /** Set the kind (a kind of the list) or null to clear it. Omit to only confirm. */
+  kind?: string | null;
+  /** Confirm the kind the system guessed (no change of the kind). */
+  confirm?: boolean;
+}
+
+/**
+ * A person sets, clears or confirms the kind of members (one or several, as one action). Setting a
+ * kind is the confirmation; the tag follows the kind (new prefix, next free number on the sheet);
+ * clearing goes back to "no kind" (a person's decision, no guess).
+ */
+export function kindEntries(
+  targets: readonly MemberView[],
+  sheetMembers: readonly MemberView[],
+  kinds: KindIndex,
+  choice: KindChoice,
+): EditEntry[] {
+  const out: EditEntry[] = [];
+  const taken = [...sheetMembers];
+  const info = choice.kind ? kinds.get(choice.kind) : undefined;
+  if (choice.kind !== undefined && choice.kind !== null && !info) {
+    throw new OpError(400, `"${choice.kind}" is not a kind of the list`);
+  }
+  for (const m of targets) {
+    if (choice.kind !== undefined) {
+      if (m.kind.name === choice.kind && m.kind.source === 'person') continue;
+      out.push({
+        memberId: m.id,
+        field: 'kind',
+        before: kindValue(m),
+        after: choice.kind,
+        status: 'edited',
+      });
+      const prefix = info ? info.prefix : null;
+      if (m.tag.prefix !== prefix || m.tag.number === null) {
+        const number = nextTagNumber(taken, prefix);
+        out.push({
+          memberId: m.id,
+          field: 'tag',
+          before: { prefix: m.tag.prefix, number: m.tag.number },
+          after: { prefix, number },
+          status: 'edited',
+        });
+        taken.push({ ...m, tag: { ...m.tag, prefix, number } });
+      }
+    } else if (choice.confirm) {
+      if (m.kind.state !== 'guessed') continue;
+      out.push({
+        memberId: m.id,
+        field: 'kind_confirmed',
+        before: false,
+        after: true,
+        status: 'edited',
+      });
+    }
+  }
+  return out;
+}
+
+/**
+ * The pieces that share the tag of this one: the same mark on the sheet (a drawing mark such as a
+ * beam mark is shared by every piece it labels), else the same profile text. Used by the explicit
+ * "apply to all pieces with this tag" button, which shows this number before the click.
+ */
+export function sameTagMembers(
+  target: MemberView,
+  sheetMembers: readonly MemberView[],
+): MemberView[] {
+  const basis = target.mark ?? target.profile_raw;
+  if (basis === null || basis === '') return [];
+  return sheetMembers.filter(
+    (m) =>
+      m.id !== target.id &&
+      !m.deleted &&
+      m.not_member === null &&
+      (target.mark !== null ? m.mark === target.mark : m.mark === null && m.profile_raw === basis),
+  );
 }

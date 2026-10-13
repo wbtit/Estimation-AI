@@ -4,20 +4,22 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
   contractDocumentSchema,
+  contractDocumentSchemaV0,
+  convertContractV0ToV1,
   endpointSchema,
   memberSchema,
   projectSchema,
   sheetSchema,
   SCHEMA_VERSION,
 } from '../contract/index.js';
-import { contractJsonSchemaText } from '../contract/json-schema.js';
+import { contractJsonSchemaText, contractJsonSchemaTextV0 } from '../contract/json-schema.js';
 import { loadSyntheticMembers } from '../synthetic/fixture.js';
 import { makeEndpoint, makeMember } from '../synthetic/member-factory.js';
 
 const CYRILLIC_A = '\u0410'; // looks like Latin A
 
 const project = {
-  schema_version: 0,
+  schema_version: 1,
   project_id: 'project-001',
   name: 'synthetic-001',
   number: null,
@@ -43,10 +45,44 @@ const sheet = {
   built_at: null,
 };
 
-describe('contract schema v0', () => {
-  it('is version 0', () => {
-    expect(SCHEMA_VERSION).toBe(0);
-    expect(projectSchema.safeParse({ ...project, schema_version: 1 }).success).toBe(false);
+describe('contract schema v1', () => {
+  it('is version 1; a version 0 project is not a valid v1 project', () => {
+    expect(SCHEMA_VERSION).toBe(1);
+    expect(projectSchema.safeParse({ ...project, schema_version: 1 }).success).toBe(true);
+    expect(projectSchema.safeParse({ ...project, schema_version: 0 }).success).toBe(false);
+  });
+
+  it('adds only optional member fields: a member without them is still valid', () => {
+    const m = makeMember({ member_id: 'm-1' });
+    expect(memberSchema.safeParse(m).success).toBe(true);
+    expect(
+      memberSchema.safeParse({
+        ...m,
+        kind: 'Beams',
+        kind_source: 'keyword',
+        kind_confirmed: false,
+        tag_prefix: 'XX',
+        tag_number: 3,
+      }).success,
+    ).toBe(true);
+    expect(memberSchema.safeParse({ ...m, kind_source: 'guess' }).success).toBe(false);
+    expect(memberSchema.safeParse({ ...m, tag_number: 0 }).success).toBe(false);
+  });
+
+  it('converts a version 0 document and rejects what is not one', () => {
+    const v0 = {
+      ...project,
+      schema_version: 0,
+      sheets: [sheet],
+      members: [makeMember({ member_id: 'm-1' })],
+    };
+    expect(contractDocumentSchemaV0.safeParse(v0).success).toBe(true);
+    const v1 = convertContractV0ToV1(v0);
+    expect(v1.schema_version).toBe(1);
+    expect(v1.members).toEqual(v0.members); // nothing else changed, no kind invented
+    expect(v1.members[0]).not.toHaveProperty('kind');
+    expect(() => convertContractV0ToV1({ ...v0, schema_version: 1 })).toThrow();
+    expect(() => convertContractV0ToV1({ ...v0, members: [{ member_id: 'x' }] })).toThrow();
   });
 
   it('accepts a valid member', () => {
@@ -128,22 +164,24 @@ describe('contract schema v0', () => {
 });
 
 describe('JSON Schema', () => {
-  const file = path.resolve(
-    path.dirname(fileURLToPath(import.meta.url)),
-    '../../../schema/contract.v0.schema.json',
-  );
+  const dir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../schema');
 
-  it('the committed file matches the Zod contract (run `make schema` after changing it)', () => {
-    expect(fs.readFileSync(file, 'utf8')).toBe(contractJsonSchemaText());
+  it('the committed files match the Zod contract (run `make schema` after changing it)', () => {
+    expect(fs.readFileSync(path.join(dir, 'contract.v1.schema.json'), 'utf8')).toBe(
+      contractJsonSchemaText(),
+    );
+    expect(fs.readFileSync(path.join(dir, 'contract.v0.schema.json'), 'utf8')).toBe(
+      contractJsonSchemaTextV0(),
+    );
   });
 
-  it('describes a strict v0 document', () => {
+  it('describes a strict v1 document', () => {
     const schema = JSON.parse(contractJsonSchemaText()) as Record<string, unknown> & {
       properties: Record<string, { const?: unknown }>;
     };
     expect(schema.$schema).toBe('https://json-schema.org/draft/2020-12/schema');
     expect(schema.additionalProperties).toBe(false);
-    expect(schema.properties.schema_version?.const).toBe(0);
+    expect(schema.properties.schema_version?.const).toBe(1);
     expect(schema.properties.unit_system?.const).toBe('mm');
     expect(Object.keys(schema.properties)).toEqual(expect.arrayContaining(['sheets', 'members']));
   });

@@ -1,4 +1,6 @@
-// Member data contract, schema_version 0 (docs/SPEC.md section 5).
+// Member data contract, schema_version 1 (docs/SPEC.md section 5). Version 1 (Phase 6a) only ADDS
+// optional member fields (kind, kind_source, kind_confirmed, tag_prefix, tag_number); a version 0
+// document is converted with convertContractV0ToV1.
 //
 // The Zod schemas here are the single source of truth: TypeScript types are inferred from them
 // and schema/contract.v0.schema.json is generated from them. The contract is versioned and is
@@ -13,7 +15,8 @@
 //    of the contract; they are derived from the catalog and rules.
 import { z } from 'zod';
 
-export const SCHEMA_VERSION = 0 as const;
+export const SCHEMA_VERSION = 1 as const;
+export const SCHEMA_VERSION_V0 = 0 as const;
 
 const confidence = z.number().min(0).max(1);
 
@@ -58,7 +61,7 @@ export const reviewEditSchema = z.strictObject({
   timestamp: z.iso.datetime({ offset: true }),
 });
 
-export const memberSchema = z.strictObject({
+export const memberSchemaV0 = z.strictObject({
   member_id: z.string().min(1),
   type: memberTypeSchema,
   mark: z.string().nullable(),
@@ -88,6 +91,15 @@ export const memberSchema = z.strictObject({
   review: z.strictObject({ status: reviewStatusSchema, edits: z.array(reviewEditSchema) }),
 });
 
+/** Version 1: the v0 member plus optional kind and tag fields (absent = a v0 document). */
+export const memberSchema = memberSchemaV0.extend({
+  kind: z.string().min(1).nullable().optional(),
+  kind_source: z.enum(['keyword', 'legend', 'sheet_context', 'person']).nullable().optional(),
+  kind_confirmed: z.boolean().optional(),
+  tag_prefix: z.string().min(1).nullable().optional(),
+  tag_number: z.number().int().positive().nullable().optional(),
+});
+
 export const gridSchema = z.strictObject({
   axis: z.enum(['x', 'y']),
   label: z.string().min(1), // exact characters, may be non-Latin
@@ -113,8 +125,8 @@ export const sheetSchema = z.strictObject({
   built_at: z.iso.datetime({ offset: true }).nullable(),
 });
 
-export const projectSchema = z.strictObject({
-  schema_version: z.literal(SCHEMA_VERSION),
+export const projectSchemaV0 = z.strictObject({
+  schema_version: z.literal(SCHEMA_VERSION_V0),
   project_id: z.string().min(1),
   name: z.string().min(1),
   number: z.string().nullable(),
@@ -127,11 +139,31 @@ export const projectSchema = z.strictObject({
   drawing_issue: z.string().nullable(),
 });
 
-/** Top-level contract document: project-level fields plus all sheets and members. */
+export const projectSchema = projectSchemaV0.extend({
+  schema_version: z.literal(SCHEMA_VERSION),
+});
+
+/** Top-level contract document (version 1): project-level fields plus all sheets and members. */
 export const contractDocumentSchema = projectSchema.extend({
   sheets: z.array(sheetSchema),
   members: z.array(memberSchema),
 });
+
+/** The version 0 document, kept so old documents can be read and converted. */
+export const contractDocumentSchemaV0 = projectSchemaV0.extend({
+  sheets: z.array(sheetSchema),
+  members: z.array(memberSchemaV0),
+});
+
+/**
+ * Version 0 -> 1: the document is validated as v0 and the version number is raised. Nothing else
+ * changes (the new member fields are optional and stay absent, so a converted member reads as "no
+ * kind"). Throws a ZodError when the input is not a valid v0 document.
+ */
+export function convertContractV0ToV1(input: unknown): z.infer<typeof contractDocumentSchema> {
+  const v0 = contractDocumentSchemaV0.parse(input);
+  return contractDocumentSchema.parse({ ...v0, schema_version: SCHEMA_VERSION });
+}
 
 export type MemberType = z.infer<typeof memberTypeSchema>;
 export type StatusColor = z.infer<typeof statusColorSchema>;

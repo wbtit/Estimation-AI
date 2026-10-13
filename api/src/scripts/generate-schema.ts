@@ -1,13 +1,16 @@
-// Writes schema/contract.v0.schema.json from the Zod contract. Run: npm run schema:generate
+// Writes schema/contract.v1.schema.json (current) and contract.v0.schema.json (frozen) from the Zod
+// contract. Run: npm run schema:generate
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { contractJsonSchemaText } from '../contract/json-schema.js';
+import { contractJsonSchemaText, contractJsonSchemaTextV0 } from '../contract/json-schema.js';
 
-const out = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  '../../../schema/contract.v0.schema.json',
-);
-fs.mkdirSync(path.dirname(out), { recursive: true });
-fs.writeFileSync(out, contractJsonSchemaText());
-console.log(`wrote ${path.relative(process.cwd(), out)}`);
+const dir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../schema');
+fs.mkdirSync(dir, { recursive: true });
+for (const [name, text] of [
+  ['contract.v1.schema.json', contractJsonSchemaText()],
+  ['contract.v0.schema.json', contractJsonSchemaTextV0()],
+] as const) {
+  fs.writeFileSync(path.join(dir, name), text);
+  console.log(`wrote ${path.relative(process.cwd(), path.join(dir, name))}`);
+}

@@ -29,6 +29,7 @@ from src.linking.lines import page_lines
 from src.linking.rules import Proposal, propose
 from src.linking.structural import class_table, lines_in_box
 from src.queue import Job
+from src.review.kinds import NEAR_RADIUS_PT, KindResult, detect_kind, joist_kind
 from src.review.sheet_state import sheet_included
 
 log = logging.getLogger("worker.link")
@@ -146,6 +147,8 @@ def link_view(conn: psycopg.Connection, config: WorkerConfig, view_id: str) -> d
         ),
     )
 
+    text_lines = _text_lines(conn, sheet_id)
+    sheet_title = sheet["title"] if sheet is not None else None
     totals: Counter = Counter()
     keys: set[str] = set()
     for lb in labels:
@@ -154,10 +157,14 @@ def link_view(conn: psycopg.Connection, config: WorkerConfig, view_id: str) -> d
         if fields is None:
             totals["skipped"] += 1
             continue
+        kind = _kind_for(lb, text_lines, legend, sheet_title)
+        fields.update(kind=kind.kind, kind_source=kind.source, kind_evidence=kind.evidence())
+        totals[f"kind_{kind.status}"] += 1
         keys.add(lb.key)
         totals[f"confidence_{proposal.confidence}"] += 1
         _upsert(conn, project_id, sheet_id, view_id, lb, fields, totals)
     totals["removed"] += _remove_stale(conn, project_id, view_id, keys)
+    assign_tags(conn, sheet_id)
     conn.commit()
     for key in (
         "created",
@@ -168,6 +175,9 @@ def link_view(conn: psycopg.Connection, config: WorkerConfig, view_id: str) -> d
         "confidence_high",
         "confidence_medium",
         "confidence_low",
+        "kind_set",
+        "kind_ambiguous",
+        "kind_missing",
     ):
         totals.setdefault(key, 0)
     totals["labels"] = len(labels)
@@ -176,11 +186,55 @@ def link_view(conn: psycopg.Connection, config: WorkerConfig, view_id: str) -> d
     return {k: int(v) for k, v in sorted(totals.items())}
 
 
+def _text_lines(conn: psycopg.Connection, sheet_id: str) -> list[tuple[Any, str]]:
+    """The text lines of the sheet ((x0, y0, x1, y1), text) from the text layer."""
+    rows = conn.execute(
+        "SELECT x0, y0, x1, y1, text FROM text_items WHERE sheet_id = %s AND level = 'line'"
+        " AND text IS NOT NULL",
+        (sheet_id,),
+    ).fetchall()
+    return [
+        ((float(r["x0"]), float(r["y0"]), float(r["x1"]), float(r["y1"])), r["text"]) for r in rows
+    ]
+
+
+def _rect_distance(a: tuple[float, ...], b: tuple[float, ...]) -> float:
+    dx = max(a[0] - b[2], b[0] - a[2], 0.0)
+    dy = max(a[1] - b[3], b[1] - a[3], 0.0)
+    return math.hypot(dx, dy)
+
+
+def _kind_for(
+    lb: Label,
+    lines: list[tuple[Any, str]],
+    legend: dict[str, list[dict[str, Any]]],
+    sheet_title: str | None,
+) -> KindResult:
+    """The member kind from the label's surroundings (src/review/kinds.py has the rules)."""
+    if lb.kind == "joist":
+        return joist_kind()
+    cx, cy = (lb.bbox[0] + lb.bbox[2]) / 2, (lb.bbox[1] + lb.bbox[3]) / 2
+    same, near = [], []
+    for bbox, text in lines:
+        if bbox[0] <= cx <= bbox[2] and bbox[1] <= cy <= bbox[3]:
+            same.append(text)
+        else:
+            d = _rect_distance(lb.bbox, bbox)
+            if d <= NEAR_RADIUS_PT:
+                near.append((d, text))
+    near.sort(key=lambda t: t[0])
+    legend_text = None
+    if lb.kind == "mark":
+        rows = legend.get(lb.text, [])
+        legend_text = " ".join(f"{r['designation_raw']} {r.get('remarks_raw') or ''}" for r in rows)
+    return detect_kind(" ".join(same), [t for _, t in near[:12]], legend_text or None, sheet_title)
+
+
 def _legend_by_mark(conn: psycopg.Connection, project_id: str) -> dict[str, list[dict[str, Any]]]:
     out: dict[str, list[dict[str, Any]]] = {}
     for r in conn.execute(
-        "SELECT id, mark, designation_raw, profile FROM legend_rows WHERE project_id = %s"
-        " ORDER BY created_at, id",
+        "SELECT id, mark, designation_raw, remarks_raw, profile FROM legend_rows"
+        " WHERE project_id = %s ORDER BY created_at, id",
         (project_id,),
     ):
         out.setdefault(r["mark"], []).append(r)
@@ -254,9 +308,9 @@ _PROPOSAL_COLUMNS = (
     "mark", "profile_raw", "profile", "mark_ref_status", "legend_row_id", "source_bbox",
     "link_confidence", "link_margin", "link_candidates", "link_rule", "plan_start_x_mm",
     "plan_start_y_mm", "plan_end_x_mm", "plan_end_y_mm", "plan_bbox", "plan_scale_ratio",
-    "plan_method", "length_source",
+    "plan_method", "length_source", "kind", "kind_source", "kind_evidence",
 )  # fmt: skip
-_JSON_COLUMNS = {"source_bbox", "link_candidates", "plan_bbox"}
+_JSON_COLUMNS = {"source_bbox", "link_candidates", "plan_bbox", "kind_evidence"}
 
 
 def _values(fields: dict[str, Any]) -> list[Any]:
@@ -314,11 +368,49 @@ def _upsert(
         totals["kept_reviewed"] += 1
         return
     sets = ", ".join(f"{c} = %s" for c in _PROPOSAL_COLUMNS)
+    # a changed kind gives the piece a new tag (prefix and number), assigned after the upserts
+    reset = (
+        "tag_prefix = CASE WHEN kind IS DISTINCT FROM %s THEN NULL ELSE tag_prefix END,"
+        " tag_number = CASE WHEN kind IS DISTINCT FROM %s THEN NULL ELSE tag_number END,"
+    )
     conn.execute(
-        f"UPDATE members SET view_id = %s, {sets} WHERE id = %s",
-        [view_id, *_values(fields), existing["id"]],
+        f"UPDATE members SET view_id = %s, {reset} {sets} WHERE id = %s",
+        [view_id, fields["kind"], fields["kind"], *_values(fields), existing["id"]],
     )
     totals["updated"] += 1
+
+
+def assign_tags(conn: psycopg.Connection, sheet_id: str) -> int:
+    """Give every member of the sheet that has no tag its prefix and a running number.
+
+    The prefix is the kind's abbreviation (the owner's list, when loaded) else the provisional
+    prefix; a member with no kind has no prefix and its own running numbers. Numbers are per sheet
+    and prefix, in reading order (top to bottom, left to right), continue after the highest number
+    in use, and are never reused or changed for a member that already has one.
+    """
+    rows = conn.execute(
+        "SELECT m.id, m.kind, COALESCE(k.abbreviation, k.provisional_prefix) AS prefix"
+        " FROM members m LEFT JOIN member_kinds k ON k.kind = m.kind"
+        " WHERE m.sheet_id = %s AND m.tag_number IS NULL AND m.review_status <> 'rejected'"
+        " ORDER BY (m.source_bbox->>'y0')::float NULLS LAST,"
+        " (m.source_bbox->>'x0')::float NULLS LAST, m.id",
+        (sheet_id,),
+    ).fetchall()
+    used: dict[str | None, int] = {}
+    for r in conn.execute(
+        "SELECT m.tag_prefix AS p, MAX(m.tag_number) AS n FROM members m"
+        " WHERE m.sheet_id = %s AND m.tag_number IS NOT NULL GROUP BY m.tag_prefix",
+        (sheet_id,),
+    ):
+        used[r["p"]] = int(r["n"])
+    for r in rows:
+        prefix = r["prefix"]
+        used[prefix] = used.get(prefix, 0) + 1
+        conn.execute(
+            "UPDATE members SET tag_prefix = %s, tag_number = %s WHERE id = %s",
+            (prefix, used[prefix], r["id"]),
+        )
+    return len(rows)
 
 
 def _remove_stale(conn: psycopg.Connection, project_id: str, view_id: str, keep: set[str]) -> int:
@@ -336,4 +428,4 @@ def _remove_stale(conn: psycopg.Connection, project_id: str, view_id: str, keep:
     return removed
 
 
-__all__ = ["JOB_TYPE", "LinkError", "link_view", "run_link_view", "math"]
+__all__ = ["JOB_TYPE", "LinkError", "assign_tags", "link_view", "run_link_view"]

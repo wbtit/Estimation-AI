@@ -34,12 +34,15 @@ import {
   sharedLineEntries,
   OpError,
   patchEntries,
+  kindEntries,
+  sameTagMembers,
   undoLastAction,
   type LegendChoice,
 } from '../review/member-ops.js';
 import { parseJoist } from '../review/joist.js';
 import { parseProfile } from '../review/profile.js';
 import { parseLengthMm } from '../units/parse.js';
+import { loadKinds } from '../review/kinds.js';
 import { correctionLines } from '../review/corrections.js';
 import { loadMemberViews } from './members.js';
 import { HttpError } from './http-error.js';
@@ -84,6 +87,19 @@ const patchBody = {
     type: { enum: ['column', 'beam', 'brace', 'joist', 'other'] },
     quantity: { type: 'integer', minimum: 1, maximum: 999 },
     length: { type: ['string', 'null'], maxLength: 40 },
+    /** Apply the profile text to every piece with the same tag (mark) on the sheet; one action. */
+    all_same_tag: { type: 'boolean' },
+  },
+} as const;
+const kindBody = {
+  type: 'object',
+  required: ['who'],
+  additionalProperties: false,
+  properties: {
+    who: { type: 'string', minLength: 1, maxLength: 100 },
+    kind: { type: ['string', 'null'], maxLength: 80 },
+    confirm: { type: 'boolean' },
+    all_same_tag: { type: 'boolean' },
   },
 } as const;
 const linkBody = {
@@ -372,15 +388,82 @@ export const memberActionRoutes: FastifyPluginAsync<MemberActionOptions> = async
       type?: string;
       quantity?: number;
       length?: string | null;
+      all_same_tag?: boolean;
     };
   }>(
     '/api/projects/:projectId/members/:memberId',
     { schema: { params: memberParams, body: patchBody } },
     async (request) => {
       const { projectId, memberId } = request.params;
-      return act(projectId, memberId, request.body.who, async (m) =>
-        patchEntries(m, (await memberOverride(memberId, 'level')) as string | null, request.body),
-      );
+      const { all_same_tag: allSameTag, ...patch } = request.body;
+      return act(projectId, memberId, request.body.who, async (m) => {
+        const own = patchEntries(
+          m,
+          (await memberOverride(memberId, 'level')) as string | null,
+          patch,
+        );
+        if (!allSameTag) return own;
+        if (patch.profile_text === undefined)
+          throw new OpError(
+            400,
+            'only the size (profile text) can be applied to all pieces with this tag',
+          );
+        const others = sameTagMembers(m, await sheetMembersOf(projectId, m));
+        const rest = others.flatMap((o) =>
+          patchEntries(o, null, { profile_text: patch.profile_text }),
+        );
+        return [...own, ...rest];
+      });
+    },
+  );
+
+  /** Every member of the sheet of this one, with effective values. */
+  async function sheetMembersOf(projectId: string, m: MemberView): Promise<MemberView[]> {
+    return m.sheet_id ? loadMemberViews(db(), projectId, { sheetId: m.sheet_id }) : [m];
+  }
+
+  app.get('/api/member-kinds', async () => ({
+    kinds: [...(await loadKinds(db())).values()].map((k) => ({
+      kind: k.kind,
+      scope: k.scope,
+      symbol_group: k.symbol_group,
+      prefix: k.prefix,
+      provisional: k.provisional,
+      sort: k.sort,
+    })),
+  }));
+
+  /** How many other pieces share this piece's tag: shown before the "apply to all" click. */
+  app.get<{ Params: { projectId: string; memberId: string } }>(
+    '/api/projects/:projectId/members/:memberId/same-tag',
+    { schema: { params: memberParams } },
+    async (request) => {
+      const m = await stateOf(request.params.projectId, request.params.memberId);
+      const others = sameTagMembers(m, await sheetMembersOf(request.params.projectId, m));
+      return {
+        basis: m.mark !== null ? 'mark' : 'profile text',
+        count: others.length,
+        member_ids: others.map((o) => o.id),
+      };
+    },
+  );
+
+  app.post<{
+    Params: { projectId: string; memberId: string };
+    Body: { who: string; kind?: string | null; confirm?: boolean; all_same_tag?: boolean };
+  }>(
+    '/api/projects/:projectId/members/:memberId/kind',
+    { schema: { params: memberParams, body: kindBody } },
+    async (request) => {
+      const { projectId, memberId } = request.params;
+      const { kind, confirm, all_same_tag: allSameTag } = request.body;
+      if (kind === undefined && !confirm)
+        throw new HttpError(400, { error: 'give a kind (or null) or confirm' });
+      return act(projectId, memberId, request.body.who, async (m) => {
+        const sheet = await sheetMembersOf(projectId, m);
+        const targets = [m, ...(allSameTag ? sameTagMembers(m, sheet) : [])];
+        return kindEntries(targets, sheet, await loadKinds(db()), { kind, confirm });
+      });
     },
   );
 

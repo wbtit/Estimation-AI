@@ -60,7 +60,7 @@ describe('GET /api/projects/:projectId/bom (real database)', () => {
     });
     expect(res.statusCode).toBe(200);
     const body = res.json();
-    expect(body.schema_version).toBe(0);
+    expect(body.schema_version).toBe(1);
     expect(body.catalog_edition).toBe(edition);
     expect(body.project.project_id).toBe(projectId);
     expect(body.validation.counts).toEqual({ green: 6, amber: 4, red: 4 });
@@ -127,7 +127,7 @@ describe('GET /api/projects/:projectId/bom (real database)', () => {
       url: `/api/projects/${badProjectId}/bom?edition=${edition}`,
     });
     expect(res.statusCode).toBe(422);
-    expect(res.json().error).toMatch(/stored member "bad-bbox" violates contract v0/);
+    expect(res.json().error).toMatch(/stored member "bad-bbox" violates contract v1/);
   });
 });
 

@@ -6,6 +6,8 @@ import { mmToFeetInches } from '../units/index.js';
 import { MM_PER_PT } from './geometry.js';
 import { parseJoist } from './joist.js';
 import type { SharedLine } from './shared-line.js';
+import { countingOf, typeOfKind, type Counting, type KindIndex } from './kinds.js';
+import type { CatalogLookup } from '../catalog/lookup.js';
 import { statusOf, type LinkConfidence, type MarkRefStatus, type Status } from './status.js';
 
 export type MemberRow = Selectable<MembersTable>;
@@ -111,9 +113,83 @@ export interface MemberView {
   /** A person said this is EXISTING steel: it keeps its profile and length but is not counted. */
   existing: boolean;
   plan_point: { x_mm: number | null; y_mm: number | null } | null;
+  /** Phase 6a: the kind (the estimators' scope list), how it was found, and the tag. */
+  kind: KindState;
+  tag: Tag;
+  /** Symbol shape group from the kind (linear, column, plate, other); none for excluded kinds. */
+  symbol_group: 'linear' | 'column' | 'plate' | 'other' | 'none';
+  /** Symbol colour: the confidence colour, or grey for a piece with no kind yet. */
+  symbol_color: 'green' | 'amber' | 'red' | 'grey' | 'unlinked';
+  counting: Counting;
+  /** Catalog result for the profile (Stage 1: SHAPE and Unit W come only from the catalog). */
+  catalog: CatalogView | null;
+  /** Flags with a code, a severity and a text; every unconfirmed guess is one. */
+  flags: MemberFlag[];
+}
+
+export interface KindState {
+  name: string | null;
+  scope: 'main' | 'misc' | 'excluded' | null;
+  /** missing = no keyword found; ambiguous = a bare brace, rail or ladder; guessed = found by a rule; confirmed = a person set or confirmed it. */
+  state: 'missing' | 'ambiguous' | 'guessed' | 'confirmed';
+  source: 'keyword' | 'legend' | 'sheet_context' | 'person' | null;
+  evidence: {
+    keyword: string | null;
+    where: string | null;
+    candidates: string[];
+  } | null;
+}
+
+export interface Tag {
+  prefix: string | null;
+  number: number | null;
+  /** Prefix and number as drawn on the symbol; a piece without a kind shows "?" for the prefix. */
+  text: string;
+  provisional: boolean;
+}
+
+export interface CatalogView {
+  found: boolean;
+  shape_name: string | null;
+  /** The catalog type (W, HSS, L, ...): the workbook's SHAPE. */
+  shape: string | null;
+  unit_w_lb_ft: number | null;
+  via: 'exact' | 'numeric' | null;
+  reason: string | null;
+}
+
+export type FlagCode =
+  | 'KIND_MISSING'
+  | 'KIND_GUESSED'
+  | 'KIND_AMBIGUOUS'
+  | 'PREFIX_PROVISIONAL'
+  | 'PROFILE_NOT_IN_CATALOG';
+
+export interface MemberFlag {
+  code: FlagCode;
+  severity: 'grey' | 'amber' | 'info';
+  text: string;
+}
+
+/** Everything the member view needs besides the row: kinds and the catalog (both optional). */
+export interface ViewLookups {
+  kinds?: KindIndex;
+  catalog?: CatalogLookup | null;
+  /** Effective tags of the other members of the sheet, to number a person's kind change. */
+  tagOverrides?: Map<string, { prefix: string | null; number: number | null }>;
 }
 
 const num = (v: string | null): number | null => (v === null ? null : Number(v));
+
+function symbolGroupOfType(type: string): MemberView['symbol_group'] {
+  return type === 'column'
+    ? 'column'
+    : type === 'joist'
+      ? 'none'
+      : type === 'other'
+        ? 'other'
+        : 'linear';
+}
 
 /** Latest corrected value of each field (edits arrive oldest first). */
 export function latestEdits(edits: EditRow[]): Map<string, unknown> {
@@ -137,6 +213,7 @@ export function memberView(
   edits: EditRow[],
   view: ViewContext | null,
   sheetLevel: string | null,
+  lookups: ViewLookups = {},
 ): MemberView {
   const e = latestEdits(edits);
   const pick = <T>(field: string, base: T): T => (e.has(field) ? (e.get(field) as T) : base);
@@ -163,7 +240,40 @@ export function memberView(
   }
 
   const ratio = view?.scaleConfirmed ? view.scaleRatio : null;
-  const type = pick('type', row.type);
+  // Phase 6a: the effective kind (a person's edit over the stored guess) and the type it implies
+  const kindRaw = e.get('kind') as string | { reset: true } | null | undefined;
+  const kindEdited = e.has('kind') && !(typeof kindRaw === 'object' && kindRaw !== null);
+  const kindName = kindEdited ? ((kindRaw as string | null) ?? null) : row.kind;
+  const kindInfo = kindName ? lookups.kinds?.get(kindName) : undefined;
+  const evidence = (row.kind_evidence ?? null) as {
+    status?: string;
+    keyword?: string | null;
+    where?: string | null;
+    candidates?: string[];
+  } | null;
+  const kindState: KindState['state'] =
+    kindEdited ||
+    e.get('kind_confirmed') === true ||
+    (!e.has('kind_confirmed') && row.kind_confirmed)
+      ? kindName
+        ? 'confirmed'
+        : 'missing'
+      : row.kind
+        ? 'guessed'
+        : evidence?.status === 'ambiguous'
+          ? 'ambiguous'
+          : 'missing';
+  const kindSource = kindEdited
+    ? kindName
+      ? ('person' as const)
+      : null
+    : kindState === 'confirmed' && !row.kind_source
+      ? ('person' as const)
+      : row.kind_source;
+  const strongSource =
+    kindSource === 'keyword' &&
+    (evidence?.where === 'same_line' || evidence?.where === 'designation');
+  const type = typeOfKind(kindInfo, pick('type', row.type));
   const baseElev = pick('start_elevation_mm', num(row.start_elevation_mm));
   const topElev = pick('end_elevation_mm', num(row.end_elevation_mm));
   const typedLength =
@@ -205,26 +315,18 @@ export function memberView(
     manualLength: typedLength !== null,
     humanConfirmed,
     // a column's length comes from its elevations, so its view scale does not matter
-    scaleConfirmed:
-      type === 'column' || typedLength !== null ? true : (view?.scaleConfirmed ?? false),
-    lengthMm,
+    kind: { state: kindState, weak: !strongSource },
     profileParsed: type === 'joist' ? joist !== null : profile !== null,
     profileOnLabel: profileOnLabel || (row.origin === 'manual' && row.mark === null),
     markStatus: markRef.status,
-    columnBaseKnown: baseElev !== null && topElev !== null,
   });
 
   // the system's own result: the stored row alone, no edits
-  const storedType = row.type;
+  const storedKindInfo = row.kind ? lookups.kinds?.get(row.kind) : undefined;
+  const storedType = typeOfKind(storedKindInfo, row.type);
   const storedLine = candidates.length > 0 ? { p: candidates[0].p, q: candidates[0].q } : null;
   const storedBase = num(row.start_elevation_mm);
   const storedTop = num(row.end_elevation_mm);
-  let storedLength: number | null = null;
-  if (storedType === 'column') {
-    if (storedBase !== null && storedTop !== null) storedLength = Math.abs(storedTop - storedBase);
-  } else if (storedLine && ratio) {
-    storedLength = lineLengthMm(storedLine, ratio);
-  }
   const system: Status | null =
     row.origin === 'manual'
       ? null
@@ -233,15 +335,23 @@ export function memberView(
           linkConfidence: row.link_confidence,
           hasLine: storedLine !== null,
           humanConfirmed: false,
-          scaleConfirmed: storedType === 'column' ? true : (view?.scaleConfirmed ?? false),
-          lengthMm: storedLength,
+          kind: {
+            state: row.kind
+              ? 'guessed'
+              : evidence?.status === 'ambiguous'
+                ? 'ambiguous'
+                : 'missing',
+            weak: !(
+              row.kind_source === 'keyword' &&
+              (evidence?.where === 'same_line' || evidence?.where === 'designation')
+            ),
+          },
           profileParsed:
             storedType === 'joist'
               ? !!row.profile_raw && parseJoist(row.profile_raw) !== null
               : row.profile !== null,
           profileOnLabel,
           markStatus: row.mark_ref_status,
-          columnBaseKnown: storedBase !== null && storedTop !== null,
         });
   const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
   const fieldEdited = (field: string, stored: unknown) =>
@@ -275,6 +385,71 @@ export function memberView(
             : reviewStatus === 'approved'
               ? 'confirmed'
               : 'unreviewed';
+
+  const tagEdit = e.has('tag')
+    ? (e.get('tag') as { prefix: string | null; number: number | null })
+    : { prefix: row.tag_prefix, number: row.tag_number };
+  const tagKind = lookups.kinds
+    ? [...lookups.kinds.values()].find((k) => k.prefix === tagEdit.prefix)
+    : undefined;
+  const tag: Tag = {
+    prefix: tagEdit.prefix,
+    number: tagEdit.number,
+    text: tagEdit.number === null ? '' : `${tagEdit.prefix ?? '?'}${tagEdit.number}`,
+    provisional: tagEdit.prefix !== null && (tagKind?.provisional ?? true),
+  };
+  const lookup = type !== 'joist' && profile ? lookups.catalog?.find(profile) : undefined;
+  const catalog: CatalogView | null = lookup
+    ? lookup.found
+      ? {
+          found: true,
+          shape_name: lookup.shape.shape_name,
+          shape: lookup.shape.family,
+          unit_w_lb_ft: lookup.shape.weight_lb_per_ft,
+          via: lookup.via,
+          reason: null,
+        }
+      : {
+          found: false,
+          shape_name: null,
+          shape: null,
+          unit_w_lb_ft: null,
+          via: null,
+          reason: lookup.reason,
+        }
+    : null;
+  const flags: MemberFlag[] = [];
+  if (type !== 'joist' && kindState === 'missing') {
+    flags.push({ code: 'KIND_MISSING', severity: 'grey', text: 'kind not found: choose the kind' });
+  }
+  if (kindState === 'ambiguous') {
+    flags.push({
+      code: 'KIND_AMBIGUOUS',
+      severity: 'amber',
+      text: 'kind is ambiguous: choose between ' + (evidence?.candidates ?? []).join(', '),
+    });
+  }
+  if (kindState === 'guessed') {
+    flags.push({
+      code: 'KIND_GUESSED',
+      severity: 'amber',
+      text: `kind guessed from ${evidence?.where?.replace('_', ' ') ?? 'the text'}, not confirmed`,
+    });
+  }
+  if (tag.provisional) {
+    flags.push({
+      code: 'PREFIX_PROVISIONAL',
+      severity: 'info',
+      text: 'provisional prefix (the owner list of abbreviations is not loaded)',
+    });
+  }
+  if (catalog && !catalog.found) {
+    flags.push({
+      code: 'PROFILE_NOT_IN_CATALOG',
+      severity: 'amber',
+      text: `profile not in the catalog (${catalog.reason}): Unit W is left empty`,
+    });
+  }
 
   return {
     id: row.id,
@@ -329,5 +504,30 @@ export function memberView(
       row.origin === 'manual' && row.plan_start_x_mm !== null
         ? { x_mm: num(row.plan_start_x_mm), y_mm: num(row.plan_start_y_mm) }
         : null,
+    kind: {
+      name: kindName,
+      scope: kindInfo?.scope ?? null,
+      state: kindState,
+      source: kindSource,
+      evidence:
+        kindState === 'confirmed' && kindEdited
+          ? null
+          : evidence
+            ? {
+                keyword: evidence.keyword ?? null,
+                where: evidence.where ?? null,
+                candidates: evidence.candidates ?? [],
+              }
+            : null,
+    },
+    tag,
+    symbol_group: kindInfo?.symbol_group ?? symbolGroupOfType(type),
+    symbol_color:
+      kindName === null && (status.color === 'green' || status.color === 'amber')
+        ? 'grey'
+        : status.color,
+    counting: countingOf(kindInfo),
+    catalog,
+    flags,
   };
 }

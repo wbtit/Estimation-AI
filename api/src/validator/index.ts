@@ -8,7 +8,8 @@
 import type { Member, MemberType, StatusColor } from '../contract/index.js';
 import { columnBaseElevationMm, memberLengthMm } from '../members/geometry.js';
 
-export type Severity = 'amber' | 'red';
+/** `grey` and `info` are listed but never change a member's status colour (only red and amber do). */
+export type Severity = 'amber' | 'red' | 'grey' | 'info';
 
 export const ISSUE_CODES = [
   'MISSING_PROFILE',
@@ -24,6 +25,11 @@ export const ISSUE_CODES = [
   'UNSUPPORTED_MEMBER',
   'SUPPORT_REF_NOT_FOUND',
   'DUPLICATE_MEMBER',
+  // Phase 6a (contract v1): only raised for members that carry the kind fields at all
+  'KIND_MISSING',
+  'KIND_GUESSED',
+  'KIND_AMBIGUOUS',
+  'PREFIX_PROVISIONAL', // raised by the review screen (it knows whether the owner list is loaded)
 ] as const;
 export type IssueCode = (typeof ISSUE_CODES)[number];
 
@@ -71,6 +77,10 @@ const SEVERITY: Record<IssueCode, Severity> = {
   UNSUPPORTED_MEMBER: 'amber',
   SUPPORT_REF_NOT_FOUND: 'amber',
   DUPLICATE_MEMBER: 'amber',
+  KIND_MISSING: 'grey',
+  KIND_GUESSED: 'amber',
+  KIND_AMBIGUOUS: 'amber',
+  PREFIX_PROVISIONAL: 'info',
 };
 
 /** Code-unit string order: independent of locale and platform. */
@@ -207,9 +217,18 @@ export function validateMembers(
       );
     }
 
+    // Phase 6a: a v1 member carries its kind; v0 members (no kind fields) raise no kind issue
+    if (m.kind !== undefined) {
+      if (m.kind === null) {
+        issues.push(issue('KIND_MISSING', 'kind', 'kind is empty: a person must choose it'));
+      } else if (m.kind_confirmed !== true) {
+        issues.push(issue('KIND_GUESSED', 'kind', `kind "${m.kind}" is a guess until confirmed`));
+      }
+    }
+
     const status: StatusColor = issues.some((i) => i.severity === 'red')
       ? 'red'
-      : issues.length > 0
+      : issues.some((i) => i.severity === 'amber')
         ? 'amber'
         : 'green';
     return { member_id: m.member_id, status, issues };

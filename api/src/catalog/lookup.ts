@@ -81,3 +81,28 @@ export async function loadCatalogLookup(
     })),
   );
 }
+
+const cache = new Map<string, CatalogLookup | null>();
+
+/** The edition used by the review screen: CATALOG_EDITION, else the most recently imported one. */
+export async function defaultCatalogEdition(db: Kysely<Database>): Promise<string | null> {
+  if (process.env.CATALOG_EDITION) return process.env.CATALOG_EDITION;
+  const row = await db
+    .selectFrom('catalog_shapes')
+    .select('edition')
+    .orderBy('created_at', 'desc')
+    .limit(1)
+    .executeTakeFirst();
+  return row?.edition ?? null;
+}
+
+/** The lookup of the default edition; editions are immutable, so a loaded one is kept. */
+export async function defaultCatalogLookup(db: Kysely<Database>): Promise<CatalogLookup | null> {
+  const edition = await defaultCatalogEdition(db);
+  if (edition === null) return null;
+  const hit = cache.get(edition);
+  if (hit !== undefined) return hit;
+  const loaded = await loadCatalogLookup(db, edition);
+  if (loaded) cache.set(edition, loaded);
+  return loaded;
+}

@@ -1,4 +1,4 @@
-// Maps between database rows (db/migrations/001) and contract members (schema v0).
+// Maps between database rows (db/migrations/001) and contract members (schema v1; version 0 documents have no kind).
 // The contract is nested; the table is flat. NUMERIC columns arrive from pg as strings.
 import type { Insertable, Selectable } from 'kysely';
 import { memberSchema, type Member } from '../contract/index.js';
@@ -69,6 +69,16 @@ export function rowToMember(row: MemberRow): Member {
     confidence: { overall: num(row.confidence), fields: row.field_confidence },
     status: { color: row.status_color, reason: row.status_reason },
     review: { status: row.review_status, edits: [] },
+    // the kind fields appear only when the row has any (a v0-style member stays exactly as it was)
+    ...(row.kind !== null || row.tag_number !== null || row.kind_confirmed
+      ? {
+          kind: row.kind,
+          kind_source: row.kind_source,
+          kind_confirmed: row.kind_confirmed,
+          tag_prefix: row.tag_prefix,
+          tag_number: row.tag_number,
+        }
+      : {}),
   });
 }
 
@@ -126,5 +136,10 @@ export function memberToInsertRow(
     status_color: member.status.color,
     status_reason: member.status.reason,
     review_status: member.review.status,
+    kind: member.kind ?? null,
+    kind_source: member.kind_source ?? null,
+    kind_confirmed: member.kind_confirmed ?? false,
+    tag_prefix: member.tag_prefix ?? null,
+    tag_number: member.tag_number ?? null,
   };
 }

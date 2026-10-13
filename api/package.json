@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit",
     "schema:generate": "tsx src/scripts/generate-schema.ts",
     "catalog:import": "tsx src/scripts/import-catalog.ts",
+    "kinds:load-abbreviations": "tsx src/scripts/load-kind-abbreviations.ts",
     "seed:synthetic": "tsx src/scripts/seed-synthetic.ts",
     "test-db": "tsx src/scripts/ensure-test-db.ts"
   },
