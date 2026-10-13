@@ -102,3 +102,20 @@ Parsing rules would be deterministic (feet-inches fractions to 1/16, metric inte
 3. May `memberLengthMm` fall back to plan xy plus elevations when no project-frame position exists (the BOM would then count such members)?
 4. Severity of the new validator codes, and the tolerance for `DIMENSION_LENGTH_MISMATCH`.
 5. Is "elevation datum" a free-text label per sheet note acceptable (never defaulted), or should the project carry a list of named datums?
+
+## 9. Addition (Phase 5u, 2026-10-13): member kind as the estimators' scope list (docs only; nothing is built or migrated)
+
+**Why.** The estimators' finished takeoff and their tags work in their own 21 main kinds, not in the coarse `members.type` list (`beam`, `column`, `brace`, `joist`, `other`, migration 001). The finished takeoff has one row per group (reference, size, name, length) and the owner wants a summary by kind.
+
+**Proposal (additive).**
+- `members.kind text` (nullable until detected or chosen), checked against a list of 36 values: the 21 MAIN kinds (Column; Beams; Curved Beam/Rolled Beam; Truss; Horizontal Brace; Vertical Brace; Kicker/Knee Brace; Girt & Purlin; Lintel/Brick Veneer Supports; Posts/Pipe; Hangers; Deck edge Angle / Bent plate; Misc. Attachments; Outriggers; Sag rod; Turn Buckle; Dock Levellers; RTU Frame/Roof Hatch Frame; Roof Drain Frame; Embed Plate/Bearing Plates; Embeds Angle), the 12 MISC kinds reserved (Stair; Dock Stair; Guardrail; Handrail/Wallrails; Landing Frame; Roof Ladder; Ship Ladder/Cage Ladder; Pit Ladder; Bollard; Gates; Grating; Bike Rack) and the 3 excluded kinds (Joist; Wall; Other trades). Better as a small reference table `member_kinds(kind, scope, abbreviation, symbol_group, sort)` with a foreign key, so the owner can fill the abbreviation column (the tag prefix) without a migration. The abbreviations are the owner's list and are unknown today.
+- `members.kind_source text` (`keyword` | `legend` | `sheet_context` | `person`) and `members.kind_confirmed boolean`, so a guessed kind is flagged until confirmed (same pattern as the other confirmations).
+- `members.type` stays for compatibility and becomes a derived group (`linear`, `column`, `plate`, `other`) that selects the symbol shape on the page; the old rule that a joist is a square symbol is removed (joist, wall and other trades have no symbol and are listed as "not counted").
+- Length: `members.length_source text` (`schedule` | `plan_dimension` | `callout` | `person`) and `members.length_written_raw text`. The length is the length WRITTEN in the PDF, not computed from the drawing scale; when nothing is written the length stays null with the flag `LENGTH_NOT_WRITTEN` (amber). This restates the existing rule "length unavailable" with a source. It does not touch the plan-based fallback of section 4.3 (question 3 of section 8 remains open and now leans to "no computed fallback").
+- Tag: `members.tag_prefix text` copied from `member_kinds.abbreviation` (provisional flag while the owner's list is empty) and `members.tag_number int` (running per page and prefix).
+- Outputs: the per-page and overall tables get a Kind column; the overall output gets a summary by kind (Quantity per kind, groups, weight where known); red members are summed on their own line outside the main total.
+- Validator: new codes `KIND_MISSING` (grey, a person must choose), `KIND_GUESSED` (amber until confirmed), `KIND_AMBIGUOUS` (amber), `LENGTH_NOT_WRITTEN` (amber), `PREFIX_PROVISIONAL` (info).
+
+**Impact.** Contract version 0 to 1 gains optional fields only; existing members have null kind (shown as "no kind"); no existing rule changes. Hours per quantity is a pricing rule and is out of scope.
+
+**Questions for you.** (a) Is `member_kinds` as a reference table acceptable? (b) Who supplies the abbreviation list (owner and estimators, from the private prefix inventory)? (c) May `members.type` be derived from the kind, or must it stay independent?

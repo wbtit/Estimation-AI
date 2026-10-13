@@ -173,3 +173,28 @@ def test_v3_canonical_size_and_m7_counts() -> None:
     r = page_counts(page)
     assert r is not None and r["text"] and r["n_sym"] == 2 and r["n_circle"] == 1
     assert r["n_lbl"] == 1 and r["n_lbl_W"] == 1
+
+
+def test_kind_table_priority_and_prefix() -> None:
+    from tools.takeoff.kind_study import kind_of
+    from tools.takeoff.prefix_inventory import prefix_of
+
+    assert kind_of("Roof BEAM at grid") == ("Beams", "main")
+    assert kind_of("curved beam") == ("Curved Beam/Rolled Beam", "main")  # specific before general
+    assert kind_of("Dock Stair frame") == ("Dock Stair", "misc")
+    assert kind_of("wallrail") == ("Handrail/Wallrails", "misc")  # before "wall"
+    assert kind_of("vertical brace")[0] == "Vertical Brace"
+    assert kind_of("brace")[1] == "ambiguous"
+    assert kind_of("floor joist") == ("Joist", "excluded")
+    assert kind_of("") == ("unmapped", "unmapped") and kind_of("xyz") == ("unmapped", "unmapped")
+    assert prefix_of("b12") == "B" and prefix_of("12") == "(none)" and prefix_of("CB3") == "CB"
+
+
+def test_length_source_classes() -> None:
+    from tools.takeoff.length_source import source_on_page
+
+    lines = [("W12X26", 100.0), ("20'-0\"", 101.0), ("TYP 18'-6\" LONG", 300.0), ("12'-0\"", 500.0)]
+    assert source_on_page(lines, 240.0) == "schedule"  # same row band as a profile text
+    assert source_on_page(lines, 222.0) == "callout"
+    assert source_on_page(lines, 144.0) == "plan dimension"
+    assert source_on_page(lines, 999.0) is None

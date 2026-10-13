@@ -115,3 +115,43 @@ Pages: 180 pages of the 16 matched jobs have count symbols; 177 have a text laye
 - The meaning of the 8 blocks (areas, views or buildings) is not known; I did not read their labels.
 - M7 reads circles as beams only on the six viewed pages; the 6-vertex and 24-vertex polygons are unidentified.
 - Tests run at the end: lint clean (API, worker, web); API 419, worker 467, web 14, all passed.
+
+---
+
+# Addition: owner update (K kind mapping, P prefix inventory, L length as written; pre-registered in commit 2d2f575 before these were run)
+
+**Disclosure repeated:** the workbook aggregates (including a keyword count for six words) were read before the keyword table was fixed, so the kind mapping is not blind. The table was not changed after the run. No cost, price or rate cell was read.
+
+## K. Workbook rows by kind (owner's vocabulary; names of kinds only, no strings from the file)
+| Part of the sheet | Rows | Pieces |
+|---|---|---|
+| Main block (96 rows, 463 pieces): mapped to a MAIN kind | 79 (82.3%) | 329 (71.1%) |
+| Main block: "brace or rail", kind not stated | 1 (1.0%) | 4 (0.9%) |
+| Main block: unmapped (no kind word in Name) | 16 (16.7%) | 130 (28.1%) |
+| Main block: MISC or EXCLUDED kinds | 0 | 0 |
+| After the total row (7 rows): MISC kinds | 6 | 8 |
+| After the total row: unmapped | 1 | 8 |
+- **MAIN kinds present (5 of 21):** Beams 50 rows (195 pieces); Column 15 rows (69); Vertical Brace 12 rows (38); Girt & Purlin 1 row (22); Horizontal Brace 1 row (5). The other 16 main kinds do not occur in this job's finished takeoff.
+- **MISC kinds present (4 of 12), all in the block after the total:** Stair 2 rows, Dock Stair 2 rows, Handrail/Wallrails 1, Guardrail 1.
+- **EXCLUDED kinds:** no Joist, Wall or other-trade rows. The sheet has no section label for a kind: of its 10 label rows, 7 match no kind word, 1 matches "post or pipe", 1 "stair", 1 "rail, kind not stated".
+- **The 16 unmapped main rows** are 15 HSS and 1 plate; names of 1 to 5 words without a kind word; they are spread over 5 of the 8 blocks. They carry 28% of the pieces, so the kind cannot be read from Name alone; a person (or the drawing's own words) has to give it.
+- **Share MAIN versus MISC versus excluded:** of the 103 rows with a quantity, 79 (77%) MAIN by keyword, 6 (6%) MISC, 0 excluded, 1 ambiguous, 17 (17%) unmapped. By pieces (479 in all): 329 (69%) MAIN, 8 (2%) MISC, 4 (1%) ambiguous, 138 (29%) unmapped.
+- **Column and beam counts agree with the earlier post-hoc note:** 195 pieces on Beams rows against 194 circle symbols in the marked PDF (coincidence possible; not compared page by page).
+
+## P. Prefix inventory (private)
+`fixtures/private/takeoffs/prefix_inventory.csv` (git-ignored, with an empty `meaning` column for the owner and the estimators). 35 rows: 34 distinct tag prefixes (8 of one letter, 26 of several letters) and one row for the 91 symbols that have no tag within 40 pt. Over 6,285 symbols: the 3 largest prefixes hold 65.2%, the 5 largest 75.5%, the 10 largest 90.2%, the 20 largest 97.6%. 13 prefixes occur in 5 or more files and 9 in a single file; 15 occur in 3 or more jobs; 1 occurs only in files that match no job. 29 of the 35 rows have one dominant colour and one dominant vertex count of at least 90%; the dominant shape is a triangle for 21 prefixes and a circle for 14. So the prefix is a good key for the kind, as the owner says, and about ten prefixes carry nearly all the symbols; the owner can fill the meaning column by working the top ten.
+
+## L. Length as written (15 rows, seed 5021; sources fixed in advance)
+| Source of Length | Rows |
+|---|---|
+| schedule column | 0 |
+| dimension on the plan (a line made only of the dimension) | **1** |
+| callout (a dimension with other words) | 0 |
+| written only in the text of a takeoff markup | 4 |
+| **none written** on the referenced sheets | **10** (3 of these have the value on another sheet only) |
+- So the length is written on the referenced drawing for 1 row of 15; the estimator's markup text carries it for 4 more; for 10 rows it is not written where the row says (the estimators probably take it from a model, a grid or a detail I did not map). With "length as written" as the rule, the v1 length cell is blank and flagged for most rows until schedules, callouts or markup text are read. The earlier figure (7 rows with no source) counted a value found on another sheet or in a markup as a source; the registered split is stricter.
+- Size (unchanged): a plan label on the referenced sheet for 14 of 15, on another sheet only for 1, in a schedule for 0.
+- Limit: text layer only; no new images were viewed. A length written as an outlined (non-text) number would be missed.
+
+## Docs updated (text only, nothing built)
+`docs/V1_UI_SPEC.md` (kinds, symbol groups, Kind column, summary by kind, length as written, section 6 with the keyword table) and `docs/SCHEMA_CHANGE_PROPOSAL.md` section 9 (kind enum as a reference table, kind and length sources, tag prefix, new validator codes).
