@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import collections
 import json
+import os
 import statistics
 import sys
 import time
@@ -23,7 +24,7 @@ import pymupdf
 
 from tools.takeoff.common import TAKEOFFS, drawing_documents
 
-API = "http://127.0.0.1:3000"
+API = os.environ.get("STAGE1_API", "http://127.0.0.1:3000")
 POLL_S = 3.0
 MAX_WAIT_S = 3600.0
 

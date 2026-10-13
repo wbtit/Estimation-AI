@@ -596,3 +596,7 @@ mark {
   font-size: 10px;
   color: #a15c00;
 }
+.new-job {
+  display: inline-block;
+  margin: 0 8px;
+}

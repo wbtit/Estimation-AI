@@ -3,7 +3,8 @@
 Internal structural steel estimation platform (estimate stage). Scope, phases and the member
 data contract are in [docs/SPEC.md](docs/SPEC.md); security rules in [docs/SECURITY.md](docs/SECURITY.md).
 
-Current state: **Phase 4b** (deterministic reader for text outlined into stroked paths, glyph library, optional OCR cross-check) on top of Phase 2 (projects, PDF upload, page scan and sheet classification, scale override) and Phase 1 (contract, catalog, validator, BOM, Excel). Pricing is not implemented yet.
+Current state: **Phase 6a, v1 Stage 1** (upload a PDF, the system marks counted members with a tag, colour by confidence, kinds, tables and an Excel export; lengths, weights and pricing come later; see the section "Try Stage 1" below). Older phases:
+**Phase 4b** (deterministic reader for text outlined into stroked paths, glyph library, optional OCR cross-check) on top of Phase 2 (projects, PDF upload, page scan and sheet classification, scale override) and Phase 1 (contract, catalog, validator, BOM, Excel). Pricing is not implemented yet.
 
 ## Layout
 | Path | Contents |
@@ -92,3 +93,14 @@ Review helpers: `contact-sheets --no-guess --limit 200` (shape only), `revoke-la
 ## Phase 4d (PDF text-layer reader and parsers)
 `read_text` now reads a page from its PDF text layer when it has a usable one (`pdf_text` items with word and line boxes, angle and parser output in `parsed`) and uses the glyph reader for every other vector page; the reader used is stored per sheet (`text_source`). Optional payload field `catalog_edition` selects the catalog edition used to validate profile strings (a single loaded edition is used automatically; without one profiles are `unvalidated`). Migration 004 adds the nullable columns. Private tools, counts only: `worker/tools/text_coverage.py` (coverage of the parsers on your own PDFs; see `docs/PHASE4D_COVERAGE.md`), `worker/tools/text_survey.py`, `worker/tools/pdf_inventory.py`. Details and decisions: `docs/PHASE4D_PLAN.md`.
 
+
+## Try Stage 1 (Phase 6a)
+Needs the database and Redis (`make up`, `make migrate`) and the AISC shapes file loaded once
+(`npm --prefix api run catalog:import -- --file <aisc xlsx> --edition aisc-v16.0 --sheet "Database v16.0" --name-col "AISC_Manual_Label#1" --weight-col "W#1" --weight-unit lb/ft --family-col Type`; the file stays where it is, nothing is committed).
+Three terminals:
+```bash
+make api      # http://127.0.0.1:3000   (stop any older API on that port first)
+make worker   # runs the scan and the automatic pipeline
+make web      # http://127.0.0.1:5173
+```
+Open http://127.0.0.1:5173, type your name, press **Upload a PDF** and choose an estimation PDF (or pick a job that is already uploaded). The page list, symbols, tables and the Excel export fill in by themselves; the bar under the title says "draft, N sheets unconfirmed" until you confirm. Tables and Excel: tab "tables", link "Export Excel". Optional: load the owner's tag abbreviations with `npm --prefix api run kinds:load-abbreviations -- --file <csv with kind,abbreviation>`.

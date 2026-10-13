@@ -136,3 +136,12 @@ Each item is an assumption I made so Phase 1 could proceed while you were away. 
 88. **Five of 28 measured pages have no single scale we can read.** Show the scale dialog first on those pages, or block measuring there?
 89. **Sloped members.** The flag only marks them; the system does not compute the slope length. Is a person-typed length enough for v1?
 
+### Added in Phase 6a (Stage 1 build)
+90. **Kind colour rule.** A kind found in the label's own text line leaves the piece green; a kind from nearby text, the legend or the sheet title makes it amber until a person confirms it; an ambiguous kind is amber; no kind is a grey symbol (still counted, in the row "no kind"). Is that the right balance, or must every guessed kind stay amber until confirmed (then almost nothing is green before review)?
+91. **Excluded kinds in nearby text are ignored.** A "wall" or "joist" word in a neighbouring line does not remove a beam from the count; it counts only in the label's own line or the legend. Agree?
+92. **Pages the page type guess leaves out.** The estimators marked pages that the guess excludes (counts in `docs/PHASE6A_RESULTS.md`). Should the default be "include every vector sheet and let the person exclude", at the price of more false pieces on detail sheets?
+93. **Name of a row.** The default Name is the kind (system wording, flagged). Should it also carry the tags of the pieces, or a short role word the estimators use? The estimators' own Name wording is not available as a list.
+94. **Grade suggestion.** HSS shows "A500" and W shows "A992" as a flag only (taken from the one finished takeoff). May the project grade table be pre-filled from that, or must a person always type it?
+95. **Apply to all pieces with this tag.** "Same tag" is the same mark on the sheet, or the same size text when there is no mark (tags themselves are unique per piece). Is that the meaning the estimators expect?
+96. **Prefix list.** The owner's abbreviations are still empty; `npm run kinds:load-abbreviations -- --file <csv>` (kind,abbreviation) loads them without a migration. Existing tags are not renamed by the load.
+

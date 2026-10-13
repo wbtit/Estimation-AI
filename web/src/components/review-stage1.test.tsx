@@ -677,3 +677,67 @@ describe("TablesPanel", () => {
     });
   });
 });
+
+describe("NewJob", () => {
+  it("creates a job named after the file, uploads the PDF and hands the project back", async () => {
+    const { NewJob } = await import("./NewJob");
+    const calls: { url: string; init?: RequestInit }[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        calls.push({ url, init });
+        return {
+          ok: true,
+          status: 201,
+          json: async () => ({
+            id: "p1",
+            name: "Some Job",
+            document: { id: "d1", scan_status: "pending" },
+          }),
+        };
+      }),
+    );
+    const onCreated = vi.fn();
+    render(<NewJob onCreated={onCreated} onError={() => undefined} />);
+    const file = new File(["%PDF-1.7"], "Some Job.pdf", {
+      type: "application/pdf",
+    });
+    fireEvent.change(screen.getByLabelText("upload a PDF"), {
+      target: { files: [file] },
+    });
+    await vi.waitFor(() => expect(onCreated).toHaveBeenCalled());
+    expect(calls[0]?.url).toBe("/api/projects");
+    expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({
+      name: "Some Job",
+    });
+    expect(calls[1]?.url).toBe("/api/projects/p1/pdf");
+    expect(calls[1]?.init?.body).toBeInstanceOf(FormData);
+  });
+
+  it("reports an upload error from the API", async () => {
+    const { NewJob } = await import("./NewJob");
+    let n = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        n += 1;
+        return n === 1
+          ? { ok: true, status: 201, json: async () => ({ id: "p1" }) }
+          : {
+              ok: false,
+              status: 415,
+              json: async () => ({ error: "not a PDF" }),
+            };
+      }),
+    );
+    const onError = vi.fn();
+    render(<NewJob onCreated={() => undefined} onError={onError} />);
+    fireEvent.change(screen.getByLabelText("upload a PDF"), {
+      target: {
+        files: [new File(["x"], "a.pdf", { type: "application/pdf" })],
+      },
+    });
+    await vi.waitFor(() => expect(onError).toHaveBeenCalled());
+    expect(String(onError.mock.calls[0]?.[0])).toContain("not a PDF");
+  });
+});

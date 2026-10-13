@@ -119,3 +119,10 @@ Parsing rules would be deterministic (feet-inches fractions to 1/16, metric inte
 **Impact.** Contract version 0 to 1 gains optional fields only; existing members have null kind (shown as "no kind"); no existing rule changes. Hours per quantity is a pricing rule and is out of scope.
 
 **Questions for you.** (a) Is `member_kinds` as a reference table acceptable? (b) Who supplies the abbreviation list (owner and estimators, from the private prefix inventory)? (c) May `members.type` be derived from the kind, or must it stay independent?
+
+### Status after Phase 6a: the Stage 1 subset of section 9 is built (additive migrations 009 to 012)
+- `member_kinds(kind, scope, abbreviation, symbol_group, sort)` with the 36 kinds, plus `provisional_prefix` (computed in SQL from the kind names, unique) so no prefix is typed anywhere; the tag prefix is `COALESCE(abbreviation, provisional_prefix)`. The owner's abbreviations load from a CSV (`kind,abbreviation`) with `npm run kinds:load-abbreviations`, no migration.
+- `members.kind` (foreign key), `kind_source` (`keyword`, `legend`, `sheet_context`, `person`), `kind_confirmed`, `tag_prefix`, `tag_number` (unique per sheet and prefix; a separate unique index covers pieces with no prefix), and one extra column, `kind_evidence` (jsonb: status, keyword, where, candidates; never page text). A person's kind is a `member_edits` row (field `kind`, `kind_confirmed`, `tag`), the stored guess is never overwritten.
+- `sheets.guesses_confirmed_by/at` and `sheet_views.auto_created` for the flags (migration 009).
+- Contract version 1: optional `kind`, `kind_source`, `kind_confirmed`, `tag_prefix`, `tag_number`; `convertContractV0ToV1` raises the version only. The validator raises `KIND_MISSING` (grey), `KIND_GUESSED` and `KIND_AMBIGUOUS` (amber) for members that carry the kind fields; `PREFIX_PROVISIONAL` (info) is raised by the review screen, which knows whether the owner list is loaded. Grey and info issues never change a status colour.
+- NOT built (Stage 2 and later): `length_source`, `measure_p/q`, `measure_scale_ratio`, `length_written_raw`, `length_flag`, the plan-frame, legend and dimension parts.

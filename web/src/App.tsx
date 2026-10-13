@@ -13,6 +13,7 @@ import { ColumnForm } from "./components/ColumnForm";
 import { LabelsPanel } from "./components/LabelsPanel";
 import { MemberActions, type LegendRow } from "./components/MemberActions";
 import { NameGate } from "./components/NameGate";
+import { NewJob } from "./components/NewJob";
 import { SymbolOverlay, type Highlight } from "./components/SymbolOverlay";
 import { ExplanationPanel } from "./components/ExplanationPanel";
 import { PipelineBar } from "./components/PipelineBar";
@@ -730,6 +731,13 @@ export const App: React.FC = () => {
               </option>
             ))}
         </select>
+        <NewJob
+          onError={fail}
+          onCreated={(p) => {
+            setProjects((list) => [p, ...list.filter((x) => x.id !== p.id)]);
+            setProjectId(p.id);
+          }}
+        />
         <label>
           you:{" "}
           <input

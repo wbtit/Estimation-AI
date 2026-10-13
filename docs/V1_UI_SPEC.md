@@ -1,4 +1,4 @@
-# V1 target screen: spec (docs only, nothing is built)
+# V1 target screen: spec (Stage 1 is built in Phase 6a; sections 7 and the length parts are Stage 2, not built)
 
 Goal: the owner uploads an estimation PDF; in minutes the system marks every counted member on each page the way an estimator does in Bluebeam (a symbol with a tag), coloured green, amber or red by confidence; for each page and for the whole job it produces the CSV columns; the estimator reviews page by page, sees what the system did AND WHY, corrects it, and exports the corrected Excel. No black box: every marking is explainable with evidence the estimator can click.
 
@@ -140,3 +140,24 @@ Not built; no code or schema change is implied until the build phase is approved
 - **Flag for sloped or unclear members:** a member that is sloped (a brace, a rake beam) or whose ends are unclear in plan can be flagged with one click ("sloped or unclear"). The flagged member keeps its plan-measured length, is amber, and is listed in the page table notes as "length needs a person (slope or unclear ends)". The system does not compute slope lengths in v1.
 - **No scale:** when the view has no confirmed scale the tool is disabled and says so (the same rule as for the view scale in section 1).
 - **Stored per measure:** the two points, the scale ratio used, the length, the source, who measured and when (see docs/SCHEMA_CHANGE_PROPOSAL.md section 9).
+
+
+## 8. Status after Phase 6a (Stage 1 built)
+
+What exists, with the section of this spec it implements. Everything below is deterministic code; no LLM, no third-party API.
+
+| Part | Where | Status |
+|---|---|---|
+| Flags instead of gates (section 5): the pipeline runs by itself after the upload (`auto_run`: text read, whole-sheet view, scale guess, line-class suggestion, frozen linking rule); page type default decides include or exclude; every guess is a flag; "these guesses are right" per sheet and for all sheets excluded by default; "draft, N sheets unconfirmed" / "reviewed" | worker `auto_run`, API `pipeline` routes, web pipeline bar and sheet header | built |
+| Member kinds (section 6): the 36-kind table (21 main, 12 misc reserved, 3 excluded), deterministic detection by the registered keyword table with sources keyword, legend, sheet context; empty when no keyword; bare brace, rail, ladder ambiguous; tags with a provisional prefix; abbreviation CSV loader | migrations 010 to 012, worker `kinds`, API kinds and member-ops | built (the owner's abbreviations are still to be loaded) |
+| Page view (section 1): one symbol per counted piece on its line, shape by group (circle, triangle, square, diamond), colour by confidence (grey for no kind), blue ring for reviewed, tag beside it, unlinked labels as small red squares, no symbol for excluded or misc kinds, filters by colour, kind, unreviewed, changed since the last run | web `SymbolOverlay`, `MembersPanel` | built |
+| Explanation panel (section 2): label text, size and its source, catalog result, kind and its source, page type guess and reason, link candidates with distance, angle and score, rule confidence and margin, scale, shared line, a grey linked-line hint, what is missing, history with who and when; every item has a jump link; actions: confirm, change size, change line, kind dropdown, not a member, existing, undo, apply to all pieces with this tag (with the count shown) | web `ExplanationPanel`, `MemberActions` | built |
+| Tables (section 3): page table and job table in the estimator's columns with Kind first, summary by kind, red line, not-counted and misc lines, editable Kind and Name per row, a row click selects its symbols, Excel export (job sheet, one sheet per page, corrections sheet, DRAFT in header and file name) | API `tables`, `excel/tables`, web `TablesPanel` | built; Length ft, Length In and Total W are EMPTY on purpose |
+| Catalog (SHAPE, Unit W): AISC v16.0 loaded into the database (not into git), drawing spellings matched by case, spaces, x, WF, and fraction against decimal | API `catalog/lookup` | built |
+| Measure tool, length cells, scale picker, schedule parser, pricing, Tekla | section 7 and the length bullets of section 3b | NOT built (Stage 2 and later) |
+
+Choices made while building (each can be reversed by the owner):
+- **Colour is the confidence of the identification** (link, size, mark, kind), not of the length. A kind found in the label's own text line does not change the colour; a kind from nearby text, the legend or the sheet title makes the piece amber until a person confirms it; an ambiguous kind is amber; no kind is a grey symbol (the piece is still counted, in the row "no kind").
+- **Sheet default:** a sheet with no person decision is in the takeoff when its page type guess is a framing plan, out otherwise; each such default is a flag and the out sheets are listed in the totals footer.
+- **Excluded kinds in nearby text are ignored** (a wall note next to a beam must not remove the beam); they count only in the label's own line or the legend.
+- **Grade** is the person-set grade of the shape family; the estimators' family default is only shown as a suggestion.
