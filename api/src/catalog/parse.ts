@@ -46,7 +46,22 @@ function toText(value: unknown): string {
   return value === null || value === undefined ? '' : String(value).trim();
 }
 
+/**
+ * Index of a header. A header that appears more than once must be chosen by occurrence, written
+ * `Header#1` for the first one (the AISC file repeats its imperial headers in a metric block).
+ * Without the suffix a repeated header is still an error.
+ */
 function columnIndex(headers: string[], header: string, role: string): number {
+  const nth = /^(.*)#(\d+)$/.exec(header);
+  if (nth && !headers.includes(header)) {
+    const base = nth[1] as string;
+    const matches = headers.flatMap((h, i) => (h === base ? [i] : []));
+    const idx = matches[Number(nth[2]) - 1];
+    if (idx !== undefined && Number(nth[2]) >= 1) return idx;
+    throw new CatalogColumnError(
+      `${role} column "${header}" not found (the header "${base}" appears ${matches.length} times)`,
+    );
+  }
   const matches = headers.flatMap((h, i) => (h === header ? [i] : []));
   if (matches.length === 1) return matches[0] as number;
   const found = headers.filter((h) => h !== '').join(' | ');
@@ -117,6 +132,7 @@ export function parseCatalogTable(
     const properties: Record<string, unknown> = {};
     table.headers.forEach((header, i) => {
       if (used.has(i) || header === '') return;
+      if (table.headers.indexOf(header) !== i) return; // repeated header: the first column wins
       const value = row.values[i];
       if (
         value === null ||

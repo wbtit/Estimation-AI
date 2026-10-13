@@ -14,7 +14,7 @@ const INCH = String.raw`\s*(?:"|IN\b\.?)?\s*`;
 const NUM = String.raw`(?:\d+\s+\d+\s*/\s*\d+|\d+\s*-\s*\d+\s*/\s*\d+|\d+\s*/\s*\d+|\d*\.\d+|\d+)`;
 
 const RE_SIMPLE = new RegExp(
-  `${START}(?<fam>WT|MT|ST|HP|MC|W|M|S|C)\\s*(?<a>${DEC})${X}(?<b>${DEC})${END}`,
+  `${START}(?<fam>WT|MT|ST|HP|MC|WF|W|M|S|C)\\s*(?<a>${DEC})${X}(?<b>${DEC})${END}`,
   'gi',
 );
 const RE_L = new RegExp(
@@ -124,7 +124,9 @@ function findInternal(input: string): { text: string; found: Found[] } {
     }),
     ...collect(RE_SIMPLE, text, (g) => {
       const d = dims(g.a, g.b);
-      return d ? { family: (g.fam as string).toUpperCase(), parts: d } : null;
+      if (!d) return null;
+      const fam = (g.fam as string).toUpperCase();
+      return { family: fam === 'WF' ? 'W' : fam, parts: d };
     }),
     ...collect(RE_PIPE, text, (g) => {
       const d = dims(g.a);

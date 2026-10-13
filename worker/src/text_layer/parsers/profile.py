@@ -28,7 +28,7 @@ _END = r"(?![0-9/]|\.\d)"
 _INCH = r"\s*(?:\"|IN\b\.?)?\s*"
 
 _RE_SIMPLE = re.compile(
-    rf"{_START}(?P<fam>WT|MT|ST|HP|MC|W|M|S|C)\s*(?P<a>{_DEC}){_X}(?P<b>{_DEC}){_END}",
+    rf"{_START}(?P<fam>WT|MT|ST|HP|MC|WF|W|M|S|C)\s*(?P<a>{_DEC}){_X}(?P<b>{_DEC}){_END}",
     re.IGNORECASE,
 )
 _RE_L = re.compile(
@@ -150,7 +150,8 @@ def find_profiles(text: str) -> list[Profile]:
         got = _dims(m.group("a"), m.group("b"))
         if got:
             dims, canon = got
-            found.append(_make(m, m.group("fam").upper(), canon, dims, None, []))
+            fam = m.group("fam").upper()
+            found.append(_make(m, "W" if fam == "WF" else fam, canon, dims, None, []))
     for m in _RE_PIPE.finditer(clean):
         got = _dims(m.group("a"))
         if got:

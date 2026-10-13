@@ -315,6 +315,16 @@
    "text": "PL 1 1/2 x 12",
    "canonical": "PL1-1/2X12",
    "family": "PL"
+  },
+  {
+   "text": "WF12x26",
+   "canonical": "W12X26",
+   "family": "W"
+  },
+  {
+   "text": "wf 12 X 26",
+   "canonical": "W12X26",
+   "family": "W"
   }
  ]
 }

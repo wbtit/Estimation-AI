@@ -215,3 +215,33 @@ const kgFixtureColumns: CatalogColumns = {
   weight: 'weight_kg_per_m',
   weightUnit: 'kg/m',
 };
+
+describe('parseCatalogTable: repeated headers (imperial block, then a metric block)', () => {
+  const table = {
+    headers: ['Type', 'Label', 'W', 'Label', 'W'],
+    rows: [{ rowNumber: 2, values: ['W', 'W12X26', 26, 'W310X38.7', 38.7] }],
+  };
+  it('refuses a repeated header unless the occurrence is given', () => {
+    expect(() =>
+      parseCatalogTable(table, { name: 'Label', weight: 'W', weightUnit: 'lb/ft' }),
+    ).toThrow(CatalogColumnError);
+  });
+  it('takes the chosen occurrence and keeps the first column of a repeated header as property', () => {
+    const { shapes, errors } = parseCatalogTable(table, {
+      name: 'Label#1',
+      weight: 'W#1',
+      weightUnit: 'lb/ft',
+      family: 'Type',
+    });
+    expect(errors).toEqual([]);
+    expect(shapes[0]?.shape_name).toBe('W12X26');
+    expect(shapes[0]?.weight_lb_per_ft).toBe(26);
+    expect(shapes[0]?.family).toBe('W');
+    expect(shapes[0]?.properties).toEqual({});
+  });
+  it('rejects an occurrence that does not exist', () => {
+    expect(() =>
+      parseCatalogTable(table, { name: 'Label#3', weight: 'W#1', weightUnit: 'lb/ft' }),
+    ).toThrow(/not found/);
+  });
+});
