@@ -127,3 +127,12 @@ Each item is an assumption I made so Phase 1 could proceed while you were away. 
 83. **Kind words are missing for 17% of main rows (28% of pieces).** The estimator's own Name has no kind word on 16 of 96 main rows. Should v1 leave the kind empty (dropdown), or may it suggest a kind from the profile family and the sheet (for example an HSS on a roof framing plan)? The first is the current proposal.
 84. **Length is rarely written where the row points.** Written on the sheet for 1 of 15, in markup text for 4, not written for 10. Where else do the estimators read it (a model, a grid distance minus the column, an unmarked detail)? With the rule "length as written" most lengths are blank and flagged in v1. Is that acceptable for the first version?
 85. **Reserved misc kinds.** In the one finished takeoff the misc block is 6 rows (stair, dock stair, handrail, guardrail) and sits after the total. Keep misc out of the v1 summary entirely, or list it as "not computed"?
+
+### Answers and additions (Phase 5v)
+- **Answered by the owner:** joists are not main steel and are not counted; length is MEASURED (two clicks with the page scale), not read from the drawing text; the prefix meanings are still to be filled by the owner (`prefix_inventory.csv`, the `meaning` column is empty).
+- **Question 77 and 84 (where the length comes from): answered.** Measured, with the page scale. Written lengths stay as a cross-check only.
+86. **Auto end points are a weak guess.** Only 25% of the estimators' clicks have a structural line within 12 pt (48% with every class) and the auto length agrees on about 1 in 9 of the tested ones. Is "amber first guess, estimator confirms or re-clicks" acceptable for v1, or should v1 start with no auto length at all?
+87. **Rounding.** The finished workbook writes whole inches (feet to 2 decimals). Round the measured length to the nearest inch?
+88. **Five of 28 measured pages have no single scale we can read.** Show the scale dialog first on those pages, or block measuring there?
+89. **Sloped members.** The flag only marks them; the system does not compute the slope length. Is a person-typed length enough for v1?
+

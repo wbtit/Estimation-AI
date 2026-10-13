@@ -17,7 +17,8 @@ def drawing_documents() -> dict[str, Path]:
     """job id -> PDF path of the unique drawing documents (kept ones plus job-001)."""
     out: dict[str, Path] = {}
     home = Path.home() / "Downloads"
-    for r in csv.DictReader(open(PRIVATE / "inventory_map.csv")):
+    for raw in csv.DictReader(open(PRIVATE / "inventory_map.csv")):
+        r = {k.strip(): (v or "").strip() for k, v in raw.items()}  # the file is column-padded
         if r["status"] != "kept":
             continue
         for base in (home, PRIVATE):

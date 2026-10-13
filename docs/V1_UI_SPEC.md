@@ -47,12 +47,12 @@ Page type       "framing plan" (guess, as an example)   [why]  title and label w
 Link            label -> line #2 of 3 candidates, 9.5 pt away, 0 deg off the text
                 rule: nearest aligned line, margin 31 pt = confidence medium
                 [show the 3 candidate lines on the page]
-Length          <length> = line length x scale <scale> (scale set on view 1)
-                trusted: no (the line is shared by B9 and B10)
+Length          <length> measured (source: measured_auto | measured_manual | written | typed); scale <scale> from view 1
+                trusted: no (the line is shared by B9 and B10)   [show the measuring line]
 Confidence      AMBER because: link margin below 40 pt; shared line
 Missing         length not confirmed; unit weight: profile not in catalog
 -----------------------------------------------------------------
-Actions: [confirm] [change size] [change line] [type a length]
+Actions: [confirm] [change size] [change line] [measure] [type a length]
          [not a member] [existing, not counted] [undo]
 ```
 
@@ -74,7 +74,7 @@ The finished takeoff of job-018 has one row per GROUP: one drawing reference, on
 - **Name** is a short descriptive text of the member kind and role in the workbook (not a mark). Our system has no such text; v1 fills Name from the kind plus the tag, editable, and flags it as "system wording". The estimator's own wording is the editable cell.
 - **Reference Dwg No.** is the sheet number in the workbook (and may carry a detail number in front; v1 uses the sheet number).
 - **Weights:** the estimator's Unit W is not a catalog and is not loaded; Unit W, Total W and Grade come from the confirmed catalog only. The grade the estimator used follows the shape family (A500 for HSS, A992 for WF in this file), so a rule "grade by family" is a suggestion shown as a flag, not silently applied.
-- **Lengths (as written):** the Length is the length WRITTEN in the PDF (a schedule column, a dimension on the plan, a callout), never computed from the drawing scale. Each length shows its source with a jump link to the text; when nothing is written the length cell is BLANK and flagged "length not written" (amber; the row stays in Quantity and the weight total says how many rows lack a length). The estimator types the length. In the 15-row sample 1 length was written as a plan dimension on its sheet and 4 appear in markup text; 10 were not written (Phase 5u L), so blank-and-flagged will be common until the schedules and callouts are read.
+- **Lengths (measured by default, Phase 5v):** the Length is MEASURED the way an estimator does it: two clicks on the member's two ends on the page, with the view's confirmed scale (distance in pt x 25.4/72 x scale ratio). The system makes the two clicks itself when a drawn line is found at both ends (`measured_auto`), a person makes them with the measure tool (`measured_manual`), a length printed in the PDF is read and kept only as a cross-check (`written`), and a typed number is `typed`. Each length shows its source and the scale used. The written length is never the default; when it differs from the measured one by more than 1 inch or 0.5% the row gets an amber flag "measured and written lengths differ". When no line is found and no one has measured, the cell is blank and flagged "length not measured".
 
 ## 4. How corrections update both
 
@@ -130,3 +130,13 @@ Not built; no code or schema change is implied until the build phase is approved
 | MISC kinds (reserved) | later | stair, dock stair, guardrail, handrail, wallrail, landing, roof ladder, pit ladder, ship ladder, cage, bollard, gate, grating, bike | later |
 
 **What the keywords reach in the one finished takeoff (job-018, Name column).** Of 96 main rows, 79 (82%; 329 of 463 pieces, 71%) map to 5 main kinds (Beams 50 rows, Column 15, Vertical Brace 12, Girt & Purlin 1, Horizontal Brace 1); 1 row says brace or rail without a kind; 16 rows (17%; 130 pieces, 28%) carry no kind word and would be left to the person with the dropdown. The 7 rows after the total row are the misc block (6 rows: stair, dock stair, handrail, guardrail; 1 unmapped). No joist, wall or other-trade rows exist. This measures the words of the finished sheet, not the words near labels on a drawing; the second is not yet measured.
+
+
+## 7. Measure tool (Phase 5v; proposal, nothing is built)
+- **Purpose:** give a member its length the way the estimators do in their markup tool. Length is measured by default; a written length is only a cross-check.
+- **How it works:** select a member (or none), press the measure key, click the first end and then the second end on the page. The end points snap to the nearest line end within 12 pt when there is one. The length is the distance between the two points in pt x 25.4/72 x the view's scale ratio, shown in feet and inches (nearest 1/16 inch).
+- **What is drawn:** a BLUE measuring line between the two points with an end marker at each point, and a label with the length and the scale used (for example the scale text of the view). Blue is not a confidence colour (green, amber and red stay for confidence). The line is kept so the estimator can see what was measured; it can be dragged at either end, which re-measures.
+- **Automatic first pass:** where a linked line exists, the system places the same measuring line on its two ends (`measured_auto`) and shows it in blue like a manual one. Phase 5v (docs/PHASE5V_RESULTS.md) found that the auto line often does not match the estimator's own clicks, so every auto length stays amber until confirmed, and the estimator can re-click.
+- **Flag for sloped or unclear members:** a member that is sloped (a brace, a rake beam) or whose ends are unclear in plan can be flagged with one click ("sloped or unclear"). The flagged member keeps its plan-measured length, is amber, and is listed in the page table notes as "length needs a person (slope or unclear ends)". The system does not compute slope lengths in v1.
+- **No scale:** when the view has no confirmed scale the tool is disabled and says so (the same rule as for the view scale in section 1).
+- **Stored per measure:** the two points, the scale ratio used, the length, the source, who measured and when (see docs/SCHEMA_CHANGE_PROPOSAL.md section 9).

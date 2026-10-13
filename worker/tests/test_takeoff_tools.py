@@ -198,3 +198,38 @@ def test_length_source_classes() -> None:
     assert source_on_page(lines, 222.0) == "callout"
     assert source_on_page(lines, 144.0) == "plan dimension"
     assert source_on_page(lines, 999.0) is None
+
+
+def test_measure_study_helpers() -> None:
+    import numpy as np
+
+    from tools.takeoff.measure_study import (
+        agrees,
+        dist_band,
+        length_cell_class,
+        multiple_of,
+        nearest_line,
+        pair_distance,
+    )
+
+    assert agrees(1000.0, 1020.0) and not agrees(1000.0, 1100.0)  # within 1 inch / over 0.5%
+    assert agrees(100000.0, 100400.0)  # 0.4% of a long length
+    assert pair_distance((0, 0), (100, 0), (100, 0, 0, 0)) == 0.0  # end order does not matter
+    assert pair_distance((0, 0), (100, 0), (3, 4, 100, 0)) == 5.0
+    segs = np.array([[0.0, 0.0, 100.0, 0.0], [0.0, 1.0, 100.0, 1.0], [0.0, 1.0, 60.0, 1.0]])
+    k, d = nearest_line((0, 0), (100, 0), segs)
+    assert (k, round(d, 1)) == (0, 0.0)
+    k, d = nearest_line((0, 1), (100, 1), segs[1:])  # ties go to the longer line
+    assert k == 0 and d == 0.0
+    assert nearest_line((0, 0), (1, 1), np.zeros((0, 4))) is None
+    assert (
+        dist_band(2.0) == "up to 3"
+        and dist_band(30.0) == "over 24"
+        and dist_band(None) == "no line on page"
+    )
+    assert length_cell_class("12") == "whole number"
+    assert length_cell_class("12.5") == "decimal, 1 place"
+    assert length_cell_class("12.25") == "decimal, 2 places"
+    assert length_cell_class("12 1/2") == "mixed fraction text"
+    assert length_cell_class('150"') == "text other" and length_cell_class("") == "empty"
+    assert multiple_of(2.5, 0.5) and not multiple_of(2.3, 0.5)
