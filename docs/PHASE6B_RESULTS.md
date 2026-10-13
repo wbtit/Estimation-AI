@@ -1,5 +1,7 @@
 # Phase 6b results: position-level scoring, three count bases, coverage limits
 
+> **Correction (Phase 6c, `docs/PHASE6C_RESULTS.md` section 0).** Everywhere this document says "no extracted line within 24 pt", read "no line of the SUGGESTED class within 24 pt": the Phase 6b test looked only at the structural lines of the suggested class. Lines of other classes are often near those symbols (70% of them, see Phase 6c). The figures (P, R, F1, pages equal) are unchanged; the conclusion "the lines are not where the estimators count" and the third row of the decision table are not supported as written.
+
 Pre-registration: `docs/PHASE6B_PREREGISTRATION.md` (committed before the measurement, nothing changed after). Part A (owner decisions) is committed separately (`972a317`) and is described at the end. Everything is deterministic code; no LLM, no third-party API, nothing pushed. Figures are reported as measured; no tolerance, radius, merge rule or bar was changed after seeing them.
 
 Data: the same 16 jobs, the same 136 pages where the estimators placed at least one count symbol (4,373 symbols), the same page mapping, the page rotation applied. All 136 pages are vector pages (no raster page among them). Pipeline re-run with Part A defaults (every vector sheet in): 16 jobs, 19.4 minutes in total (median 0.75, longest 4.3).
