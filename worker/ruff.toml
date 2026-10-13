@@ -9,3 +9,6 @@ ignore = []
 [lint.per-file-ignores]
 "tools/study/*.py" = ["E402", "I001", "E501", "E741", "B905", "B007"]
 "tests/test_study_tools.py" = ["E402", "I001", "E501", "B905"]
+# Phase 5t takeoff intake study tools (research code, same treatment as the Phase 4e study tools)
+"tools/takeoff/*.py" = ["E402", "I001", "E501", "E741", "B905", "B007"]
+"tests/test_takeoff_tools.py" = ["E402", "I001", "E501", "B905"]

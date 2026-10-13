@@ -1,0 +1,102 @@
+"""Phase 5t study tools on SYNTHETIC annotated PDFs generated here (no real takeoff data)."""
+
+import sys
+from pathlib import Path
+
+import numpy as np
+import pymupdf
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from tools.takeoff.common import page_hash, page_signature  # noqa: E402
+from tools.takeoff.geometry_study import (  # noqa: E402
+    band,
+    dist_points_segments,
+    measure_scale,
+    poly_length,
+    ratio_from_measure,
+    samples_along,
+    vertices_of,
+)
+from tools.takeoff.structure import study_file  # noqa: E402
+
+
+def make_pdf(path: Path, rotate: int = 0) -> None:
+    doc = pymupdf.open()
+    page = doc.new_page(width=600, height=400)
+    page.insert_text((50, 60), "W12x26 PLAN NOTE TEXT HERE", fontsize=10)
+    page.draw_line((100, 200), (500, 200), width=2.0)
+    page.add_line_annot((100, 200), (300, 200))  # a length-like markup on the drawn line
+    page.add_polyline_annot([(100, 300), (200, 300), (200, 350)])
+    page.add_polygon_annot([(10, 10), (30, 10), (20, 30)])  # a triangle symbol (a count symbol)
+    page.add_freetext_annot(pymupdf.Rect(40, 120, 100, 140), "B12")
+    if rotate:
+        page.set_rotation(rotate)
+    doc.save(path)
+
+
+def test_structure_counts_subtypes_and_fields(tmp_path: Path) -> None:
+    p = tmp_path / "t.pdf"
+    make_pdf(p)
+    r = study_file(p)
+    assert r["pages"] == 1 and r["annots"] == 4
+    assert dict(r["by_subtype"]) == {"Line": 1, "PolyLine": 1, "Polygon": 1, "FreeText": 1}
+    assert r["fields"]["FreeText"]["has_contents"] == 1
+    assert r["fields"]["Line"]["has_measure"] == 0  # no measurement dictionary was written
+    assert r["fields"]["Polygon"]["vertices>=2"] == 1
+
+
+def test_the_text_fingerprint_ignores_annotations(tmp_path: Path) -> None:
+    plain, marked = tmp_path / "a.pdf", tmp_path / "b.pdf"
+    doc = pymupdf.open()
+    pg = doc.new_page(width=600, height=400)
+    pg.insert_text((50, 60), "ALPHA BETA GAMMA DELTA EPSILON ZETA", fontsize=10)
+    doc.save(plain)
+    pg.add_freetext_annot(pymupdf.Rect(40, 120, 200, 160), "EXTRA COMMENT WORDS HERE")
+    doc.save(marked)
+    with pymupdf.open(plain) as a, pymupdf.open(marked) as b:
+        assert page_hash(a[0]) == page_hash(b[0]) is not None
+        assert page_signature(a[0]) == page_signature(b[0])
+
+
+def test_geometry_helpers() -> None:
+    v = [(0.0, 0.0), (30.0, 40.0), (30.0, 100.0)]
+    assert poly_length(v) == 110.0
+    pts = samples_along([(0.0, 0.0), (10.0, 0.0)], step=1.0)
+    assert len(pts) == 11 and pts[0].tolist() == [0.0, 0.0] and pts[-1].tolist() == [10.0, 0.0]
+    d = dist_points_segments(np.array([[5.0, 3.0], [20.0, 0.0]]), np.array([[0.0, 0.0, 10.0, 0.0]]))
+    assert d.round(3).tolist() == [[3.0], [10.0]]
+    assert [band(x) for x in (0.1, 0.5, 1.0, 2.0)] == ["<0.25", "0.25-0.75", "0.75-1.25", ">1.25"]
+
+
+def test_vertices_follow_the_page_rotation(tmp_path: Path) -> None:
+    p = tmp_path / "r.pdf"
+    make_pdf(p, rotate=90)
+    with pymupdf.open(p) as doc:
+        page = doc[0]
+        a = next(x for x in page.annots() if x.type[1] == "Line")
+        v = vertices_of(a, page)
+        # the line was (100,200)-(300,200) on an unrotated 600x400 page; displayed it is vertical
+        assert abs(v[0][0] - v[1][0]) < 0.01 and abs(abs(v[0][1] - v[1][1]) - 200) < 0.01
+
+
+def test_measurement_scale_is_read_from_the_number_format(tmp_path: Path) -> None:
+    """A PDF /Measure number format (1/2 in = 1 ft: C = 1/36 ft per point... C = 0.0277778 ft per point)."""
+    p = tmp_path / "m.pdf"
+    doc = pymupdf.open()
+    page = doc.new_page(width=600, height=400)
+    a = page.add_line_annot((100, 100), (172, 100))
+    nf = doc.get_new_xref()
+    doc.update_object(nf, "<< /Type /NumberFormat /U (ft) /C 0.02777778 /F /D /D 16 >>")
+    ms = doc.get_new_xref()
+    doc.update_object(
+        ms,
+        f"<< /Type /Measure /Subtype /RL /R (0.5 in = 1 ft) /X [{nf} 0 R] /D [{nf} 0 R] /A [{nf} 0 R] >>",
+    )
+    doc.xref_set_key(a.xref, "Measure", f"{ms} 0 R")
+    doc.save(p)
+    with pymupdf.open(p) as d2:
+        obj = d2.xref_object(next(iter(d2[0].annots())).xref, compressed=False)
+        got = measure_scale(obj, d2)
+    assert got is not None and got[1] == "ft" and abs(got[0] - 0.02777778) < 1e-9
+    assert abs(ratio_from_measure(got) - 24.0) < 1e-3  # 1/2 in = 1 ft is a ratio of 24
