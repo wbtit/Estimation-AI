@@ -1,5 +1,5 @@
 """Structure only of a spreadsheet: sheet count, rows, columns, and the generic header words of row 1.
-No cell value below the header row is read or printed (a pricing-like file's values belong to a later phase)."""
+No cell value below the header row is read or printed (the values of the workbook are read by target_workbook.py, Phase 5u)."""
 
 from __future__ import annotations
 

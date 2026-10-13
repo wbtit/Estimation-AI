@@ -130,3 +130,46 @@ def test_tag_study_pairs_symbols_with_nearest_tag(tmp_path: Path) -> None:
     r = page_study(page, {})
     assert r["symbols"] == 4 and r["tagged"] == 3 and r["distinct_tags"] == 3
     assert sum(r["by_colour_shape_prefix"].values()) == 4
+
+
+def test_workbook_helpers_and_bands() -> None:
+    from tools.takeoff.m7_study import band as m7_band
+    from tools.takeoff.target_workbook import band as wb_band
+    from tools.takeoff.target_workbook import classify_name, norm_ref, num
+
+    assert norm_ref("2 / s5-02") == "2S502"
+    assert num("12.5") == 12.5 and num("") is None and num(None) is None
+    assert wb_band(7, [5, 10, 1e18], ["<5", "5-10", "10+"]) == "5-10"
+    assert wb_band(None, [5], ["<5"]) == "missing"
+    assert classify_name("HSS8X4X1/2 beam") == "profile-like"
+    assert classify_name("roof beam") == "other" and classify_name("") == "empty"
+    assert [m7_band(r) for r in (0, 0.05, 0.2, 0.4, 0.9)] == [
+        "equal",
+        "<=10%",
+        "<=25%",
+        "<=50%",
+        ">50%",
+    ]
+
+
+def test_v3_canonical_size_and_m7_counts() -> None:
+    from tools.takeoff.m7_study import page_counts
+    from tools.takeoff.v3_trace import canon
+
+    assert canon("HSS", "8X4X1/2") == "HSS8X4X1/2"
+    assert canon("WF", "12X26") == "W12X26"
+    assert canon("ZZ", "1X1") is None
+
+    doc = pymupdf.open()
+    page = doc.new_page(width=600, height=400)
+    page.insert_text((50, 60), "W12X26 BEAM LABEL AND SOME MORE TEXT FOR THE LAYER", fontsize=10)
+    page.insert_text(
+        (540, 60), "W10X30 TITLE BLOCK STRIP TEXT", fontsize=6
+    )  # right strip: not counted
+    page.add_polygon_annot(
+        [(100, 100), (110, 100), (110, 110), (100, 110), (95, 105), (96, 101), (98, 99), (99, 100)]
+    )
+    page.add_polygon_annot([(200, 200), (220, 200), (210, 220)])
+    r = page_counts(page)
+    assert r is not None and r["text"] and r["n_sym"] == 2 and r["n_circle"] == 1
+    assert r["n_lbl"] == 1 and r["n_lbl_W"] == 1

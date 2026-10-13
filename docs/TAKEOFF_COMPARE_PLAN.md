@@ -3,7 +3,7 @@
 Written in Phase 5c (docs only) and **updated in Phase 5t, after the real files were read for structure** (`docs/PHASE5T_RESULTS.md`). Sections 1 to 5 are the Phase 5c plan; section 0 is what the files actually are, and it overrides the guesses below where they differ. Nothing is imported and no production table exists for takeoff data.
 
 ## 0. What the real takeoff files are (Phase 5t)
-- **Format:** 21 marked-up PDFs (the drawing set itself with PDF annotation objects drawn on it) and 1 pricing-like spreadsheet. **No CSV or XML markup list was supplied.** A PDF reader (PyMuPDF) reads the annotations directly: page, subtype, vertices, rectangle, subject, contents, colour, creation date, author, optional layer reference, an optional measurement dictionary and optional custom column data.
+- **Format:** 21 marked-up PDFs (the drawing set itself with PDF annotation objects drawn on it) and 1 spreadsheet, which Phase 5u showed to be the estimator's finished takeoff of the job-018 project (see section 0b). **No CSV or XML markup list was supplied.** A PDF reader (PyMuPDF) reads the annotations directly: page, subtype, vertices, rectangle, subject, contents, colour, creation date, author, optional layer reference, an optional measurement dictionary and optional custom column data.
 - **Count markup:** a small closed Polygon symbol (3 or 8 vertices) with a FreeText tag beside it (short mark-like code) and custom column data (a constant numeric quantity in the one file inspected). 4,373 on the matched pages. **There is no profile in it**: a profile has to come from the mark through a schedule or legend.
 - **Length markup:** a Line (2 vertices) with a `/Measure` dictionary (its scale and unit) and the measured value as dimension text in the contents. Only 14% of Lines are measurements; the other Lines are leaders, arrows and page-wide lines and cannot be told apart by subtype. PolyLines are almost unused.
 - **Profile text** appears on 1.8% of markups (Squares 3%, Highlights 36%; Highlights carry the highlighted label text and its quad position). None of the length markups has one.
@@ -19,6 +19,12 @@ Written in Phase 5c (docs only) and **updated in Phase 5t, after the real files 
 6. Keep the raw markups in a separate, read-only table or file; do not mix them with member edits.
 
 
+
+## 0b. The finished takeoff workbook (Phase 5u, W1)
+- **What it is:** the estimator's end result for the job-018 project: a workbook of 6 sheets whose first sheet is the MAIN-steel sheet with the columns Reference Dwg No., Quantity, SHAPE, Size, Name, Length (ft.), Length (In.), Unit W, Total W, Grade. The cost, plate and misc sheets were not opened.
+- **Rows:** 96 main-steel rows in 8 blocks (one label row each), then a total row, then a misc block of 7 rows without SHAPE. One row is one GROUP: the same size, name and length on one drawing reference, with the number of pieces in Quantity (463 pieces in 96 rows). Name is a short descriptive text of the member kind, not a mark. There are no joist rows.
+- **Our target output** is exactly this table per page and for the job. The comparison unit is therefore the group (reference, size, length) with its quantity, plus the per-size and overall piece counts. A marked-up PDF for the same job exists (the job-018 takeoff PDF), so a page-level comparison with the workbook is possible: map the reference to the sheet, compare the groups.
+- Details and numbers: `docs/PHASE5U_RESULTS.md` (W1 to W3).
 
 ## 1. Fields we would want from the export
 | Wanted | Why | Unknown until we see a file |

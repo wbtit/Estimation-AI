@@ -11,8 +11,8 @@ What the estimators' markings look like (Phase 5t/5u study, counts in `docs/PHAS
 Per page, on top of the page image:
 
 - **Symbol:** one per counted piece, placed on the member's line (the middle of the linked line, offset 12 pt to the side of the label so it does not cover the label). Shape by member kind: circle = beam, triangle = column, square = joist, diamond = brace.
-- **Tag:** the system's number for that piece on this page, sequential in reading order (the first tag of each kind is 1; the prefix is a letter by kind). Each piece has its own tag. A repeated member (TYP) is NOT collapsed: it gets one symbol and one tag per piece, as the estimators do; where the drawing only says it once (a TYP note or a schedule quantity), the symbols that are generated from it carry a "from TYP/quantity" mark in the explanation panel.
-- **Colour (confidence):** green = the system is sure and a person has not needed to touch it; amber = a person should check (for example a shared line, a medium-confidence link, a length not trusted); red = the system could not decide (no candidate, conflicting profile, no length). A blue ring on a symbol = a person confirmed or fixed it (the colour then stays as the system's own, the ring says "reviewed"). Grey = existing steel or not a member, listed apart, in no total.
+- **Tag:** the system's number for that piece on this page, sequential in reading order (the first tag of each kind is 1; the prefix is a letter by kind). Each piece has its own tag. A repeated member (TYP) is NOT collapsed: it gets one symbol and one tag per piece, as the estimators do; where the drawing only says it once (a TYP note, a note such as "take double quantity", or a schedule quantity), the system does NOT generate pieces: it puts an amber FLAG on the page (and on the marked piece nearest to the note) saying "TYP / quantity note: check the number of pieces", and the estimator adds the pieces or confirms the count (decided by the owner).
+- **Colour (confidence):** green = the system is sure and a person has not needed to touch it; amber = a person should check (for example a shared line, a medium-confidence link, a length not trusted); red = the system could not decide (no candidate, conflicting profile, no length). **Red pieces are NOT in the main total**: they are listed on their own line under the table ("red, not counted: N pieces") until a person fixes or confirms them. A blue ring on a symbol = a person confirmed or fixed it (the colour then stays as the system's own, the ring says "reviewed"). Grey = existing steel or not a member, listed apart, in no total. **Joists** that are drawn are listed apart as "not counted" (the estimators do not count them; the owner is to confirm), never drawn with a count symbol.
 - **Unlinked labels:** labels with no line found are drawn as small red hollow squares at the label, so they are visible and clearly not counted.
 - **Filters:** by colour, by kind, "only unreviewed", "only what changed since the last run".
 
@@ -66,20 +66,31 @@ Both use the CSV columns, in this order: Reference Dwg No., Quantity, SHAPE, Siz
 - **Overall table:** the same grouping across all pages of the job, Reference Dwg No. showing every sheet that contributes (the first, plus a count). Footer: totals of Quantity and Total W, and the line **"draft, N sheets unconfirmed"** while any sheet is unconfirmed.
 - **Excel export:** exactly these columns, with one sheet for the job and one per page, plus a corrections sheet (what the estimator changed, by whom, when).
 
+### 3b. How the tables map to the estimator's real workbook (Phase 5u W1)
+The finished takeoff of job-018 has one row per GROUP: one drawing reference, one size, one name, one length, with the number of pieces in Quantity (96 main rows hold 463 pieces). It is not one row per size, per name or per mark: the same size appears on several references and with several lengths; up to 14 rows share a reference; rows come in blocks (8 blocks, each introduced by one label row), then a total row, then a separate misc block. So:
+- **Per-page table = the estimator's rows for that sheet:** group by (Reference Dwg No., SHAPE, Size, Name, Length ft, Length in); Quantity = pieces in the group; Unit W and Total W (Quantity x length x Unit W) and Grade follow; the sheet's rows keep the estimator's order of blocks when a block structure is known, otherwise are ordered by SHAPE then size.
+- **Overall table = all rows of the job in the same grouping, then a total (tonnage) row;** misc and plates are not produced in v1 (out of scope).
+- **Name** is a short descriptive text of the member kind and role in the workbook (not a mark). Our system has no such text; v1 fills Name from the member type (beam, column, brace) plus the tag the estimator can edit, and flags it as "system wording". The estimator's own wording is the editable cell.
+- **Reference Dwg No.** is the sheet number in the workbook (and may carry a detail number in front; v1 uses the sheet number).
+- **Weights:** the estimator's Unit W is not a catalog and is not loaded; Unit W, Total W and Grade come from the confirmed catalog only. The grade the estimator used follows the shape family (A500 for HSS, A992 for WF in this file), so a rule "grade by family" is a suggestion shown as a flag, not silently applied.
+- **Lengths:** in the sample only 1 of 15 lengths is printed on the drawing; most are not. A length that is derived from the line and the scale is shown with its evidence and its trust flag; a length typed by the estimator replaces it.
+
 ## 4. How corrections update both
 
 Every correction is one saved action with undo (the product already has this for members). After an action: the symbol recolours (or gets the blue ring), the page table and the overall table recompute from the members (never edited by hand), the page counters and the "unreviewed" counters update, and the explanation panel adds a line "changed by <person>, <time>: <what>" with the previous value. A change of a size or a length applies to the one piece; "apply to all pieces with this tag" and "apply to this TYP" are explicit second buttons, shown with the number of pieces affected before the click. Adding a member (the existing "add" tools) creates a symbol with a tag and a blue ring. Re-running a page never overwrites a person's correction; it shows a "the system now suggests X" note instead.
 
-## 5. Proposal: flags instead of blocking gates (for approval)
+## 5. Flags instead of blocking gates (APPROVED by the owner, 2026-10-13)
 
-Today a person must confirm the line classes of every view and decide include/exclude for every sheet before members are found; undecided sheets are outside the totals. In the calibration this added many extra steps (24 sheet decisions and 48 class confirmations for 24 pages, open question 63). Proposal, as text only:
+Decision: approved with these additions. Red pieces stay OUT of the main total and are shown on their own line. The word "draft" is part of every export header AND every export file name while any sheet is unconfirmed. A TYP or double-quantity note is an amber flag (section 1). Joists are listed as "not counted" (owner to confirm).
+
+Today a person must confirm the line classes of every view and decide include/exclude for every sheet before members are found; undecided sheets are outside the totals. In the calibration this added many extra steps (24 sheet decisions and 48 class confirmations for 24 pages, open question 63). The design:
 
 1. After upload the pipeline runs on its own, end to end, with the best guesses: page types from the page type guess, included/excluded by that guess, line classes by the worker's suggestion, scale by the page's single scale or the most frequent printed scale, links by the frozen rule.
-2. Nothing blocks. Every guess that a person has not confirmed is a **flag** on the page, on the view or on the marking: "page type guessed", "line classes suggested, not confirmed", "scale guessed", "sheet included by default".
-3. The totals always show, with the label "draft, N sheets unconfirmed" (N = sheets with at least one unconfirmed flag). When N = 0 the label becomes "reviewed".
+2. Nothing blocks. Every guess that a person has not confirmed is a **flag** on the page, on the view or on the marking: "page type guessed", "line classes suggested, not confirmed", "scale guessed", "sheet included by default", "TYP / quantity note".
+3. The totals always show, with the label "draft, N sheets unconfirmed" (N = sheets with at least one unconfirmed flag). When N = 0 the label becomes "reviewed". Red pieces are not in the main total; they are on their own line.
 4. A sheet's flags are cleared by one click ("these guesses are right") or by the corrections that fix them. Nothing a person did is overwritten by a later run.
 5. Excluding a sheet remains an explicit person action; an excluded sheet is listed in the totals footer ("2 sheets excluded").
 6. The existing safeguards stay: a length that is not trusted (a shared line, a missing scale) is never shown as a clean green number; it is amber, with the reason.
-7. Risk to decide: a draft total that looks complete may be used without review. Mitigation: the "draft" label is part of every export header, and the export of a draft is marked in the file name.
+7. Risk and mitigation: a draft total that looks complete may be used without review. The "draft" label is in the export header and in the file name (for example `<job>_takeoff_DRAFT.xlsx`), and it goes away only when no sheet is unconfirmed.
 
-Not built; no code or schema change is implied until this proposal is approved.
+Not built; no code or schema change is implied until the build phase is approved.
