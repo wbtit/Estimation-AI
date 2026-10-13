@@ -13,7 +13,7 @@ Pre-registration of the measurement: `docs/PHASE6A_PREREGISTRATION.md` (committe
 Design choices that change what the owner sees (questions 90 to 96 in `OPEN_QUESTIONS.md`): colour is the confidence of the identification, not of length or scale; a kind found only in nearby text, the legend or the sheet title makes the piece amber until confirmed; excluded kinds in nearby text are ignored.
 
 ## Tests
-Lint clean (ruff, eslint, prettier, tsc). API, worker and web test counts are in the final report of the phase (see the end of this file for the last run).
+Lint clean (ruff check and format, eslint, tsc, prettier on the web). Last full run: API 478 passed, worker 492 passed, web 44 passed.
 
 ## Step 6: page-level counts against the estimators' symbols (first accuracy figure that is not made against AI gold)
 Run once, as pre-registered, no tuning: 16 jobs, 330 mapped pages, 136 pages where the estimators have at least one count symbol ("their pages", 4,373 symbols). The pipeline ran with no human action.
@@ -28,10 +28,10 @@ Run once, as pre-registered, no tuning: 16 jobs, 330 mapped pages, 136 pages whe
 
 - **B5 pages left out.** On 66 of the 136 their-pages (1,970 of their 4,373 symbols) the page type guess excluded the sheet, so our number is 0 there. One job had all 30 of its sheets guessed as details or elevations and got no pieces at all. On 25 pages we drew symbols where the estimators had none (386 symbols).
 - **Over and under.** On the 70 included their-pages we drew too many on 28, too few on 38, the same on 4 (median ratio 0.90). One 37-page job gave 1,341 symbols against 804.
-- **B6 by page colour (included their-pages).** green pages: 3, none equal; amber pages: 25, 4 equal and 8 within one; red pages: 37, none equal, 3 within one. Green pages did not agree more (only 3 of them); only 3 of 4,681 pieces were green on a page basis: the whole run has 116 green, 2,356 amber, 1,027 red and 1,182 unlinked pieces (4,681 members).
+- **B6 by page colour (included their-pages).** green pages: 3, none equal; amber pages: 25, 4 equal and 8 within one; red pages: 37, none equal, 3 within one. Green pages did not agree more (there were only 3 of them). In the whole run the members are 116 green, 2,356 amber, 1,027 red and 1,182 unlinked (4,681 in all).
 - **B7 shape groups.** Our linear-group pieces against their circles: equal on 21%, within one on 27% of 70 pages; our column-group pieces against their triangles: equal on 20%, within one on 36%.
 - **B8 kinds.** Not measurable: the meaning of their tag prefixes is not known (the owner's list is empty).
-- **B9 time.** Upload to tables: median 0.4 minutes per job, largest job (37 pages) 1.9 minutes, slowest 1.9 minutes (single machine, no GPU). Minutes, not hours.
+- **B9 time.** Upload to tables: median 0.4 minutes per job, largest job (37 pages) 1.9 minutes, which is also the slowest (single machine, no GPU). Minutes, not hours.
 
 Kinds found in the whole run (4,681 members): guessed 1,336, ambiguous 111, missing 3,234 (69%). Of the guessed kinds only 119 came from the label's own line, 949 from nearby lines, 212 from a joist designation and 56 from the sheet title; the most frequent are Beams 310, Joist 223, Column 131, Landing Frame 115 (a misc kind), Posts/Pipe 79. 3,583 profiles were found in the catalog, 400 were not.
 
