@@ -233,3 +233,38 @@ def test_measure_study_helpers() -> None:
     assert length_cell_class("12 1/2") == "mixed fraction text"
     assert length_cell_class('150"') == "text other" and length_cell_class("") == "empty"
     assert multiple_of(2.5, 0.5) and not multiple_of(2.3, 0.5)
+
+
+def test_stage1_measure_bars_and_page_colour_classes() -> None:
+    import collections
+
+    from tools.takeoff.stage1_measure import agrees, page_colour_class, share, summarise
+
+    assert agrees(5, 5) == {"equal": True, "within1": True, "within20": True}
+    assert agrees(6, 5) == {"equal": False, "within1": True, "within20": True}
+    assert agrees(7, 5)["within20"] is False and agrees(7, 5)["within1"] is False
+    assert agrees(0, 0) == {"equal": True, "within1": True, "within20": False}  # no theirs: no 20%
+    assert share([]) is None and share([True, False, True, True]) == 0.75
+    assert page_colour_class(collections.Counter(green=19, amber=1)) == "green page"
+    assert page_colour_class(collections.Counter(green=8, amber=2)) == "amber page"
+    assert page_colour_class(collections.Counter(green=8, red=2)) == "red page"
+    assert page_colour_class(collections.Counter()) == "no pieces"
+
+    def page(theirs, ours, **over):
+        rec = dict(
+            job="j", page=0, theirs=theirs, ours=ours, ours_in_total=ours, left_out=False,
+            colour_class="green page", ours_linear=ours, ours_column=0,
+            theirs_circles=theirs, theirs_triangles=0,
+        )  # fmt: skip
+        return rec | over
+
+    pages = [page(10, 10), page(10, 11), page(10, 4), page(5, 0, left_out=True), page(0, 3)]
+    s = summarise(pages)
+    t = s["their_pages"]
+    assert (t["pages"], t["theirs"], t["ours"]) == (4, 35, 25)
+    assert t["equal"] == 0.25 and t["within1"] == 0.5 and t["within20"] == 0.5
+    assert round(t["ratio"], 3) == round(25 / 35, 3)
+    assert s["left_out_pages"] == 1 and s["extra_pages"] == 1
+    assert s["all_mapped_pages"]["pages"] == 5
+    assert s["by_page_colour"]["green page"]["pages"] == 4
+    assert s["shape_groups"]["linear_vs_circles"]["pages"] == 3  # left-out pages are not compared
