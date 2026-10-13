@@ -1,6 +1,24 @@
 # Plan: comparing our takeoff with an estimator's Bluebeam takeoff, and a timed review
 
-Docs only (Phase 5c item 6). **No takeoff file has been read, opened or imported, and none is invented.** The estimators use Bluebeam takeoff and have been asked for exports (the markup list as CSV and a marked-up PDF of one job). Their format has NOT been seen. Everything below says what we would LIKE to have; each field is "wanted" until a real file shows what exists. If files appear under `fixtures/private/takeoffs/` (the folder does not exist now), they are left alone until a phase says to read them.
+Written in Phase 5c (docs only) and **updated in Phase 5t, after the real files were read for structure** (`docs/PHASE5T_RESULTS.md`). Sections 1 to 5 are the Phase 5c plan; section 0 is what the files actually are, and it overrides the guesses below where they differ. Nothing is imported and no production table exists for takeoff data.
+
+## 0. What the real takeoff files are (Phase 5t)
+- **Format:** 21 marked-up PDFs (the drawing set itself with PDF annotation objects drawn on it) and 1 pricing-like spreadsheet. **No CSV or XML markup list was supplied.** A PDF reader (PyMuPDF) reads the annotations directly: page, subtype, vertices, rectangle, subject, contents, colour, creation date, author, optional layer reference, an optional measurement dictionary and optional custom column data.
+- **Count markup:** a small closed Polygon symbol (3 or 8 vertices) with a FreeText tag beside it (short mark-like code) and custom column data (a constant numeric quantity in the one file inspected). 4,373 on the matched pages. **There is no profile in it**: a profile has to come from the mark through a schedule or legend.
+- **Length markup:** a Line (2 vertices) with a `/Measure` dictionary (its scale and unit) and the measured value as dimension text in the contents. Only 14% of Lines are measurements; the other Lines are leaders, arrows and page-wide lines and cannot be told apart by subtype. PolyLines are almost unused.
+- **Profile text** appears on 1.8% of markups (Squares 3%, Highlights 36%; Highlights carry the highlighted label text and its quad position). None of the length markups has one.
+- **Takeoff PDF = the full set**, our documents are subsets of it (our matched pages are 7 to 37 per job); 16 of 19 documents have one; 5 takeoff PDFs match no document of ours. Matching by a hash of the page's words with the markups removed works and needs no file names.
+- **Page 29 of job-005 (the 27 shared lines) is not taken off** in the file: 2 markups on the page, none near the lines.
+
+### What a production importer would need (not built)
+1. Read annotations with a PDF library; map vertices through the page rotation into displayed points (same frame as our lines and labels).
+2. Map takeoff pages to our sheets by the text-fingerprint match (word-set similarity of 0.9 or more; the markups removed first).
+3. Separate the four kinds: count symbols with their tags, measured lengths (Line with a measurement dictionary), highlighted labels (Highlights with contents), and everything else (rectangles, ink, text boxes), which is ignored.
+4. Read the measurement dictionary (number format constant and unit) to turn points into feet or millimetres, and compare with the scale we confirm per view.
+5. A count symbol gives a **position and a mark**, not a line and not a profile; the profile has to be looked up by mark (schedule, legend: the Phase 5d parser) or taken from a highlighted label near the symbol. A matcher from symbols to our members is a design task of its own and is not designed here.
+6. Keep the raw markups in a separate, read-only table or file; do not mix them with member edits.
+
+
 
 ## 1. Fields we would want from the export
 | Wanted | Why | Unknown until we see a file |
