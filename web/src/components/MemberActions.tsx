@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import type { MemberView } from "../lib/types";
+import type { KindInfo, MemberView } from "../lib/types";
 
 export interface LegendRow {
   id: string;
@@ -8,6 +8,7 @@ export interface LegendRow {
   profile: string | null;
   remarks_raw: string | null;
   page_number: number;
+  bbox?: { x0: number; y0: number; x1: number; y1: number } | null;
 }
 
 const TYPES = ["beam", "column", "brace", "joist", "other"];
@@ -27,7 +28,14 @@ export const MemberActions: React.FC<{
     level?: string | null;
     type?: string;
     length?: string | null;
+    all_same_tag?: boolean;
   }) => void;
+  /** The 36 kinds for the dropdown (main first, then misc, then not counted). */
+  kinds: KindInfo[];
+  onKind: (kind: string | null, allSameTag: boolean) => void;
+  onConfirmKind: () => void;
+  /** How many OTHER pieces share this piece's tag (mark), shown before the apply-to-all click. */
+  sameTagCount: number;
   onLegend: (rowId: string) => void;
   onSharedLine: (resolution: "separate" | "merge") => void;
   onNotMember: (reason: string) => void;
@@ -45,29 +53,22 @@ export const MemberActions: React.FC<{
   onSharedLine,
   onNotMember,
   onExisting,
+  kinds,
+  onKind,
+  onConfirmKind,
+  sameTagCount,
 }) => {
   const [profile, setProfile] = useState(member.profile_raw ?? "");
   const [mark, setMark] = useState(member.mark ?? "");
   const [level, setLevel] = useState(member.level ?? "");
-  const [length, setLength] = useState("");
   useEffect(() => {
     setProfile(member.profile_raw ?? "");
     setMark(member.mark ?? "");
     setLevel(member.level ?? "");
-    setLength(
-      member.length_source === "manual" ? (member.length_ft_in ?? "") : "",
-    );
-  }, [
-    member.id,
-    member.profile_raw,
-    member.mark,
-    member.level,
-    member.length_source,
-    member.length_ft_in,
-  ]);
+  }, [member.id, member.profile_raw, member.mark, member.level]);
 
   const save = (
-    field: "profile_text" | "mark" | "level" | "length",
+    field: "profile_text" | "mark" | "level",
     value: string,
     current: string | null,
   ) => {
@@ -106,6 +107,51 @@ export const MemberActions: React.FC<{
         </button>
         <button onClick={onDelete}>Delete (Del)</button>
       </div>
+      <div className="kind-box">
+        <label className="field">
+          kind
+          <select
+            value={member.kind.name ?? ""}
+            onChange={(e) => onKind(e.target.value || null, false)}
+            aria-label="kind"
+          >
+            <option value="">(no kind)</option>
+            {(["main", "misc", "excluded"] as const).map((scope) => (
+              <optgroup
+                key={scope}
+                label={
+                  scope === "main"
+                    ? "main steel"
+                    : scope === "misc"
+                      ? "misc (reserved, not computed)"
+                      : "not counted"
+                }
+              >
+                {kinds
+                  .filter((k) => k.scope === scope)
+                  .map((k) => (
+                    <option key={k.kind} value={k.kind}>
+                      {k.kind}
+                    </option>
+                  ))}
+              </optgroup>
+            ))}
+          </select>
+        </label>
+        <div className="row">
+          {member.kind.state === "guessed" && (
+            <button onClick={onConfirmKind}>Kind is right</button>
+          )}
+          {sameTagCount > 0 && member.kind.name && (
+            <button
+              onClick={() => onKind(member.kind.name, true)}
+              title="Sets this kind on this piece and on the other pieces with the same tag (mark) on this sheet, as one action"
+            >
+              Apply kind to all {sameTagCount + 1} pieces with this tag
+            </button>
+          )}
+        </div>
+      </div>
       {member.joist_series && (
         <div className="hint">
           Joist, {member.joist_series.series} series (kept as written, never
@@ -122,9 +168,8 @@ export const MemberActions: React.FC<{
           {member.shared_line.resolved
             ? " (you said: separate members)"
             : ", probably different beams on one long line"}
-          . Their pieces count; the length of this member is <b>not trusted</b>{" "}
-          (it is the whole line)
-          {member.length_shared ? "" : " (a typed length is trusted)"}.
+          . Their pieces count. Lengths are added in Stage 2 (a shared line is
+          the whole line, so its length will not be trusted).
           {member.shared_line.duplicate_of && (
             <div>
               This label looks like a duplicate of another label on the same
@@ -169,18 +214,20 @@ export const MemberActions: React.FC<{
       {field("profile text", profile, setProfile, () =>
         save("profile_text", profile, member.profile_raw),
       )}
+      {sameTagCount > 0 && profile.trim() !== "" && (
+        <button
+          onClick={() =>
+            onPatch({ profile_text: profile.trim(), all_same_tag: true })
+          }
+          title="Sets this size on this piece and on the other pieces with the same tag (mark) on this sheet, as one action"
+        >
+          Apply size to all {sameTagCount + 1} pieces with this tag
+        </button>
+      )}
       {field("mark", mark, setMark, () => save("mark", mark, member.mark))}
       {field("level", level, setLevel, () =>
         save("level", level, member.level),
       )}
-      {member.type !== "column" &&
-        field("typed length (e.g. 12'-6\")", length, setLength, () =>
-          save(
-            "length",
-            length,
-            member.length_source === "manual" ? member.length_ft_in : null,
-          ),
-        )}
       <button
         onClick={() => onExisting(!member.existing)}
         title="A real member that is already there: listed with its profile and length, not counted"

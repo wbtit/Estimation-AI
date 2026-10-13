@@ -32,6 +32,8 @@ export interface Sheet {
   takeoff?: {
     decision: "include" | "exclude" | "undecided";
     included: boolean;
+    /** True while no person has decided: the sheet is in or out by the page type guess. */
+    by_default?: boolean;
     /** What the page type guess suggests; never a decision. */
     suggestion: "include" | "exclude";
     decided_by: string | null;
@@ -119,6 +121,97 @@ export interface NotesSheet {
 }
 
 export type Color = "green" | "amber" | "red" | "unlinked";
+/** The symbol colour: the confidence colour, or grey for a piece with no kind yet. */
+export type SymbolColor = Color | "grey";
+export type SymbolGroup = "linear" | "column" | "plate" | "other" | "none";
+
+export interface KindState {
+  name: string | null;
+  scope: "main" | "misc" | "excluded" | null;
+  state: "missing" | "ambiguous" | "guessed" | "confirmed";
+  source: "keyword" | "legend" | "sheet_context" | "person" | null;
+  evidence: {
+    keyword: string | null;
+    where: string | null;
+    candidates: string[];
+  } | null;
+}
+
+export interface Tag {
+  prefix: string | null;
+  number: number | null;
+  text: string;
+  provisional: boolean;
+}
+
+export interface CatalogView {
+  found: boolean;
+  shape_name: string | null;
+  shape: string | null;
+  unit_w_lb_ft: number | null;
+  via: "exact" | "numeric" | null;
+  reason: string | null;
+}
+
+export interface MemberFlag {
+  code: string;
+  severity: "grey" | "amber" | "info";
+  text: string;
+}
+
+export interface KindInfo {
+  kind: string;
+  scope: "main" | "misc" | "excluded";
+  symbol_group: SymbolGroup;
+  prefix: string;
+  provisional: boolean;
+  sort: number;
+}
+
+export interface SheetFlag {
+  code: string;
+  text: string;
+  view_id?: string;
+}
+
+export interface SheetFlags {
+  sheet_id: string;
+  page_number: number;
+  included: boolean;
+  by_default: boolean;
+  flags: SheetFlag[];
+  confirmed_by: string | null;
+  confirmed_at: string | null;
+}
+
+export interface DraftStatus {
+  unconfirmed_sheets: number;
+  unconfirmed_included: number;
+  unconfirmed_excluded_by_default: number;
+  reviewed: boolean;
+  label: string;
+}
+
+export interface FlagsResponse {
+  draft: DraftStatus;
+  sheets: SheetFlags[];
+  last_run: {
+    status: string;
+    result: Record<string, number> | null;
+    error: string | null;
+    started_at: string;
+    finished_at: string | null;
+  } | null;
+}
+
+export interface HistoryEdit {
+  field: string;
+  before: unknown;
+  after: unknown;
+  who: string;
+  at: string;
+  is_undo: boolean;
+}
 
 export interface Candidate {
   rank: number;
@@ -178,6 +271,15 @@ export interface MemberView {
   length_shared: boolean;
   merged_into: string | null;
   not_member: { reason: string } | null;
+  // Phase 6a
+  kind: KindState;
+  tag: Tag;
+  symbol_group: SymbolGroup;
+  symbol_color: SymbolColor;
+  counting: "counted" | "misc_reserved" | "not_counted";
+  catalog: CatalogView | null;
+  flags: MemberFlag[];
+  changed_at: string;
 }
 
 export interface SharedLine {

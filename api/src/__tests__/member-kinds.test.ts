@@ -259,3 +259,34 @@ describe('setting and confirming a kind', () => {
     expect(res.json().member.kind).toMatchObject({ name: null, state: 'missing', source: null });
   });
 });
+
+describe('history and change times', () => {
+  it('lists what a person changed, newest first, with who, when and the value before', async () => {
+    await post(`${ids.uncat}/kind`, { who: 'dana', kind: 'Beams' });
+    await post(`${ids.uncat}/kind`, { who: 'dana', kind: 'Hangers' });
+    const h = (
+      await app.inject({
+        method: 'GET',
+        url: `/api/projects/${projectId}/members/${ids.uncat}/history`,
+      })
+    ).json().edits as { field: string; before: unknown; after: unknown; who: string; at: string }[];
+    const kinds = h.filter((e) => e.field === 'kind');
+    expect(kinds.map((e) => [e.who, e.before, e.after])).toEqual([
+      ['dana', 'Beams', 'Hangers'],
+      ['dana', { reset: true }, 'Beams'],
+    ]);
+    expect(Date.parse(kinds[0]?.at ?? '')).toBeGreaterThan(0);
+  });
+
+  it('a member changed by a person has a later change time than an untouched one', async () => {
+    const touched = await get('uncat');
+    const untouched = await get('strong');
+    expect(touched.changed_at > untouched.changed_at).toBe(true);
+  });
+
+  it('the flags endpoint reports the last pipeline run (none yet in this project)', async () => {
+    const f = (await app.inject({ method: 'GET', url: `/api/projects/${projectId}/flags` })).json();
+    expect(f.last_run ?? null).toBeNull();
+    expect(f.draft.label).toMatch(/^draft|reviewed$/);
+  });
+});

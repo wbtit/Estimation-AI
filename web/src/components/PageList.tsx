@@ -1,5 +1,5 @@
 import React from "react";
-import type { Sheet } from "../lib/types";
+import type { Sheet, SheetFlags } from "../lib/types";
 
 const TYPE_LABEL: Record<string, string> = {
   framing_plan: "framing plan",
@@ -23,7 +23,9 @@ export const PageList: React.FC<{
   sheets: Sheet[];
   selectedId: string | null;
   onSelect: (id: string) => void;
-}> = ({ sheets, selectedId, onSelect }) => (
+  /** Unconfirmed guesses per sheet; a sheet with none is confirmed. */
+  flags?: Map<string, SheetFlags>;
+}> = ({ sheets, selectedId, onSelect, flags }) => (
   <ul className="page-list" aria-label="pages">
     {sheets.map((s) => (
       <li key={s.id}>
@@ -60,9 +62,24 @@ export const PageList: React.FC<{
             )}
             {s.takeoff?.decision === "undecided" && (
               <span
-                className="dot amber"
-                title="not decided yet: not in the takeoff"
+                className={s.takeoff.included ? "dot green" : "dot unlinked"}
+                title={
+                  s.takeoff.included
+                    ? "in the takeoff by default (guess)"
+                    : "out of the takeoff by default (guess)"
+                }
               />
+            )}
+            {(flags?.get(s.id)?.flags.length ?? 0) > 0 && (
+              <span
+                className="flag-badge"
+                title={flags
+                  ?.get(s.id)
+                  ?.flags.map((f) => f.text)
+                  .join("; ")}
+              >
+                {flags?.get(s.id)?.flags.length}?
+              </span>
             )}
             {s.needs_review && (
               <span className="dot amber" title="needs review" />

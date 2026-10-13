@@ -125,6 +125,8 @@ export interface MemberView {
   catalog: CatalogView | null;
   /** Flags with a code, a severity and a text; every unconfirmed guess is one. */
   flags: MemberFlag[];
+  /** When the system or a person last changed this member (the stored row or the latest edit). */
+  changed_at: string;
 }
 
 export interface KindState {
@@ -398,6 +400,10 @@ export function memberView(
     text: tagEdit.number === null ? '' : `${tagEdit.prefix ?? '?'}${tagEdit.number}`,
     provisional: tagEdit.prefix !== null && (tagKind?.provisional ?? true),
   };
+  const iso = (d: Date | string) => new Date(d as string).toISOString();
+  const changedAt = [row.updated_at, ...edits.map((x) => x.created_at)]
+    .map(iso)
+    .reduce((a, b) => (a > b ? a : b));
   const lookup = type !== 'joist' && profile ? lookups.catalog?.find(profile) : undefined;
   const catalog: CatalogView | null = lookup
     ? lookup.found
@@ -529,5 +535,6 @@ export function memberView(
     counting: countingOf(kindInfo),
     catalog,
     flags,
+    changed_at: changedAt,
   };
 }

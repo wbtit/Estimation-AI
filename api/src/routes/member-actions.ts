@@ -433,6 +433,42 @@ export const memberActionRoutes: FastifyPluginAsync<MemberActionOptions> = async
     })),
   }));
 
+  /** What was changed on this member, by whom and when, with the value before (nothing is hidden). */
+  app.get<{ Params: { projectId: string; memberId: string } }>(
+    '/api/projects/:projectId/members/:memberId/history',
+    { schema: { params: memberParams } },
+    async (request) => {
+      await stateOf(request.params.projectId, request.params.memberId);
+      const rows = await db()
+        .selectFrom('member_edits')
+        .select([
+          'field_name',
+          'original_value',
+          'corrected_value',
+          'reviewer',
+          'created_at',
+          'action_id',
+          'undo_of_action_id',
+        ])
+        .where('member_id', '=', request.params.memberId)
+        .where('field_name', '!=', '__created__')
+        .orderBy('created_at', 'desc')
+        .orderBy('id', 'desc')
+        .execute();
+      return {
+        edits: rows.map((r) => ({
+          field: r.field_name,
+          before: r.original_value,
+          after: r.corrected_value,
+          who: r.reviewer,
+          at: new Date(r.created_at as unknown as string).toISOString(),
+          action_id: r.action_id,
+          is_undo: r.undo_of_action_id !== null,
+        })),
+      };
+    },
+  );
+
   /** How many other pieces share this piece's tag: shown before the "apply to all" click. */
   app.get<{ Params: { projectId: string; memberId: string } }>(
     '/api/projects/:projectId/members/:memberId/same-tag',
@@ -595,6 +631,7 @@ export const memberActionRoutes: FastifyPluginAsync<MemberActionOptions> = async
           'l.designation_raw',
           'l.profile',
           'l.remarks_raw',
+          'l.source',
           's.page_index',
         ])
         .where('l.project_id', '=', request.params.projectId);
@@ -608,6 +645,7 @@ export const memberActionRoutes: FastifyPluginAsync<MemberActionOptions> = async
           profile: r.profile,
           remarks_raw: r.remarks_raw,
           page_number: r.page_index + 1,
+          bbox: ((r.source ?? {}) as { bbox?: unknown }).bbox ?? null,
         })),
       };
     },

@@ -430,3 +430,132 @@ mark {
   border-radius: 6px;
   min-width: 320px;
 }
+
+/* Phase 6a: symbols, filters, explanation, pipeline bar */
+.symbol {
+  cursor: pointer;
+}
+.symbol-tag {
+  font-family: ui-monospace, monospace;
+  font-weight: 600;
+  fill: #111;
+}
+.chip {
+  border: 1px solid #bbb;
+  background: #fff;
+  border-radius: 12px;
+  padding: 1px 8px;
+  cursor: pointer;
+}
+.chip.on {
+  border-color: #1768c4;
+  background: #e8f1fc;
+}
+.filters {
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+}
+.apart {
+  border-top: 1px solid #ddd;
+  margin-top: 8px;
+  padding-top: 4px;
+}
+.explain {
+  border: 1px solid #ccd;
+  border-radius: 6px;
+  padding: 8px;
+  margin-top: 8px;
+  background: #fbfbfe;
+}
+.evidence td {
+  vertical-align: top;
+  padding: 2px 6px 2px 0;
+}
+.ev-label {
+  white-space: nowrap;
+  color: #445;
+  font-weight: 600;
+}
+.ev.grey td {
+  color: #777;
+}
+.jump {
+  font-size: 11px;
+  padding: 0 6px;
+  margin-left: 4px;
+  border: 1px solid #1768c4;
+  color: #1768c4;
+  background: #fff;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.flag-list {
+  list-style: none;
+  padding: 0;
+  margin: 6px 0;
+}
+.flag {
+  font-size: 12px;
+  padding: 1px 6px;
+  border-left: 4px solid #999;
+  margin: 2px 0;
+}
+.flag.amber {
+  border-color: #f0a30a;
+}
+.flag.grey {
+  border-color: #8d8d8d;
+}
+.flag.info {
+  border-color: #6b7a99;
+  color: #556;
+}
+.history ul {
+  margin: 2px 0;
+  padding-left: 16px;
+  font-size: 12px;
+}
+.kind-box {
+  border: 1px dashed #bbb;
+  padding: 4px;
+  margin: 6px 0;
+}
+.pipeline-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  padding: 4px 12px;
+  background: #f3f5f9;
+  border-bottom: 1px solid #d5d9e2;
+}
+.pipeline-running {
+  color: #1768c4;
+  font-weight: 600;
+}
+.draft {
+  font-weight: 700;
+  color: #a15c00;
+}
+.draft.ok {
+  color: #1f7a3a;
+}
+.flag-badge {
+  display: inline-block;
+  margin-left: 4px;
+  font-size: 10px;
+  background: #f0a30a;
+  color: #fff;
+  border-radius: 8px;
+  padding: 0 5px;
+}
+.jump-highlight {
+  animation: pulse 1.2s ease-in-out 3;
+}
+@keyframes pulse {
+  50% {
+    fill-opacity: 0.6;
+  }
+}

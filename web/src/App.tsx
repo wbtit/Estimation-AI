@@ -13,7 +13,9 @@ import { ColumnForm } from "./components/ColumnForm";
 import { LabelsPanel } from "./components/LabelsPanel";
 import { MemberActions, type LegendRow } from "./components/MemberActions";
 import { NameGate } from "./components/NameGate";
-import { MemberOverlay } from "./components/MemberOverlay";
+import { SymbolOverlay, type Highlight } from "./components/SymbolOverlay";
+import { ExplanationPanel } from "./components/ExplanationPanel";
+import { PipelineBar } from "./components/PipelineBar";
 import { MembersPanel } from "./components/MembersPanel";
 import { NotesPanel } from "./components/NotesPanel";
 import { SheetHeader } from "./components/SheetHeader";
@@ -28,12 +30,17 @@ import {
   type LabelCategory,
 } from "./lib/labels";
 import type {
+  FlagsResponse,
+  HistoryEdit,
+  KindInfo,
   NotesSheet,
   Project,
   Sheet,
+  SheetFlags,
   SheetView,
   TextItem,
 } from "./lib/types";
+import { applyFilters, NO_FILTERS, type Filters } from "./lib/symbols";
 import { nearestLine, nextToReview, type Seg } from "./lib/pick";
 import { useMembers } from "./lib/useMembers";
 import { usePdf } from "./lib/usePdf";
@@ -90,6 +97,13 @@ export const App: React.FC = () => {
   );
   const [notes, setNotes] = useState<NotesSheet[]>([]);
   const { pdf, error: pdfError } = usePdf(projectId);
+  const [kinds, setKinds] = useState<KindInfo[]>([]);
+  const [flags, setFlags] = useState<FlagsResponse | null>(null);
+  const [filters, setFilters] = useState<Filters>(NO_FILTERS);
+  const [highlight, setHighlight] = useState<Highlight | null>(null);
+  const [history, setHistory] = useState<HistoryEdit[]>([]);
+  const [sameTag, setSameTag] = useState(0);
+  const centerRef = useRef<HTMLElement>(null);
 
   const sheet = useMemo(
     () => sheets.find((s) => s.id === sheetId) ?? null,
@@ -104,6 +118,12 @@ export const App: React.FC = () => {
   useEffect(() => {
     api<{ projects: Project[] }>("/api/projects")
       .then((r) => setProjects(r.projects))
+      .catch(fail);
+  }, [fail]);
+
+  useEffect(() => {
+    api<{ kinds: KindInfo[] }>("/api/member-kinds")
+      .then((r) => setKinds(r.kinds))
       .catch(fail);
   }, [fail]);
 
@@ -239,7 +259,156 @@ export const App: React.FC = () => {
     addOnLine,
     act,
     undo,
+    reload: reloadMembers,
   } = useMembers(projectId, sheetId, who, fail, loadViews);
+
+  // The pipeline runs by itself after the upload (flags, not gates): poll until it is finished,
+  // then reload what it wrote.
+  const loadFlags = useCallback(async () => {
+    if (!projectId) return setFlags(null);
+    setFlags(await api<FlagsResponse>(`/api/projects/${projectId}/flags`));
+  }, [projectId]);
+  const project = projects.find((p) => p.id === projectId) ?? null;
+  const scanning =
+    !!project?.document && project.document.scan_status !== "done";
+  const running =
+    scanning ||
+    flags?.last_run?.status === "pending" ||
+    flags?.last_run?.status === "processing";
+  useEffect(() => {
+    loadFlags().catch(fail);
+  }, [loadFlags, fail, sheets]);
+  const wasRunning = useRef(false);
+  useEffect(() => {
+    if (!projectId || !running) {
+      if (wasRunning.current) {
+        wasRunning.current = false;
+        void Promise.all([reloadSheets(), loadViews(), reloadMembers()]).catch(
+          fail,
+        );
+      }
+      return;
+    }
+    wasRunning.current = true;
+    const t = window.setInterval(() => {
+      api<{ projects: Project[] }>("/api/projects")
+        .then((r) => setProjects(r.projects))
+        .catch(fail);
+      loadFlags().catch(fail);
+    }, 3000);
+    return () => window.clearInterval(t);
+  }, [
+    projectId,
+    running,
+    loadFlags,
+    reloadSheets,
+    loadViews,
+    reloadMembers,
+    fail,
+  ]);
+
+  const refreshAfterConfirm = async () => {
+    await Promise.all([
+      loadFlags(),
+      reloadSheets(),
+      loadViews(),
+      reloadMembers(),
+    ]);
+  };
+  const confirmGuesses = async () => {
+    const w = requireWho();
+    if (!w || !projectId || !sheetId) return;
+    try {
+      await send(
+        "POST",
+        `/api/projects/${projectId}/sheets/${sheetId}/confirm-guesses`,
+        { who: w },
+      );
+      await refreshAfterConfirm();
+      setMessage(null);
+    } catch (err) {
+      fail(err);
+    }
+  };
+  const confirmExcluded = async () => {
+    const w = requireWho();
+    if (!w || !projectId) return;
+    try {
+      await send(
+        "POST",
+        `/api/projects/${projectId}/confirm-excluded-defaults`,
+        { who: w },
+      );
+      await refreshAfterConfirm();
+      setMessage(null);
+    } catch (err) {
+      fail(err);
+    }
+  };
+  const rerun = async () => {
+    if (!projectId) return;
+    try {
+      await send("POST", `/api/projects/${projectId}/auto-run`);
+      await loadFlags();
+    } catch (err) {
+      fail(err);
+    }
+  };
+  const flagsBySheet = useMemo(
+    () =>
+      new Map<string, SheetFlags>(
+        (flags?.sheets ?? []).map((f) => [f.sheet_id, f]),
+      ),
+    [flags],
+  );
+
+  // what the explanation panel shows besides the member itself
+  useEffect(() => {
+    setHighlight(null);
+    setHistory([]);
+    setSameTag(0);
+    if (!projectId || !memberId) return;
+    api<{ edits: HistoryEdit[] }>(
+      `/api/projects/${projectId}/members/${memberId}/history`,
+    )
+      .then((r) => setHistory(r.edits))
+      .catch(() => setHistory([]));
+    api<{ count: number }>(
+      `/api/projects/${projectId}/members/${memberId}/same-tag`,
+    )
+      .then((r) => setSameTag(r.count))
+      .catch(() => setSameTag(0));
+  }, [projectId, memberId, members]);
+
+  const jump = (h: Highlight | null) => {
+    setHighlight(h);
+    const el = centerRef.current;
+    if (!h || !el) return;
+    const b =
+      h.box ??
+      (h.line
+        ? {
+            x0: Math.min(h.line[0], h.line[2]),
+            y0: Math.min(h.line[1], h.line[3]),
+            x1: Math.max(h.line[0], h.line[2]),
+            y1: Math.max(h.line[1], h.line[3]),
+          }
+        : null);
+    if (!b) return;
+    el.scrollTo?.({
+      left: ((b.x0 + b.x1) / 2) * zoom - el.clientWidth / 2,
+      top: ((b.y0 + b.y1) / 2) * zoom - el.clientHeight / 2,
+      behavior: "smooth",
+    });
+  };
+  const gotoPage = (pageNumber: number) => {
+    const target = sheets.find((x) => x.page_number === pageNumber);
+    if (target) setSheetId(target.id);
+  };
+  const shownMembers = useMemo(
+    () => applyFilters(members, filters, flags?.last_run?.started_at ?? null),
+    [members, filters, flags],
+  );
 
   useEffect(() => {
     const id = jumpTo.current;
@@ -587,6 +756,12 @@ export const App: React.FC = () => {
           </span>
         )}
       </header>
+      <PipelineBar
+        flags={flags}
+        running={running}
+        onRerun={() => void rerun()}
+        onConfirmExcluded={() => void confirmExcluded()}
+      />
       {sheet && (
         <SheetHeader
           sheet={sheet}
@@ -594,7 +769,8 @@ export const App: React.FC = () => {
           onLevel={(v) => void override("level", v)}
           onTakeoff={(v) => void override("takeoff", v)}
           onTakeoffUndo={() => void undoTakeoff()}
-          waitingViews={views.filter((v) => !v.classes_confirmed).length}
+          flags={flagsBySheet.get(sheet.id) ?? null}
+          onConfirmGuesses={() => void confirmGuesses()}
           unlinkedCount={
             members.filter((m) => !m.deleted && m.status.color === "unlinked")
               .length
@@ -607,9 +783,10 @@ export const App: React.FC = () => {
             sheets={sheets}
             selectedId={sheetId}
             onSelect={setSheetId}
+            flags={flagsBySheet}
           />
         </nav>
-        <main className="center">
+        <main className="center" ref={centerRef}>
           {pdfError && <div className="error">{pdfError}</div>}
           {pdf && sheet && widthPt > 0 ? (
             <PageView
@@ -667,9 +844,11 @@ export const App: React.FC = () => {
                     <title>{l.title}</title>
                   </rect>
                 ))}
-              <MemberOverlay
-                members={members}
+              <SymbolOverlay
+                members={shownMembers}
                 selectedId={memberId}
+                zoom={zoom}
+                highlight={highlight}
                 onSelect={(id) => {
                   if (pickedClick.current) return;
                   setMemberId(id);
@@ -856,6 +1035,7 @@ export const App: React.FC = () => {
               </div>
               <MembersPanel
                 members={members}
+                kinds={kinds}
                 selectedId={memberId}
                 onSelect={setMemberId}
                 addingColumn={addingColumn}
@@ -863,29 +1043,56 @@ export const App: React.FC = () => {
                   setDrawing(false);
                   setAddingColumn((a) => !a);
                 }}
-                extra={(m) => (
-                  <MemberActions
+                filters={filters}
+                onFilters={setFilters}
+                lastRunStart={flags?.last_run?.started_at ?? null}
+                detail={(m) => (
+                  <ExplanationPanel
                     member={m}
+                    sheet={sheet}
+                    view={views.find((v) => v.id === m.view_id) ?? null}
                     legend={legend}
-                    relinking={linkMode?.memberId === m.id}
-                    onConfirm={() => void act(m.id, "/confirm", "POST")}
-                    onDelete={() => void act(m.id, "/delete", "POST")}
-                    onPick={(rank) => void act(m.id, "/link", "POST", { rank })}
-                    onRelink={() => void startRelink()}
-                    onPatch={(patch) => void act(m.id, "", "PATCH", patch)}
-                    onExisting={(value) =>
-                      void act(m.id, "/existing", "POST", { value })
-                    }
-                    onNotMember={(reason) =>
-                      void act(m.id, "/not-member", "POST", { reason })
-                    }
-                    onSharedLine={(resolution) =>
-                      void act(m.id, "/shared-line", "POST", { resolution })
-                    }
-                    onLegend={(rowId) =>
-                      void act(m.id, "/mark-ref", "POST", {
-                        legend_row_id: rowId,
-                      })
+                    history={history}
+                    onJump={jump}
+                    onGotoPage={gotoPage}
+                    actions={
+                      <MemberActions
+                        member={m}
+                        legend={legend}
+                        kinds={kinds}
+                        sameTagCount={sameTag}
+                        relinking={linkMode?.memberId === m.id}
+                        onConfirm={() => void act(m.id, "/confirm", "POST")}
+                        onDelete={() => void act(m.id, "/delete", "POST")}
+                        onPick={(rank) =>
+                          void act(m.id, "/link", "POST", { rank })
+                        }
+                        onRelink={() => void startRelink()}
+                        onPatch={(patch) => void act(m.id, "", "PATCH", patch)}
+                        onKind={(kind, allSameTag) =>
+                          void act(m.id, "/kind", "POST", {
+                            kind,
+                            all_same_tag: allSameTag,
+                          })
+                        }
+                        onConfirmKind={() =>
+                          void act(m.id, "/kind", "POST", { confirm: true })
+                        }
+                        onExisting={(value) =>
+                          void act(m.id, "/existing", "POST", { value })
+                        }
+                        onNotMember={(reason) =>
+                          void act(m.id, "/not-member", "POST", { reason })
+                        }
+                        onSharedLine={(resolution) =>
+                          void act(m.id, "/shared-line", "POST", { resolution })
+                        }
+                        onLegend={(rowId) =>
+                          void act(m.id, "/mark-ref", "POST", {
+                            legend_row_id: rowId,
+                          })
+                        }
+                      />
                     }
                   />
                 )}

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import type { Sheet } from "../lib/types";
+import type { Sheet, SheetFlags } from "../lib/types";
 
 export const PAGE_TYPE_OPTIONS: [string, string][] = [
   ["framing_plan", "framing plan"],
@@ -16,8 +16,9 @@ export const SheetHeader: React.FC<{
   onPageType: (value: string | null) => void;
   onLevel: (value: string | null) => void;
   unlinkedCount?: number;
-  /** Views of this sheet whose line classes nobody confirmed yet (no members can be found there). */
-  waitingViews?: number;
+  /** The unconfirmed guesses of this sheet (flags); one click confirms them all. */
+  flags?: SheetFlags | null;
+  onConfirmGuesses?: () => void;
   onTakeoff?: (value: "include" | "exclude" | null) => void;
   onTakeoffUndo?: () => void;
 }> = ({
@@ -25,7 +26,8 @@ export const SheetHeader: React.FC<{
   onPageType,
   onLevel,
   unlinkedCount = 0,
-  waitingViews = 0,
+  flags = null,
+  onConfirmGuesses,
   onTakeoff,
   onTakeoffUndo,
 }) => {
@@ -92,13 +94,19 @@ export const SheetHeader: React.FC<{
           onUndo={onTakeoffUndo}
         />
       )}
-      {waitingViews > 0 && (
-        <span
-          className="warn"
-          title="Open the views tab, show the line classes and confirm one"
-        >
-          {waitingViews} view{waitingViews === 1 ? "" : "s"} waiting for line
-          classes
+      {flags && flags.flags.length > 0 && (
+        <span className="decision warn" data-testid="sheet-flags">
+          <b>Guesses:</b> {flags.flags.map((f) => f.text).join("; ")}{" "}
+          {onConfirmGuesses && (
+            <button className="primary" onClick={onConfirmGuesses}>
+              These guesses are right
+            </button>
+          )}
+        </span>
+      )}
+      {flags && flags.flags.length === 0 && flags.confirmed_by && (
+        <span className="hint" data-testid="sheet-confirmed">
+          guesses confirmed by {flags.confirmed_by}
         </span>
       )}
       {unlinkedCount > 0 && (
@@ -138,8 +146,9 @@ const TakeoffDecision: React.FC<{
       </label>{" "}
       {undecided && (
         <small className="hint">
-          not decided: this sheet is not in the totals. Preselected:{" "}
-          {takeoff.suggestion} (a guess from the page type)
+          no person decided: this sheet is{" "}
+          {takeoff.included ? "in the totals" : "out of the totals"} by default
+          ({takeoff.suggestion} is a guess from the page type)
         </small>
       )}
       {(undecided || choice !== takeoff.decision) && (

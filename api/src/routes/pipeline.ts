@@ -99,7 +99,29 @@ export const pipelineRoutes: FastifyPluginAsync<PipelineRouteOptions> = async (a
     { schema: { params: projectParams } },
     async (request) => {
       const sheets = await loadSheetFlags(db(), request.params.projectId);
-      return { draft: draftStatus(sheets), sheets };
+      const run = await db()
+        .selectFrom('jobs')
+        .select(['status', 'result', 'error', 'created_at', 'locked_at', 'updated_at'])
+        .where('type', '=', 'auto_run')
+        .where(sql<boolean>`payload->>'project_id' = ${request.params.projectId}`)
+        .orderBy('created_at', 'desc')
+        .limit(1)
+        .executeTakeFirst();
+      return {
+        draft: draftStatus(sheets),
+        sheets,
+        last_run: run && {
+          status: run.status,
+          result: run.result,
+          error: run.error,
+          started_at: new Date(
+            (run.locked_at ?? run.created_at) as unknown as string,
+          ).toISOString(),
+          finished_at: ['completed', 'failed'].includes(run.status)
+            ? new Date(run.updated_at as unknown as string).toISOString()
+            : null,
+        },
+      };
     },
   );
 
