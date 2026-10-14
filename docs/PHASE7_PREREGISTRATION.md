@@ -90,3 +90,10 @@ Parse (stroke and fill, dash, width, closed shapes, curves, a Form XObject with 
 - Sixteen jobs; the held-out side is six jobs and 1,659 symbols, one of them large. A held-out result is one draw, not a general claim.
 - Raster pages and pictures inside vector pages are flagged only. The stroke-text reader, any trained detector and UI work are out of scope.
 - The v1 grammar does not model double-line (flange-drawn) beams, curved members, sloped or stacked glyph libraries, or text-based grid bubbles drawn as strokes (no text layer). These are expected losses and are listed in the results, not fixed after the held-out run.
+
+## 6. Errata (found with synthetic test PDFs, BEFORE any Part C run on real drawings)
+1. **Hatch (rule 2).** The rule as written flags only segments with at least 4 neighbours, so the two outer lines of a stack of 8 parallel lines at 3 pt spacing (each with only 2 neighbours within 6 pt) were not hatch. One propagation pass is added: a segment that satisfies the same geometric neighbour test (angle, length, offset, overlap) against at least one core hatch segment is hatch too. Core rule unchanged.
+2. **Tick terminators (rule 5).** Ticks of at most 8 pt are shorter than 12 pt and therefore always have the role `hatch`; the tick search accepts any segment inside the view box (not only roles above hatch). The tick angle (30 to 60 degrees to the dimension line), the end tolerance and the numeric text requirement are unchanged.
+3. **Chain end order.** The order of the two ends of a chain (and of a span) along its axis is arbitrary (set by the angle cut of 22.5 degrees); nothing downstream depends on it.
+These are code-versus-text corrections made on synthetic data; they are not dev revisions and do not count against the limit of 5.
+
