@@ -21,3 +21,7 @@ Tool: `worker/tools/copy_project.py` (logic in `worker/src/review/copy_project.p
 
 ## Step 4: count mode on for pilot-01 only
 Switched through the app's own route (`PUT /api/projects/<pilot-01>/count`, who "pilot preparation"), so it is logged like any switch: pilot-01's action log now holds this one `mode` row (project-level; the report tab lists sheets only). Before: 0 projects in count mode; after: 1, and it is pilot-01 (tag numbering: per job). job-018 and every other project stay off.
+
+## Step 5: estimator prefix meanings
+`fixtures/private/review/prefix_meanings.csv` does not exist, so nothing was loaded; every project's mapping stays empty and new pieces use the kind list's own prefix.
+Note for when the file comes: today's mapping is per project only, and a file that gives one prefix for two kinds is refused as a whole. Decision 132 asks for a company-wide default with a per-project override, and for such a prefix to stay unmapped and be flagged. That needs a small additive migration (016, a company-level table) and changes to the loader; it is not built yet (question 135).
