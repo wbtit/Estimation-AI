@@ -62,10 +62,10 @@ function rowValues(r: TableRow): (string | number | null)[] {
     r.shape ?? '',
     r.size ?? '',
     r.name,
-    null, // Length ft: lengths are added in Stage 2
-    null, // Length In
+    r.length_ft, // from a two-click measurement only (else empty: lengths are Stage 2)
+    r.length_in,
     r.unit_w,
-    null, // Total W
+    r.total_w,
     r.grade ?? '',
   ];
 }
@@ -137,6 +137,7 @@ export async function buildTablesWorkbook(input: TablesExportInput): Promise<Buf
   addApart(job, 'Existing, not counted', input.job.existing);
   addApart(job, 'Not counted (excluded kinds)', input.job.not_counted);
   addApart(job, 'Not computed (misc)', input.job.misc);
+  addApart(job, 'Suggested, not yet confirmed (count mode, not in the total)', input.job.suggested);
   if (input.job.unlinked > 0) job.addRow(['Unlinked labels (in no total)', '', input.job.unlinked]);
   if (input.job.sheets_excluded.length > 0)
     job.addRow([
@@ -164,6 +165,7 @@ export async function buildTablesWorkbook(input: TablesExportInput): Promise<Buf
     addApart(ws, 'Existing, not counted', p.existing);
     addApart(ws, 'Not counted (excluded kinds)', p.not_counted);
     addApart(ws, 'Not computed (misc)', p.misc);
+    addApart(ws, 'Suggested, not yet confirmed (count mode, not in the total)', p.suggested);
     if (p.unlinked > 0) ws.addRow(['Unlinked labels (in no total)', '', p.unlinked]);
   }
 

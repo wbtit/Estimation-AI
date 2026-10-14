@@ -94,7 +94,7 @@ export const takeoffRoutes: FastifyPluginAsync<TakeoffRouteOptions> = async (app
   async function compute(projectId: string) {
     const project = await db()
       .selectFrom('projects')
-      .select(['id', 'name', 'number'])
+      .select(['id', 'name', 'number', 'count_mode'])
       .where('id', '=', projectId)
       .executeTakeFirst();
     if (!project) throw new HttpError(404, { error: 'project not found' });
@@ -118,6 +118,7 @@ export const takeoffRoutes: FastifyPluginAsync<TakeoffRouteOptions> = async (app
           members,
           pageOf,
           new Map([...grades].map(([f, r]) => [f, r.grade] as const)),
+          project.count_mode,
         ),
         grades: [...grades.values()],
         draft: draftStatus(await loadSheetFlags(db(), projectId, inclusions)),

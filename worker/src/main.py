@@ -19,6 +19,8 @@ from src.review.classes_job import JOB_TYPE as CLASSES_VIEW
 from src.review.classes_job import run_classes_view
 from src.review.link_job import JOB_TYPE as LINK_VIEW
 from src.review.link_job import run_link_view
+from src.review.sheet_lines_job import JOB_TYPE as SHEET_LINES
+from src.review.sheet_lines_job import run_sheet_lines
 from src.text_reader.job import JOB_TYPE as READ_TEXT
 from src.text_reader.job import run_read_text
 
@@ -32,6 +34,7 @@ HANDLERS: dict[str, Handler] = {
     LINK_VIEW: run_link_view,
     CLASSES_VIEW: run_classes_view,
     AUTO_RUN: run_auto_run,
+    SHEET_LINES: run_sheet_lines,
 }
 
 

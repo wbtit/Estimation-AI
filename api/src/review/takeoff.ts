@@ -104,6 +104,14 @@ export interface ReviewSummary {
     not_member: number;
     deleted: number;
   };
+  /** Phase 8: how many live pieces are suggested, confirmed or rejected, and how confirmed ones came to be. */
+  count: {
+    suggested: number;
+    confirmed: number;
+    rejected: number;
+    human_click: number;
+    suggestion_accepted: number;
+  };
   /** Pieces and length in the MAIN totals (steel and joists) whose member nobody has reviewed. */
   main_total_unreviewed: {
     pieces: number;
@@ -132,6 +140,10 @@ export interface NotMemberReasons {
 }
 
 export interface Takeoff extends TakeoffSection {
+  /** Phase 8: true when only CONFIRMED pieces (a click or an accepted suggestion) are in the totals. */
+  count_mode: boolean;
+  /** Count mode: pieces the system found that nobody decided yet. Never in a total. */
+  suggested: TakeoffSection;
   /** Existing steel (a member state, not a reason): by sheet, outside every total above. */
   existing: ExistingBlock;
   not_member_reasons: NotMemberReasons;
@@ -186,8 +198,13 @@ export function buildTakeoff(
   members: MemberView[],
   pageOf: Map<string, number>,
   grades: Map<string, string> = new Map(),
+  countMode = false,
 ): Takeoff {
-  const live = members.filter((m) => !m.deleted && m.merged_into === null && m.not_member === null);
+  // a rejected suggestion is kept (and logged) but is never counted, in any mode
+  const live = members.filter(
+    (m) =>
+      !m.deleted && m.merged_into === null && m.not_member === null && m.count.state !== 'rejected',
+  );
   // existing steel is listed in its own block and is not counted anywhere else
   const existing = live.filter((m) => m.existing);
   const counted = live.filter((m) => !m.existing);
@@ -197,9 +214,13 @@ export function buildTakeoff(
     const sid = m.sheet_id ?? '';
     unlinked.set(sid, (unlinked.get(sid) ?? 0) + 1);
   }
-  const linked = counted.filter((m) => m.status.color !== 'unlinked');
+  const linkedAll = counted.filter((m) => m.status.color !== 'unlinked');
+  const linked = countMode ? linkedAll.filter((m) => m.count.state === 'confirmed') : linkedAll;
+  const undecided = countMode ? linkedAll.filter((m) => m.count.state !== 'confirmed') : [];
   return {
-    review: reviewSummary(members),
+    count_mode: countMode,
+    suggested: section(undecided, pageOf, grades),
+    review: reviewSummary(members, countMode),
     existing: existingBlock(existing, pageOf, grades),
     not_member_reasons: notMemberReasons(members),
     ...section(
@@ -274,7 +295,7 @@ function notMemberReasons(members: MemberView[]): NotMemberReasons {
   return out;
 }
 
-function reviewSummary(members: MemberView[]): ReviewSummary {
+function reviewSummary(members: MemberView[], countMode = false): ReviewSummary {
   const system = { green: 0, amber: 0, red: 0, unlinked: 0, added_by_person: 0 };
   const human = { unreviewed: 0, confirmed: 0, edited: 0, existing: 0, not_member: 0, deleted: 0 };
   for (const m of members) {
@@ -289,9 +310,17 @@ function reviewSummary(members: MemberView[]): ReviewSummary {
       m.merged_into === null &&
       m.not_member === null &&
       !m.existing &&
+      m.count.state !== 'rejected' &&
+      (!countMode || m.count.state === 'confirmed') &&
       m.status.color !== 'unlinked' &&
       kindOf(m) === 'main',
   );
+  const count = { suggested: 0, confirmed: 0, rejected: 0, human_click: 0, suggestion_accepted: 0 };
+  for (const m of members) {
+    if (m.deleted) continue;
+    count[m.count.state] += 1;
+    if (m.count.source) count[m.count.source] += 1;
+  }
   const sum = (list: MemberView[], f: (m: MemberView) => number) =>
     list.reduce((n, m) => n + f(m), 0);
   const length = (m: MemberView) => (m.length_shared ? 0 : (m.length_mm ?? 0)) * m.quantity;
@@ -300,6 +329,7 @@ function reviewSummary(members: MemberView[]): ReviewSummary {
   return {
     system,
     human,
+    count,
     main_total_unreviewed: {
       pieces: sum(open, pieceQuantity),
       of_pieces: sum(inMain, pieceQuantity),

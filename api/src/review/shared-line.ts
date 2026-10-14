@@ -55,9 +55,11 @@ export function lineKey(sheetId: string | null, line: Line): string {
 }
 
 /** Lower is better: a person's own link first, then the rule's confidence class, then its score. */
-function rank(m: MemberView, order: number): [number, number, number, number] {
+function rank(m: MemberView, order: number): [number, number, number, number, number] {
   const chosen = m.link.candidates.find((c) => c.rank === m.link.chosen_rank);
   return [
+    // a piece a person confirmed carries the line before any undecided suggestion does
+    m.count.state === 'confirmed' ? 0 : 1,
     m.link.source === 'person' ? 0 : 1,
     m.link.confidence ? CONF_RANK[m.link.confidence] : 3,
     chosen ? chosen.score : 0,
@@ -70,8 +72,19 @@ function before(a: number[], b: number[]): number {
   return 0;
 }
 
+/** A length a person typed or measured by two clicks (trusted, not the whole shared line). */
+export const isTypedLength = (source: string | null): boolean =>
+  source === 'manual' || source === 'measured_manual';
+
+// A piece a person clicked (Phase 8) is a person's own count: it is never grouped with the labels of
+// a line, so a click on a line that already has a suggestion adds its own piece.
 const counts = (m: MemberView): boolean =>
-  !m.deleted && m.merged_into === null && m.not_member === null && m.link.line !== null;
+  !m.deleted &&
+  m.merged_into === null &&
+  m.not_member === null &&
+  m.link.line !== null &&
+  m.count.source !== 'human_click' &&
+  m.count.state !== 'rejected';
 
 /** Fills `shared_line` on every member and downgrades unresolved members to amber. In place. */
 export function annotateSharedLines(members: MemberView[]): MemberView[] {
@@ -108,7 +121,10 @@ export function annotateSharedLines(members: MemberView[]): MemberView[] {
         size: list.length,
         best: i === 0,
         line_piece:
-          m === carrier || m.shared_resolution === 'separate' || m.length_source === 'manual',
+          m === carrier ||
+          m.shared_resolution === 'separate' ||
+          isTypedLength(m.length_source) ||
+          m.count.state === 'confirmed',
         resolution: m.shared_resolution,
         resolved,
         duplicate_of: twin ? twin.m.id : null,
@@ -118,7 +134,7 @@ export function annotateSharedLines(members: MemberView[]): MemberView[] {
   }
   for (const m of members) {
     // the whole line is not this member's length, unless a person typed the length
-    m.length_shared = m.shared_line !== null && m.length_source !== 'manual';
+    m.length_shared = m.shared_line !== null && !isTypedLength(m.length_source);
   }
   return members;
 }

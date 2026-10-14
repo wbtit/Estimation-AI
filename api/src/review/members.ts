@@ -1,7 +1,14 @@
 // Effective members for the review screen: the stored (extracted) row with the latest human edit of
 // each field applied. The stored row is never changed by a person; edits are member_edits rows.
 import type { Selectable } from 'kysely';
-import type { MembersTable, ReviewStatus, ViewBox } from '../db/types.js';
+import type {
+  CountSource,
+  CountState,
+  MembersTable,
+  ReviewStatus,
+  SizeSource,
+  ViewBox,
+} from '../db/types.js';
 import { mmToFeetInches } from '../units/index.js';
 import { MM_PER_PT } from './geometry.js';
 import { parseJoist } from './joist.js';
@@ -52,6 +59,28 @@ export interface ViewContext {
 }
 
 /** What a person has done with a member. */
+/**
+ * Phase 8: the count state of a piece and the evidence of a click. `suggested` = the system found it
+ * and nobody decided; `confirmed` = a person clicked it or accepted the suggestion; `rejected` = a
+ * person turned the suggestion down (kept, out of every total).
+ */
+export interface CountView {
+  state: CountState;
+  source: CountSource | null;
+  click: { x: number; y: number; at: string } | null;
+  snapped: boolean | null;
+  snapped_line: {
+    id: number;
+    p: [number, number];
+    q: [number, number];
+    class: string | null;
+    version: string | null;
+  } | null;
+  snapped_distance_pt: number | null;
+  size_source: SizeSource | null;
+  size_evidence: { member_id: string; distance_pt: number } | null;
+}
+
 export type HumanState =
   'unreviewed' | 'confirmed' | 'edited' | 'existing' | 'not_member' | 'deleted';
 
@@ -82,6 +111,8 @@ export interface MemberView {
   length_mm: number | null;
   length_ft_in: string | null;
   length_source: string | null;
+  /** The two-click measurement this length came from (Phase 8 Part C), or null. */
+  length_measurement: string | null;
   base_elevation_mm: number | null;
   top_elevation_mm: number | null;
   status: Status;
@@ -129,6 +160,8 @@ export interface MemberView {
   changed_at: string;
   /** The Name a person typed for the table row (an edit), or null for the system wording. */
   name: string | null;
+  /** Phase 8: count state, click evidence, how the size was filled. */
+  count: CountView;
 }
 
 export interface KindState {
@@ -286,7 +319,8 @@ export function memberView(
   const typedLength =
     type === 'column' ? null : ((e.get('length_mm') as number | null | undefined) ?? null);
   let lengthMm: number | null = null;
-  let lengthSource = row.length_source;
+  let lengthSource: string | null = row.length_source;
+  const measurementId = (e.get('length_measurement') as string | null | undefined) ?? null;
   if (type === 'column') {
     if (baseElev !== null && topElev !== null) {
       lengthMm = Math.abs(topElev - baseElev);
@@ -294,7 +328,8 @@ export function memberView(
     }
   } else if (typedLength !== null) {
     lengthMm = typedLength;
-    lengthSource = 'manual';
+    // a length that came from a two-click measurement keeps that evidence (Phase 8 Part C)
+    lengthSource = measurementId ? 'measured_manual' : 'manual';
   } else if (line && ratio) {
     lengthMm = lineLengthMm(line, ratio);
     lengthSource = 'plan_geometry';
@@ -315,7 +350,7 @@ export function memberView(
     linkEdit !== undefined ||
     typedLength !== null;
   const profileOnLabel = row.mark === null && row.origin !== 'manual';
-  const status = statusOf({
+  const baseStatus = statusOf({
     memberType: type,
     linkConfidence: row.link_confidence,
     hasLine: line !== null,
@@ -327,6 +362,18 @@ export function memberView(
     profileOnLabel: profileOnLabel || (row.origin === 'manual' && row.mark === null),
     markStatus: markRef.status,
   });
+
+  // a clicked piece with no size is amber: the size must be typed (or taken from a label)
+  const countSource = pick<CountSource | null>('count_source', row.count_source);
+  const clickedNoSize =
+    row.count_source === 'human_click' && type !== 'joist' && !profile && !rawProfile;
+  const status: Status = clickedNoSize
+    ? {
+        color: baseStatus.color === 'red' ? 'red' : 'amber',
+        confirmed: false,
+        reasons: [...baseStatus.reasons, 'size missing: type the size'],
+      }
+    : baseStatus;
 
   // the system's own result: the stored row alone, no edits
   const storedKindInfo = row.kind ? lookups.kinds?.get(row.kind) : undefined;
@@ -492,6 +539,7 @@ export function memberView(
     length_mm: lengthMm,
     length_ft_in: lengthMm === null ? null : mmToFeetInches(lengthMm),
     length_source: lengthMm === null ? null : lengthSource,
+    length_measurement: lengthMm !== null && typedLength !== null ? measurementId : null,
     base_elevation_mm: baseElev,
     top_elevation_mm: topElev,
     status,
@@ -543,5 +591,18 @@ export function memberView(
     flags,
     changed_at: changedAt,
     name: pick<string | null>('name', null),
+    count: {
+      state: pick<CountState>('count_state', row.count_state),
+      source: countSource,
+      click:
+        row.click_x !== null && row.click_y !== null && row.click_at !== null
+          ? { x: Number(row.click_x), y: Number(row.click_y), at: iso(row.click_at) }
+          : null,
+      snapped: row.snapped,
+      snapped_line: (row.snapped_line ?? null) as CountView['snapped_line'],
+      snapped_distance_pt: num(row.snapped_distance_pt),
+      size_source: pick<SizeSource | null>('size_source', row.size_source),
+      size_evidence: (row.size_evidence ?? null) as CountView['size_evidence'],
+    },
   };
 }

@@ -1,0 +1,181 @@
+{
+  "_doc": "Synthetic snap cases shared by the API (api/src/review/snap.ts) and the web (web/src/lib/snap.ts). Lines are [x0, y0, x1, y1, class_index, width] in page points. nearest: the extracted line nearest to the click within the radius (any class). point: the nearest line endpoint or intersection within the radius (the measure tool).",
+  "lines": [
+    [
+      100,
+      100,
+      300,
+      100,
+      0,
+      1.0
+    ],
+    [
+      100,
+      100,
+      100,
+      300,
+      1,
+      0.5
+    ],
+    [
+      200,
+      50,
+      200,
+      250,
+      2,
+      0.25
+    ],
+    [
+      150,
+      160,
+      350,
+      160,
+      0,
+      1.0
+    ],
+    [
+      400,
+      400,
+      410,
+      400,
+      0,
+      0.5
+    ]
+  ],
+  "nearest": [
+    {
+      "name": "on the first line",
+      "click": [
+        150,
+        102
+      ],
+      "radius": 24,
+      "expect": {
+        "index": 0
+      }
+    },
+    {
+      "name": "nothing within the radius",
+      "click": [
+        600,
+        600
+      ],
+      "radius": 24,
+      "expect": null
+    },
+    {
+      "name": "a thinner line that is nearer wins (any class)",
+      "click": [
+        198,
+        140
+      ],
+      "radius": 24,
+      "expect": {
+        "index": 2
+      }
+    },
+    {
+      "name": "inside the radius",
+      "click": [
+        150,
+        142
+      ],
+      "radius": 20,
+      "expect": {
+        "index": 3
+      }
+    },
+    {
+      "name": "just outside the radius",
+      "click": [
+        150,
+        138
+      ],
+      "radius": 20,
+      "expect": null
+    },
+    {
+      "name": "a tie goes to the longer line, then the lower index",
+      "click": [
+        100,
+        100
+      ],
+      "radius": 5,
+      "expect": {
+        "index": 0
+      }
+    }
+  ],
+  "point": [
+    {
+      "name": "an endpoint within the radius",
+      "click": [
+        296,
+        105
+      ],
+      "radius": 12,
+      "expect": {
+        "kind": "endpoint",
+        "x": 300,
+        "y": 100
+      }
+    },
+    {
+      "name": "an intersection within the radius",
+      "click": [
+        204,
+        104
+      ],
+      "radius": 12,
+      "expect": {
+        "kind": "intersection",
+        "x": 200,
+        "y": 100
+      }
+    },
+    {
+      "name": "a shared endpoint",
+      "click": [
+        103,
+        98
+      ],
+      "radius": 12,
+      "expect": {
+        "kind": "endpoint",
+        "x": 100,
+        "y": 100
+      }
+    },
+    {
+      "name": "nothing within the radius",
+      "click": [
+        250,
+        250
+      ],
+      "radius": 12,
+      "expect": null
+    },
+    {
+      "name": "the nearer of an endpoint and an intersection",
+      "click": [
+        196,
+        163
+      ],
+      "radius": 12,
+      "expect": {
+        "kind": "intersection",
+        "x": 200,
+        "y": 160
+      }
+    },
+    {
+      "name": "a smaller radius finds nothing",
+      "click": [
+        296,
+        110
+      ],
+      "radius": 5,
+      "expect": null
+    }
+  ]
+}

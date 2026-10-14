@@ -49,6 +49,17 @@ function member(id: string, over: Partial<MemberView> = {}): MemberView {
     human: 'unreviewed',
     joist_series: null,
     shared_line: null,
+    length_measurement: null,
+    count: {
+      state: 'suggested',
+      source: null,
+      click: null,
+      snapped: null,
+      snapped_line: null,
+      snapped_distance_pt: null,
+      size_source: null,
+      size_evidence: null,
+    },
     length_shared: false,
     shared_resolution: null,
     merged_into: null,
@@ -271,6 +282,37 @@ describe('shared line grouping', () => {
       const t = buildTakeoff([old, fresh], new Map([['s1', 3]]));
       expect(t.totals.pieces).toBe(1);
       expect(t.existing.totals.pieces).toBe(1); // existing steel is listed with its labels
+    });
+
+    it('a piece a person confirmed carries the line before an undecided suggestion; a click is never grouped', () => {
+      const suggestion = member('s', {
+        link: { ...member('s').link, confidence: 'high' },
+      });
+      const accepted = member('a', {
+        profile: 'W10X12',
+        link: { ...member('a').link, confidence: 'low' },
+        count: { ...member('a').count, state: 'confirmed', source: 'suggestion_accepted' },
+      });
+      const clicked = member('c', {
+        origin: 'manual',
+        count: { ...member('c').count, state: 'confirmed', source: 'human_click' },
+      });
+      annotateSharedLines([suggestion, accepted, clicked]);
+      expect(accepted.shared_line?.line_piece).toBe(true);
+      expect(suggestion.shared_line?.line_piece).toBe(false); // the confirmed piece already carries it
+      expect(clicked.shared_line).toBeNull(); // a click is a person's own count, never grouped
+      expect(pieceQuantity(clicked)).toBe(1);
+    });
+
+    it('a rejected suggestion is not grouped with anything', () => {
+      const a = member('a');
+      const rejected = member('r', {
+        profile: 'W10X12',
+        count: { ...member('r').count, state: 'rejected' },
+      });
+      annotateSharedLines([a, rejected]);
+      expect(a.shared_line).toBeNull();
+      expect(rejected.shared_line).toBeNull();
     });
 
     it('a label alone on its line counts its full quantity', () => {

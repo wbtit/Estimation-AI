@@ -411,6 +411,36 @@ export async function buildTakeoffWorkbook(input: TakeoffExportInput): Promise<B
     col.width = i === 0 ? 24 : 20;
   });
 
+  // Count mode (Phase 8): the totals above are CONFIRMED pieces only (a click or an accepted
+  // suggestion); what the system found and nobody decided is listed here, never in a total.
+  if (takeoff.count_mode) {
+    const sw = wb.addWorksheet('Suggested (undecided)', {
+      views: [{ state: 'frozen', ySplit: 1 }],
+    });
+    bold(
+      sw.addRow([
+        'Mark',
+        'Size as written',
+        'Size',
+        'Pieces (one per linked line)',
+        'Labels',
+        'Sheets',
+      ]),
+    );
+    for (const r of takeoff.suggested.rows) {
+      sw.addRow([r.mark, r.profile_raw, r.profile, r.quantity, r.labels, r.sheets.join(', ')]);
+    }
+    const st = takeoff.suggested.totals;
+    bold(sw.addRow(['SUGGESTED, NOT IN ANY TOTAL', null, null, st.pieces, st.labels]));
+    sw.columns.forEach((col, i) => {
+      col.width = i === 0 ? 24 : 22;
+    });
+    ws.addRow([]);
+    ws.addRow([
+      'COUNT MODE: the totals above are confirmed pieces only (a click or an accepted suggestion); suggested pieces nobody decided are on the sheet "Suggested (undecided)"',
+    ]);
+  }
+
   // Grades are typed by a person per shape family; the system never fills one in.
   const gw = wb.addWorksheet('Grades');
   bold(gw.addRow(['Shape family', 'Grade (user-set)', 'Set by', 'Set at']));

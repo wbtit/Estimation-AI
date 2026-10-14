@@ -18,6 +18,10 @@ export interface ProjectsTable {
   grids: Json;
   levels: Json;
   drawing_issue: string | null;
+  // Phase 8 (migration 013)
+  count_mode: Generated<boolean>;
+  snap_radius_pt: Generated<Numeric>;
+  label_radius_pt: Generated<Numeric>;
   created_at: Timestamp;
   updated_at: Timestamp;
 }
@@ -295,8 +299,70 @@ export interface MembersTable {
   kind_evidence: Json | null;
   tag_prefix: string | null;
   tag_number: number | null;
+  // Phase 8 (migration 013): count state and click evidence
+  count_state: ColumnType<CountState, CountState | undefined, CountState>;
+  count_source: CountSource | null;
+  click_x: Numeric | null;
+  click_y: Numeric | null;
+  click_at: Timestamp | null;
+  snapped: boolean | null;
+  snapped_line: Json | null;
+  snapped_distance_pt: Numeric | null;
+  size_source: SizeSource | null;
+  size_evidence: Json | null;
   created_at: Timestamp;
   updated_at: Timestamp;
+}
+
+export type CountState = 'suggested' | 'confirmed' | 'rejected';
+export type CountSource = 'human_click' | 'suggestion_accepted';
+export type SizeSource = 'linked_label' | 'nearest_label' | 'manual' | 'none';
+export type CountActionName =
+  | 'create'
+  | 'accept'
+  | 'reject'
+  | 'edit'
+  | 'delete'
+  | 'undo'
+  | 'redo'
+  | 'measure'
+  | 'attach_length'
+  | 'mode';
+
+export interface SheetLinesTable {
+  sheet_id: string;
+  classes: Json<string[]>;
+  lines: Json<number[][]>;
+  n_lines: number;
+  version: string;
+  created_at: Timestamp | undefined;
+}
+
+export interface CountActionsTable {
+  id: Generated<string>;
+  project_id: string;
+  sheet_id: string | null;
+  member_id: string | null;
+  action: CountActionName;
+  who: string;
+  edit_action_id: string | null;
+  detail: ColumnType<unknown, string | undefined, string>;
+  created_at: ColumnType<Date, Date | string | undefined, Date | string>;
+}
+
+export interface MeasurementsTable {
+  id: Generated<string>;
+  project_id: string;
+  sheet_id: string;
+  a: Json;
+  b: Json;
+  a_snap: Json | null;
+  b_snap: Json | null;
+  scale_ratio: Numeric;
+  length_mm: Numeric;
+  created_by: string;
+  created_at: ColumnType<Date, Date | string | undefined, Date | string>;
+  member_id: string | null;
 }
 
 export interface MemberEditsTable {
@@ -380,4 +446,7 @@ export interface Database {
   sheet_views: SheetViewsTable;
   legend_rows: LegendRowsTable;
   project_grade_rules: ProjectGradeRulesTable;
+  sheet_lines: SheetLinesTable;
+  count_actions: CountActionsTable;
+  measurements: MeasurementsTable;
 }

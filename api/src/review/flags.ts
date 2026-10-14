@@ -38,6 +38,8 @@ export interface SheetFlags {
    * pieces.
    */
   piece_count: number;
+  /** Count mode: linked pieces the system suggested that nobody decided yet (0 outside count mode). */
+  suggested_count: number;
   /** A vector sheet whose page type guess is not a framing plan (flag only). */
   likely_not_framing: boolean;
   flags: SheetFlag[];
@@ -84,12 +86,26 @@ export async function loadSheetFlags(
   for (const v of views) viewsOf.set(v.sheet_id, [...(viewsOf.get(v.sheet_id) ?? []), v]);
   const meta = new Map(sheets.map((s) => [s.id, s] as const));
   const pieces = new Map<string, number>();
+  const suggested = new Map<string, number>();
+  const countMode = Boolean(
+    (
+      await db
+        .selectFrom('projects')
+        .select('count_mode')
+        .where('id', '=', projectId)
+        .executeTakeFirst()
+    )?.count_mode,
+  );
   if (sheets.length) {
     for (const m of await loadMemberViews(db, projectId)) {
       if (m.sheet_id === null || m.deleted || m.merged_into !== null || m.not_member !== null) {
         continue;
       }
-      if (m.existing || m.status.color === 'unlinked') continue;
+      if (m.existing || m.status.color === 'unlinked' || m.count.state === 'rejected') continue;
+      if (countMode && m.count.state !== 'confirmed') {
+        suggested.set(m.sheet_id, (suggested.get(m.sheet_id) ?? 0) + pieceQuantity(m));
+        continue;
+      }
       pieces.set(m.sheet_id, (pieces.get(m.sheet_id) ?? 0) + pieceQuantity(m));
     }
   }
@@ -118,6 +134,7 @@ export async function loadSheetFlags(
       included: i.included,
       by_default: i.by_default,
       piece_count: pieces.get(i.sheet_id) ?? 0,
+      suggested_count: suggested.get(i.sheet_id) ?? 0,
       likely_not_framing: i.likely_not_framing,
       flags,
       confirmed_by: m?.guesses_confirmed_by ?? null,

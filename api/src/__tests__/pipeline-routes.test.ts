@@ -11,6 +11,7 @@ describe('draft status', () => {
     included,
     by_default: true,
     piece_count: 0,
+    suggested_count: 0,
     likely_not_framing: false,
     flags: Array.from({ length: codes }, () => ({ code: 'CLASSES_SUGGESTED', text: 'x' })),
     confirmed_by: null,

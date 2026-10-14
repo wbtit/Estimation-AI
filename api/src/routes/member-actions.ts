@@ -20,6 +20,8 @@ import { getDb } from '../db/client.js';
 import type { Database, ViewBox } from '../db/types.js';
 import { planXY } from '../review/geometry.js';
 import { recordAction } from '../review/actions.js';
+import { logCountAction } from '../review/count-log.js';
+import type { CountActionName } from '../db/types.js';
 import type { Line, MemberView } from '../review/members.js';
 import {
   applyEntries,
@@ -37,6 +39,7 @@ import {
   kindEntries,
   sameTagMembers,
   undoLastAction,
+  redoLastUndo,
   type LegendChoice,
 } from '../review/member-ops.js';
 import { parseJoist } from '../review/joist.js';
@@ -86,6 +89,7 @@ const patchBody = {
     level: { type: ['string', 'null'], maxLength: 60 },
     type: { enum: ['column', 'beam', 'brace', 'joist', 'other'] },
     quantity: { type: 'integer', minimum: 1, maximum: 999 },
+    tag_text: { type: ['string', 'null'], maxLength: 12 },
     length: { type: ['string', 'null'], maxLength: 40 },
     /** Apply the profile text to every piece with the same tag (mark) on the sheet; one action. */
     all_same_tag: { type: 'boolean' },
@@ -360,6 +364,7 @@ export const memberActionRoutes: FastifyPluginAsync<MemberActionOptions> = async
     build: (
       m: MemberView,
     ) => Promise<ReturnType<typeof patchEntries>> | ReturnType<typeof patchEntries>,
+    action: CountActionName = 'edit',
   ) {
     const name = who.trim();
     if (name === '') throw new HttpError(400, { error: 'who must not be blank' });
@@ -367,6 +372,17 @@ export const memberActionRoutes: FastifyPluginAsync<MemberActionOptions> = async
     try {
       const entries = await build(before);
       const actionId = await applyEntries(db(), name, entries);
+      if (actionId) {
+        await logCountAction(db(), {
+          projectId,
+          sheetId: before.sheet_id,
+          memberId: memberPk,
+          action,
+          who: name,
+          editActionId: actionId,
+          detail: { fields: [...new Set(entries.map((e) => e.field))] },
+        });
+      }
       return {
         action_id: actionId,
         changed: entries.length > 0,
@@ -387,6 +403,7 @@ export const memberActionRoutes: FastifyPluginAsync<MemberActionOptions> = async
       level?: string | null;
       type?: string;
       quantity?: number;
+      tag_text?: string | null;
       length?: string | null;
       all_same_tag?: boolean;
     };
@@ -402,6 +419,17 @@ export const memberActionRoutes: FastifyPluginAsync<MemberActionOptions> = async
           (await memberOverride(memberId, 'level')) as string | null,
           patch,
         );
+        if (patch.tag_text && patch.tag_text.trim() !== '') {
+          const wanted = patch.tag_text.trim().toUpperCase();
+          const clash = (await sheetMembersOf(projectId, m)).find(
+            (o) =>
+              o.id !== m.id &&
+              !o.deleted &&
+              o.count.state !== 'rejected' &&
+              o.tag.text.toUpperCase() === wanted,
+          );
+          if (clash) throw new OpError(409, `the tag ${wanted} is already used on this sheet`);
+        }
         if (!allSameTag) return own;
         if (patch.profile_text === undefined)
           throw new OpError(
@@ -527,7 +555,13 @@ export const memberActionRoutes: FastifyPluginAsync<MemberActionOptions> = async
     '/api/projects/:projectId/members/:memberId/delete',
     { schema: { params: memberParams, body: whoOnly } },
     async (request) =>
-      act(request.params.projectId, request.params.memberId, request.body.who, deleteEntries),
+      act(
+        request.params.projectId,
+        request.params.memberId,
+        request.body.who,
+        deleteEntries,
+        'delete',
+      ),
   );
 
   app.post<{
@@ -614,6 +648,47 @@ export const memberActionRoutes: FastifyPluginAsync<MemberActionOptions> = async
         return m ?? null;
       });
       if (!result.undone) throw new HttpError(409, { error: 'nothing to undo' });
+      await logUndoRedo(projectId, who, 'undo', result.undone, result.undone);
+      return result;
+    },
+  );
+
+  /** Log an undo or redo with the sheet and member of the action it touched. */
+  async function logUndoRedo(
+    projectId: string,
+    who: string,
+    action: 'undo' | 'redo',
+    editActionId: string,
+    touched: string,
+  ) {
+    const row = await db()
+      .selectFrom('member_edits as e')
+      .innerJoin('members as m', 'm.id', 'e.member_id')
+      .select(['m.id as member_id', 'm.sheet_id'])
+      .where('e.action_id', '=', touched)
+      .orderBy('e.id')
+      .executeTakeFirst();
+    await logCountAction(db(), {
+      projectId,
+      sheetId: row?.sheet_id ?? null,
+      memberId: row?.member_id ?? null,
+      action,
+      who,
+      editActionId,
+      detail: { of_action: touched },
+    });
+  }
+
+  app.post<{ Params: { projectId: string }; Body: { who: string } }>(
+    '/api/projects/:projectId/redo',
+    { schema: { params: projectParams, body: whoOnly } },
+    async (request) => {
+      const { projectId } = request.params;
+      const who = request.body.who.trim();
+      if (who === '') throw new HttpError(400, { error: 'who must not be blank' });
+      const result = await redoLastUndo(db(), projectId, who);
+      if (!result.redone) throw new HttpError(409, { error: 'nothing to redo' });
+      await logUndoRedo(projectId, who, 'redo', result.redone, result.undone_action as string);
       return result;
     },
   );

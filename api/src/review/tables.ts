@@ -38,10 +38,12 @@ export interface TableRow {
   name: string;
   /** True while the Name is the system's wording (the kind), not something a person typed. */
   name_is_system: boolean;
-  length_ft: null;
-  length_in: null;
+  /** Phase 8 Part C: filled only from a two-click measurement (decimal feet, and inches); else null. */
+  length_ft: number | null;
+  length_in: number | null;
   unit_w: number | null;
-  total_w: null;
+  /** Quantity x length (ft) x Unit W (lb/ft), only when the row has a measured length and a Unit W. */
+  total_w: number | null;
   grade: string | null;
   grade_suggestion: string | null;
   colour: RowColour;
@@ -56,6 +58,9 @@ export interface Apart {
   member_ids: string[];
 }
 
+/** Phase 8: pieces the system found that nobody has decided yet (count mode only; never in a total). */
+export type Suggested = Apart;
+
 export interface PageTable {
   sheet_id: string;
   page_number: number;
@@ -66,6 +71,7 @@ export interface PageTable {
   existing: Apart;
   not_counted: Apart;
   misc: Apart;
+  suggested: Suggested;
   unlinked: number;
 }
 
@@ -86,6 +92,7 @@ export interface JobTable {
   existing: Apart;
   not_counted: Apart;
   misc: Apart;
+  suggested: Suggested;
   unlinked: number;
   sheets_excluded: number[];
 }
@@ -115,8 +122,13 @@ function addApart(a: Apart, m: MemberView): void {
 }
 
 /** The pieces of a table, split into the counted ones and the lines listed apart. */
-export function classify(members: readonly MemberView[], includedSheets: ReadonlySet<string>) {
+export function classify(
+  members: readonly MemberView[],
+  includedSheets: ReadonlySet<string>,
+  countMode = false,
+) {
   const counted: MemberView[] = [];
+  const suggested = emptyApart();
   const red = emptyApart();
   const existing = emptyApart();
   const notCounted = emptyApart();
@@ -125,6 +137,7 @@ export function classify(members: readonly MemberView[], includedSheets: Readonl
   for (const m of members) {
     if (!m.sheet_id || !includedSheets.has(m.sheet_id)) continue;
     if (m.deleted || m.merged_into !== null || m.not_member !== null) continue;
+    if (m.count.state === 'rejected') continue; // a rejected suggestion is kept, never counted
     if (m.existing) {
       addApart(existing, m);
     } else if (m.counting === 'not_counted') {
@@ -133,13 +146,15 @@ export function classify(members: readonly MemberView[], includedSheets: Readonl
       addApart(misc, m);
     } else if (m.status.color === 'unlinked') {
       unlinked += 1;
+    } else if (countMode && m.count.state !== 'confirmed') {
+      addApart(suggested, m); // count mode: only confirmed pieces are in the totals
     } else if (m.status.color === 'red') {
       addApart(red, m);
     } else {
       counted.push(m);
     }
   }
-  return { counted, red, existing, notCounted, misc, unlinked };
+  return { counted, red, existing, notCounted, misc, suggested, unlinked };
 }
 
 function buildRows(
@@ -155,7 +170,10 @@ function buildRows(
     const size = sizeOf(m);
     const typed = nameOf(m);
     const name = typed ?? m.kind.name ?? '';
-    const key = [m.kind.name ?? '', shape ?? '', size ?? '', name].join('|');
+    // a measured length (two clicks) splits rows: pieces of one size and length make one row
+    const measuredMm = m.length_source === 'measured_manual' ? m.length_mm : null;
+    const lengthKey = measuredMm === null ? '' : String(Math.round((measuredMm / 25.4) * 8));
+    const key = [m.kind.name ?? '', shape ?? '', size ?? '', name, lengthKey].join('|');
     const sheet = sheetOf.get(m.sheet_id as string);
     const colour: RowColour =
       m.symbol_color === 'grey' ? 'grey' : m.status.color === 'amber' ? 'amber' : 'green';
@@ -174,8 +192,8 @@ function buildRows(
         size,
         name,
         name_is_system: typed === null,
-        length_ft: null,
-        length_in: null,
+        length_ft: measuredMm === null ? null : Math.round((measuredMm / 304.8) * 100) / 100,
+        length_in: measuredMm === null ? null : Math.round((measuredMm / 25.4) * 10) / 10,
         unit_w: m.catalog?.found ? m.catalog.unit_w_lb_ft : null,
         total_w: null,
         grade: rule?.grade ?? null,
@@ -195,6 +213,9 @@ function buildRows(
   }
   const rows = [...groups.values()];
   for (const r of rows) {
+    if (r.length_ft !== null && r.unit_w !== null) {
+      r.total_w = Math.round(r.quantity * r.length_ft * r.unit_w * 10) / 10;
+    }
     r.sheets.sort((a, b) => a - b);
     const first = r.sheets[0];
     const info = [...sheetOf.values()].find((s) => s.page_number === first);
@@ -233,6 +254,8 @@ export interface TableInput {
   grades: ReadonlyMap<ShapeFamily, GradeRule>;
   /** The typed Name of a piece (an edit), or null for the system wording. */
   nameOf: (m: MemberView) => string | null;
+  /** Count mode (Phase 8): only confirmed pieces are counted; undecided suggestions are listed apart. */
+  countMode?: boolean;
 }
 
 export function buildPageTables(input: TableInput): PageTable[] {
@@ -242,7 +265,7 @@ export function buildPageTables(input: TableInput): PageTable[] {
     .filter((x) => x.included)
     .sort((a, b) => a.page_number - b.page_number)) {
     const mine = input.members.filter((m) => m.sheet_id === s.sheet_id);
-    const c = classify(mine, new Set([s.sheet_id]));
+    const c = classify(mine, new Set([s.sheet_id]), input.countMode ?? false);
     if (mine.length === 0) continue;
     const rows = buildRows(c.counted, sheetOf, input.grades, input.nameOf, input.kinds);
     out.push({
@@ -255,6 +278,7 @@ export function buildPageTables(input: TableInput): PageTable[] {
       existing: c.existing,
       not_counted: c.notCounted,
       misc: c.misc,
+      suggested: c.suggested,
       unlinked: c.unlinked,
     });
   }
@@ -264,7 +288,7 @@ export function buildPageTables(input: TableInput): PageTable[] {
 export function buildJobTable(input: TableInput): JobTable {
   const sheetOf = new Map(input.sheets.map((s) => [s.sheet_id, s] as const));
   const included = new Set(input.sheets.filter((s) => s.included).map((s) => s.sheet_id));
-  const c = classify(input.members, included);
+  const c = classify(input.members, included, input.countMode ?? false);
   const rows = buildRows(c.counted, sheetOf, input.grades, input.nameOf, input.kinds);
   const summary: KindSummary[] = [];
   const line = (kind: string | null, scope: KindSummary['scope'], note: string | null) => {
@@ -296,6 +320,7 @@ export function buildJobTable(input: TableInput): JobTable {
     existing: c.existing,
     not_counted: c.notCounted,
     misc: c.misc,
+    suggested: c.suggested,
     unlinked: c.unlinked,
     sheets_excluded: input.sheets.filter((s) => !s.included).map((s) => s.page_number),
   };

@@ -73,7 +73,7 @@ export const tableRoutes: FastifyPluginAsync<TableRouteOptions> = async (app, op
   async function compute(projectId: string) {
     const project = await db()
       .selectFrom('projects')
-      .select(['id', 'name', 'number'])
+      .select(['id', 'name', 'number', 'count_mode'])
       .where('id', '=', projectId)
       .executeTakeFirst();
     if (!project) throw new HttpError(404, { error: 'project not found' });
@@ -90,6 +90,7 @@ export const tableRoutes: FastifyPluginAsync<TableRouteOptions> = async (app, op
       kinds: await loadKinds(db()),
       grades: await loadGrades(db(), projectId),
       nameOf: (m: { name: string | null }) => m.name,
+      countMode: project.count_mode,
     };
     const flags = await loadSheetFlags(db(), projectId, inclusions);
     return {
