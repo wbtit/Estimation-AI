@@ -68,7 +68,7 @@ G3 covers 139 of their 463 pieces (36 rows); on those sheets our display total i
 | W8X24 | 2 | 1 | 1 | 1 | 0 |
 | W12X26 | 1 | 0 | 1 | 1 | 0 |
 | HP10X42 | 0 | 1 | 1 | 2 | 1 |
-Where the size is read and linked (W16X26, HSS6X6X1/2, W21X55, HSS12X8X1/4) the display count is within a few pieces of theirs. The big deficits are HSS8X4X1/2, HSS12X12X3/8, HSS4X4X1/4 and HSS8X6X1/4 (170 of the 237 missing pieces): repeated members and unlinked labels. One size we found 27 times against their 19 (W21X55) shows the opposite error (labels that are not members, or members the estimator counted elsewhere).
+Where the size is read and linked (W16X26, HSS6X6X1/2, W21X55, HSS12X8X1/4) the display count is within a few pieces of theirs. The big deficits are HSS8X4X1/2, HSS12X12X3/8, HSS4X4X1/4 and HSS8X6X1/4 (178 of the 230 pieces by which our total is short): repeated members and unlinked labels. One size we found 27 times against their 19 (W21X55) shows the opposite error (labels that are not members, or members the estimator counted elsewhere).
 
 ## 6. Proven, likely, unknown
 **Proven (measured, one project):**
