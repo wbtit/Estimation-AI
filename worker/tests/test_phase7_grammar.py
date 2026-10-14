@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import collections
+import math
+
 import numpy as np
 import pymupdf
 
@@ -359,3 +362,93 @@ def test_run_is_deterministic():
         (s["p0"], s["p1"], s["n_supports"]) for s in b.spans
     ]
     assert np.array_equal(a.roles, b.roles)
+
+
+# ---- the vectorised hatch rule equals the first (cell grid) implementation ----------------
+def _hatch_reference(seg: np.ndarray, length: np.ndarray, inside: np.ndarray) -> np.ndarray:
+    """A segment with at least G.HATCH_N other near-parallel segments of similar length at small
+    perpendicular offsets that overlap it along its direction by at least half (core), plus one
+    propagation pass: a segment with such a neighbour that is itself core hatch (the edge lines of
+    a stack). Erratum 1 of the pre-registration (before any real drawing was parsed)."""
+    n = len(seg)
+    out = np.zeros(n, dtype=bool)
+    if n < G.HATCH_N + 1:
+        return out
+    ang = np.degrees(np.arctan2(seg[:, 3] - seg[:, 1], seg[:, 2] - seg[:, 0])) % 180.0
+    mid = G._mid(seg)
+    cell = 24.0
+    grid: dict[tuple[int, int], list[int]] = collections.defaultdict(list)
+    cand = [i for i in range(n) if inside[i] and 0.5 < length[i] < 400.0]
+    for i in cand:
+        grid[(int(mid[i, 0] // cell), int(mid[i, 1] // cell))].append(i)
+    ux = np.cos(np.radians(ang))
+    uy = np.sin(np.radians(ang))
+    neighbours: dict[int, list[int]] = {}
+    for i in cand:
+        cx, cy = int(mid[i, 0] // cell), int(mid[i, 1] // cell)
+        found: list[int] = []
+        reach = int(max(1, math.ceil((length[i] / 2 + G.HATCH_OFFSET) / cell)))
+        for gx in range(cx - reach, cx + reach + 1):
+            for gy in range(cy - reach, cy + reach + 1):
+                for j in grid.get((gx, gy), ()):
+                    if j == i:
+                        continue
+                    if G.angle_diff_deg(ang[i], ang[j]) > G.HATCH_ANGLE:
+                        continue
+                    if abs(length[j] - length[i]) > G.HATCH_RATIO * length[i]:
+                        continue
+                    dx, dy = mid[j, 0] - mid[i, 0], mid[j, 1] - mid[i, 1]
+                    along = dx * ux[i] + dy * uy[i]
+                    perp = -dx * uy[i] + dy * ux[i]
+                    if abs(perp) > G.HATCH_OFFSET or abs(perp) < 0.2:
+                        continue
+                    if 1.0 - abs(along) / max(length[i], 1e-9) < G.HATCH_OVERLAP:
+                        continue
+                    found.append(j)
+        neighbours[i] = found
+        out[i] = len(found) >= G.HATCH_N
+    core = out.copy()
+    for i, found in neighbours.items():
+        if not core[i] and any(core[j] for j in found):
+            out[i] = True
+    return out
+
+
+def _scene(seed):
+    rng = np.random.default_rng(seed)
+    segs = []
+    for _ in range(25):  # stacks of parallel lines (hatch) at random angles
+        cx, cy = rng.uniform(100, 700, 2)
+        ang = rng.uniform(0, math.pi)
+        ln = rng.uniform(10, 60)
+        n = int(rng.integers(5, 15))
+        gap = rng.uniform(1.0, 3.0)
+        for k in range(n):
+            ox = -math.sin(ang) * gap * k
+            oy = math.cos(ang) * gap * k
+            segs.append(
+                [
+                    cx + ox - math.cos(ang) * ln / 2,
+                    cy + oy - math.sin(ang) * ln / 2,
+                    cx + ox + math.cos(ang) * ln / 2,
+                    cy + oy + math.sin(ang) * ln / 2,
+                ]
+            )
+    for _ in range(150):  # loose lines, some axis aligned
+        x, y = rng.uniform(0, 800, 2)
+        a = rng.choice([0.0, math.pi / 2, rng.uniform(0, math.pi)])
+        ln = rng.uniform(5, 300)
+        segs.append([x, y, x + math.cos(a) * ln, y + math.sin(a) * ln])
+    return np.array(segs)
+
+
+def test_vectorised_hatch_mask_equals_the_reference_implementation():
+    for seed in range(6):
+        seg = _scene(seed)
+        length = np.hypot(seg[:, 2] - seg[:, 0], seg[:, 3] - seg[:, 1])
+        inside = np.ones(len(seg), dtype=bool)
+        inside[::17] = False
+        new = G.hatch_mask(seg, length, inside)
+        ref = _hatch_reference(seg, length, inside)
+        assert np.array_equal(new, ref), seed
+        assert new.sum() > 20  # the scene really has hatch

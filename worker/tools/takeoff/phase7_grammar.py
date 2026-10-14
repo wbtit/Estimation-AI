@@ -204,47 +204,63 @@ def hatch_mask(seg: np.ndarray, length: np.ndarray, inside: np.ndarray) -> np.nd
     """A segment with at least HATCH_N other near-parallel segments of similar length at small
     perpendicular offsets that overlap it along its direction by at least half (core), plus one
     propagation pass: a segment with such a neighbour that is itself core hatch (the edge lines of
-    a stack). Erratum 1 of the pre-registration (before any real drawing was parsed)."""
+    a stack). Erratum 1 of the pre-registration (before any real drawing was parsed).
+
+    Same rule as the first implementation (kept as the reference in the tests), vectorised: the
+    candidates are sorted into 2 degree angle bins, and within a bin (and its two neighbours) by
+    the perpendicular coordinate, so each segment only looks at a thin strip."""
     n = len(seg)
     out = np.zeros(n, dtype=bool)
     if n < HATCH_N + 1:
         return out
     ang = np.degrees(np.arctan2(seg[:, 3] - seg[:, 1], seg[:, 2] - seg[:, 0])) % 180.0
     mid = _mid(seg)
-    cell = 24.0
-    grid: dict[tuple[int, int], list[int]] = defaultdict(list)
-    cand = [i for i in range(n) if inside[i] and 0.5 < length[i] < 400.0]
-    for i in cand:
-        grid[(int(mid[i, 0] // cell), int(mid[i, 1] // cell))].append(i)
+    cand = np.array([i for i in range(n) if inside[i] and 0.5 < length[i] < 400.0], dtype=int)
+    if len(cand) == 0:
+        return out
     ux = np.cos(np.radians(ang))
     uy = np.sin(np.radians(ang))
-    neighbours: dict[int, list[int]] = {}
-    for i in cand:
-        cx, cy = int(mid[i, 0] // cell), int(mid[i, 1] // cell)
-        found: list[int] = []
-        reach = int(max(1, math.ceil((length[i] / 2 + HATCH_OFFSET) / cell)))
-        for gx in range(cx - reach, cx + reach + 1):
-            for gy in range(cy - reach, cy + reach + 1):
-                for j in grid.get((gx, gy), ()):
-                    if j == i:
-                        continue
-                    if angle_diff_deg(ang[i], ang[j]) > HATCH_ANGLE:
-                        continue
-                    if abs(length[j] - length[i]) > HATCH_RATIO * length[i]:
-                        continue
-                    dx, dy = mid[j, 0] - mid[i, 0], mid[j, 1] - mid[i, 1]
-                    along = dx * ux[i] + dy * uy[i]
-                    perp = -dx * uy[i] + dy * ux[i]
-                    if abs(perp) > HATCH_OFFSET or abs(perp) < 0.2:
-                        continue
-                    if 1.0 - abs(along) / max(length[i], 1e-9) < HATCH_OVERLAP:
-                        continue
-                    found.append(j)
-        neighbours[i] = found
+    n_bins = int(round(180.0 / HATCH_ANGLE))
+    bins = np.floor(ang[cand] / HATCH_ANGLE).astype(int) % n_bins
+    neighbours: dict[int, np.ndarray] = {}
+    for b in np.unique(bins):
+        a_ids = cand[bins == b]
+        near_bins = {(b - 1) % n_bins, int(b), (b + 1) % n_bins}
+        b_ids = cand[np.isin(bins, list(near_bins))]
+        th = math.radians((b + 0.5) * HATCH_ANGLE)
+        sin_t, cos_t = math.sin(th), math.cos(th)
+        perp_b = -mid[b_ids, 0] * sin_t + mid[b_ids, 1] * cos_t
+        order = np.argsort(perp_b, kind="stable")
+        b_sorted = b_ids[order]
+        perp_sorted = perp_b[order]
+        for i in a_ids:
+            p_i = -mid[i, 0] * sin_t + mid[i, 1] * cos_t
+            margin = HATCH_OFFSET + 0.04 * length[i] + 1.0
+            lo = int(np.searchsorted(perp_sorted, p_i - margin, side="left"))
+            hi = int(np.searchsorted(perp_sorted, p_i + margin, side="right"))
+            js = b_sorted[lo:hi]
+            js = js[js != i]
+            if len(js) == 0:
+                neighbours[int(i)] = js
+                continue
+            d_ang = np.abs(ang[js] - ang[i]) % 180.0
+            d_ang = np.minimum(d_ang, 180.0 - d_ang)
+            dx, dy = mid[js, 0] - mid[i, 0], mid[js, 1] - mid[i, 1]
+            along = dx * ux[i] + dy * uy[i]
+            perp = -dx * uy[i] + dy * ux[i]
+            ok = (
+                (d_ang <= HATCH_ANGLE)
+                & (np.abs(length[js] - length[i]) <= HATCH_RATIO * length[i])
+                & (np.abs(perp) <= HATCH_OFFSET)
+                & (np.abs(perp) >= 0.2)
+                & (1.0 - np.abs(along) / max(float(length[i]), 1e-9) >= HATCH_OVERLAP)
+            )
+            neighbours[int(i)] = js[ok]
+    for i, found in neighbours.items():
         out[i] = len(found) >= HATCH_N
     core = out.copy()
     for i, found in neighbours.items():
-        if not core[i] and any(core[j] for j in found):
+        if not core[i] and len(found) and core[found].any():
             out[i] = True
     return out
 
