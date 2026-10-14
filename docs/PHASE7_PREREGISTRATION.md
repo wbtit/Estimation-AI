@@ -97,3 +97,29 @@ Parse (stroke and fill, dash, width, closed shapes, curves, a Form XObject with 
 3. **Chain end order.** The order of the two ends of a chain (and of a span) along its axis is arbitrary (set by the angle cut of 22.5 degrees); nothing downstream depends on it.
 These are code-versus-text corrections made on synthetic data; they are not dev revisions and do not count against the limit of 5.
 
+## 7. Freeze record (written and committed BEFORE the held-out run; the tag `phase7-grammar-frozen` is placed on this commit)
+### 7.1 Final rules
+Rules v1 of section 4.2 plus four dev revisions (the text is `REVISIONS` in `worker/tools/takeoff/phase7_grammar.py`):
+- **r1** the main total takes a span only when BOTH ends are supported and its role is medium or heavy (v1: one supported end, any role). Thin and one-ended spans are kept, flagged and shown grey.
+- **r2** a column glyph is main when it is at a grid intersection (page with a usable grid) or, on a page without one, when main span ends meet it (v1: every glyph).
+- **r3** main spans that run side by side (a beam drawn with two flange lines, or drawn twice: angle within 2 degrees, centre-line offset 0 to 10 pt, overlap at least 70% of the shorter) are one piece; the longer is kept, the others are flagged `merged_into`.
+- **r4** on a page without a usable grid a column needs three main span ends meeting it (r2 had two).
+Frozen files: `phase7_grammar.py`, `phase7_parse.py`, `phase7_lib.py`, `phase7_cgrammar_run.py`. Four of the five allowed revisions were used; the stop rule of 4.1 applies because r4 improved dev F1 at 12 pt by 0.007 (less than 0.01).
+
+### 7.2 Dev log (dev jobs only; combined piece set, exact matching, geometry distance, 12 pt; the registered grammar is the first row)
+| step | change | pieces | P | R | F1 | displaced-control R | F1 without job-012 |
+|---|---|---|---|---|---|---|---|
+| rev0 | rules v1 as registered | 83,922 | 0.017 | 0.521 | 0.033 | 0.406 | 0.021 |
+| rev2 | r1 + r2 | 14,817 | 0.041 | 0.226 | 0.070 | 0.141 | 0.046 |
+| rev3 | + r3 | 10,840 | 0.052 | 0.207 | 0.083 | 0.131 | 0.052 |
+| rev4 | + r4 (frozen) | 9,606 | 0.058 | 0.205 | 0.090 | 0.128 | 0.057 |
+Uniform-control recall on dev: 0.274 (rev0), 0.073, 0.069, 0.068. Linear spans alone at rev4: 9,083 pieces, P 0.061, R 0.203, F1 0.094. One revision (r1 and r2) was applied in one step after rev0 because both followed from the same rev0 diagnosis (too many pieces; every category below 5% precision).
+
+What I looked at on dev, kept or not (the forking paths): the first dev run (rev0); a table of piece categories (type, role, dashed, support signature) by matched share; two passes of span and glyph filter variants (10 span filters, 6 glyph filters; "both ends", "role at least medium", "both ends columns", "heavy only", "strictly heavier member", glyph repeat count, glyphs meeting span ends); an experiment merging parallel spans at four offsets (0, 6, 10, 16 pt) and with coincident spans; a glyph category table (paint, size, vertices, at grid, number of meeting ends). Adopted: r1 from "both ends / role at least medium", r2 and r4 from the glyph tables (columns meeting several spans), r3 from the parallel merge at 10 pt. Not adopted: stricter column-to-column filters (no gain), heavy only (lower recall), glyph repeat count (no gain). Note for the reader: at grid intersections the dev pages have 267 main glyphs and none matched a symbol; I did not remove the grid rule because the task asks to prefer glyphs near grid intersections.
+
+### 7.3 Sensitivities fixed now (reported next to the held-out figure, not the verdict)
+`linear_all` (every span, unsupported, one-ended, thin, merged away: the v1 "keep everything" set), `linear_v1` (the v1 main rule: at least one supported end, any role, merged spans left out), `combined_braces` (main plus one point per X or V brace sign), `columns_all` (every glyph).
+
+### 7.4 Prediction recorded before the held-out run
+The held-out combined P at 12 pt will be below 0.10 and R below 0.30, no held-out basis reaches "promising", and the held-out F1 at 12 pt will lie between 0.03 and 0.12. A held-out F1 above the dev F1 would be a surprise (the rules were developed on dev).
+
