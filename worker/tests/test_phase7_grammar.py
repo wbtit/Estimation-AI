@@ -182,23 +182,26 @@ def test_glyph_near_a_grid_intersection_is_main_and_one_elsewhere_is_flagged_off
     assert near in pp.main_glyphs() and far not in pp.main_glyphs()
 
 
-def test_on_a_page_without_a_grid_a_glyph_is_main_only_where_two_main_span_ends_meet():
+def test_on_a_page_without_a_grid_a_glyph_is_main_only_where_three_main_span_ends_meet():
     doc, page = _page()
     _line(page, (100, 105), (400, 105), width=2.0)  # a heavy beam from the first column ...
     _line(page, (400, 105), (400, 300), width=2.0)  # ... to a second one, and a corner member
-    _line(page, (50, 500), (750, 500), width=0.25)  # thin lines so that 2.0 is the heavy role
+    _line(page, (400, 105), (700, 105), width=2.0)  # and a third member on the same corner
+    for k in range(5):  # thin bulk so that 2.0 is the heavy role
+        _line(page, (50, 500 + 10 * k), (750, 500 + 10 * k), width=0.25)
     _square(page, 95, 100)
     _square(page, 395, 100)  # two heavy span ends meet here
     _square(page, 395, 295)  # the corner member's other end
+    _square(page, 695, 100)  # the third member's other end
     _square(page, 600, 300)  # a glyph nobody frames into
     pp, _ = _run(page, doc)
     assert not pp.has_grid
     by_x = {round(g["centre"][0]): g for g in pp.glyphs}
     tops = [g for g in pp.glyphs if abs(g["centre"][0] - 400) < 3 and g["centre"][1] < 200]
-    assert len(tops) == 1 and tops[0]["meets"] == 2 and tops[0]["main"]
+    assert len(tops) == 1 and tops[0]["meets"] == 3 and tops[0]["main"]
     assert by_x[100]["meets"] == 1 and not by_x[100]["main"]
     assert by_x[605]["meets"] == 0 and not by_x[605]["main"]
-    assert len(pp.glyphs) == 4  # all kept
+    assert len(pp.glyphs) == 5  # all kept
 
 
 def test_outline_and_fill_of_one_column_are_one_glyph_and_big_shapes_are_not_glyphs():
