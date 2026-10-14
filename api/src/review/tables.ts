@@ -12,6 +12,7 @@ import type { KindIndex } from './kinds.js';
 import type { GradeRule } from './grades.js';
 import { familyOf } from './grades.js';
 import type { MemberView } from './members.js';
+import { pieceQuantity } from './shared-line.js';
 import type { ShapeFamily } from '../db/types.js';
 
 /** Shown as a flag only, never applied (the estimators' finished takeoff used these by family). */
@@ -237,8 +238,9 @@ function buildRows(
       };
       groups.set(key, row);
     }
-    // one piece each; a person's "x N typical" counts N
-    row.quantity += m.typical ? m.typical.n : 1;
+    // the takeoff's rule (owner decision 133): the label quantity, times N when typical; a label on a
+    // line that already has its piece adds 0 (one piece per linked line)
+    row.quantity += pieceQuantity(m);
     row.member_ids.push(m.id);
     if (m.typical && !row.flags.includes(`typical x${m.typical.n}`))
       row.flags.push(`typical x${m.typical.n}`);

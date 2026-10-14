@@ -191,6 +191,11 @@ describe('typical x N (owner decision 126)', () => {
     const m = await member(ids.piece);
     expect(m.typical).toMatchObject({ n: 4, base_quantity: 2 });
     expect(m.quantity).toBe(8);
+    // owner decision 133: the tables use the same rule as the takeoff (label quantity x N)
+    const tables = (await get('/tables')).json();
+    const jr = tables.job.rows.find((x: TableRow) => x.member_ids.includes(ids.piece));
+    expect(jr.quantity).toBe(8);
+    expect(tables.job.quantity).toBe((await get('/takeoff')).json().totals.pieces);
   });
 });
 
@@ -225,8 +230,9 @@ describe('counted pieces without a length (owner decision 127)', () => {
     });
     ids.second = c.json().member.id;
     const tables = (await get('/tables')).json();
-    // the tables count one per piece (N for a typical one), whatever the label quantity: 4 + 1
-    expect(tables.job.quantity).toBe(5);
+    // owner decision 133: label quantity x N everywhere: (2 x 4) + 1 in the tables and the takeoff
+    expect(tables.job.quantity).toBe(9);
+    expect((await get('/takeoff')).json().totals.pieces).toBe(9);
     for (const r of tables.job.rows as TableRow[]) expect(r.total_w).toBeNull();
     expect(tables.job.weight).toEqual({
       total_w: 0,
