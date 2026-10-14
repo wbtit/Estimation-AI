@@ -343,8 +343,12 @@ export function memberView(
   const rawProfile = pick('profile_raw', row.profile_raw);
   const joist = type === 'joist' && rawProfile ? parseJoist(rawProfile) : null;
   const mark = pick('mark', row.mark);
+  // a person accepted the suggestion or clicked the piece: that is a person's confirmation (a low
+  // link confidence no longer turns it red; red keeps its other meanings)
+  const countConfirmed = pick<CountState>('count_state', row.count_state) === 'confirmed';
   const humanConfirmed =
     row.origin === 'manual' ||
+    countConfirmed ||
     reviewStatus === 'approved' ||
     reviewStatus === 'edited' ||
     linkEdit !== undefined ||
@@ -436,7 +440,7 @@ export function memberView(
           ? 'existing'
           : edited
             ? 'edited'
-            : reviewStatus === 'approved'
+            : reviewStatus === 'approved' || countConfirmed
               ? 'confirmed'
               : 'unreviewed';
 

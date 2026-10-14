@@ -190,3 +190,11 @@ Each item is an assumption I made so Phase 1 could proceed while you were away. 
 115. **Unlinked labels in the draft.** The naive label count is closer to the estimator than the linked count. Should an unlinked label be a suggested piece (amber, one click to accept) in the draft total, instead of staying outside the total as a warning?
 116. **Sheet numbers.** Our extracted sheet numbers are wrong for this project (letter plus one digit on all 23 sheets), which blocks any mapping from the estimator's references. May the sheet-number reader be fixed in a later phase (title-block corner text equal to a line of the page), or should the estimator give the sheet list?
 
+### Added in Phase 8 (counting copilot and measure tool; see docs/PHASE8_RESULTS.md)
+117. **Count mode default.** It is opt-in per project (a checkbox) so nothing existing changed. Should new projects start in count mode (totals and Excel confirmed pieces only)?
+118. **Tag numbers.** Tags follow the existing rule: the kind's prefix and the next free number on the SHEET, never reused (today `BE1`, `CO1`: the abbreviation list is still yours, question 96). Do you want the running number per kind over the whole job instead, and should a deleted piece free its number?
+119. **Suggestions on a shared line.** With one piece per linked line, a second label on a line that already carries a piece is not offered as a suggestion. Should it stay visible (greyed) so the estimator can accept it as a separate member?
+120. **Snap preference.** The click snaps to the nearest line of ANY class (a thin dimension or hatch line can win over the beam). Prefer the longest line, or a class chosen per page, within the radius? A first trial on real pages decides this.
+121. **Measure.** (a) A page with several views uses the confirmed view that holds both clicks: right? (b) A column's length comes from elevations: add a "measure height" with typed elevations, or keep typing them? (c) The measured length goes to Length and Total W only for pieces with a measurement; should typed lengths also fill the table cells?
+122. **Applying migration 013** to the real database and dropping the scratch demo database: may I do it, or will you run `npm run migrate`?
+

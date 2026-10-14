@@ -110,7 +110,8 @@ export const tableRoutes: FastifyPluginAsync<TableRouteOptions> = async (app, op
       return {
         project: { id: project.id, name: project.name, number: project.number },
         draft,
-        stage_note: 'Lengths and Total W are added in Stage 2; those cells are empty on purpose.',
+        stage_note:
+          'Length and Total W are filled only for pieces with a measured length (the measure tool); the rest are added in Stage 2 and stay empty on purpose.',
         job,
         pages,
       };

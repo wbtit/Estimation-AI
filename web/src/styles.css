@@ -710,3 +710,12 @@ mark {
   padding: 4px 8px;
   border-radius: 4px;
 }
+.count-panel .row {
+  flex-wrap: wrap;
+}
+.count-panel .row button {
+  white-space: nowrap;
+}
+.count-panel .row select {
+  max-width: 170px;
+}

@@ -49,7 +49,14 @@ const click = async (kind: string, x: number, y: number, extra: object = {}) =>
 const members = async () => (await get('/members?include_deleted=true')).json().members as Row[];
 const takeoff = async () => (await get('/takeoff')).json();
 
-async function insertLabel(key: string, text: string, y: number, x0: number, linked: boolean) {
+async function insertLabel(
+  key: string,
+  text: string,
+  y: number,
+  x0: number,
+  linked: boolean,
+  confidence: 'high' | 'low' = 'high',
+) {
   const row = await db
     .insertInto('members')
     .values({
@@ -64,7 +71,7 @@ async function insertLabel(key: string, text: string, y: number, x0: number, lin
       field_sources: '{}',
       field_confidence: '{}',
       source_bbox: JSON.stringify({ x0, y0: y - 14, x1: x0 + 40, y1: y - 6 }),
-      link_confidence: linked ? 'high' : null,
+      link_confidence: linked ? confidence : null,
       link_candidates: linked ? JSON.stringify(cand(y)) : null,
     } as never)
     .returning('id')
@@ -442,6 +449,21 @@ describe('count mode: totals, tables and the Excel export count confirmed pieces
     const inTotals = new Set(t.rows.flatMap((r: { member_ids: string[] }) => r.member_ids));
     expect(inTotals.has(ids.D)).toBe(true);
     expect(inTotals.has(ids.B)).toBe(false); // a rejected suggestion is out in every mode
+  });
+});
+
+describe('count mode: a person confirmation', () => {
+  it('accepting a low-confidence (red) suggestion is a person confirmation: it counts', async () => {
+    await insertLabel('E', 'W21x44', 300, 120, true, 'low');
+    const before = (await members()).find((m) => m.id === ids.E) as Row;
+    expect(before.status.color).toBe('red');
+    expect(before.count.state).toBe('suggested');
+    const acc = await post(`/members/${ids.E}/count-decision`, { who: WHO, decision: 'accept' });
+    expect(acc.json().member.status.color).not.toBe('red');
+    expect(acc.json().member.human).toBe('confirmed');
+    await post(`/members/${ids.E}/count-decision`, { who: WHO, decision: 'reset' });
+    expect(((await members()).find((m) => m.id === ids.E) as Row).status.color).toBe('red');
+    await post(`/members/${ids.E}/count-decision`, { who: WHO, decision: 'reject' }); // keep later totals as they were
   });
 });
 
