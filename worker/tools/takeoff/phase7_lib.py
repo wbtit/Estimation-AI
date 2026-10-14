@@ -73,9 +73,23 @@ def distance_matrix(symbols: Sequence[Pt], geoms: Sequence[dict]) -> np.ndarray:
     if n == 0 or m == 0:
         return out
     xy = np.asarray(symbols, dtype=float)
+    if all(g["k"] == "poly" and len(g["pts"]) == 2 for g in geoms):
+        segs = np.array([[*g["pts"][0], *g["pts"][1]] for g in geoms], dtype=float)
+        return segment_matrix(xy, segs)
     for j, g in enumerate(geoms):
         out[:, j] = geometry_distances(xy, g)
     return out
+
+
+def segment_matrix(xy: np.ndarray, segs: np.ndarray) -> np.ndarray:
+    """(n points) x (m segments) distances in one go; segs is m x 4 (x0, y0, x1, y1)."""
+    ax, ay, bx, by = (segs[:, k][None, :] for k in range(4))
+    px, py = xy[:, 0][:, None], xy[:, 1][:, None]
+    dx, dy = bx - ax, by - ay
+    l2 = dx * dx + dy * dy
+    safe = np.where(l2 <= 1e-12, 1.0, l2)
+    t = np.where(l2 <= 1e-12, 0.0, np.clip(((px - ax) * dx + (py - ay) * dy) / safe, 0.0, 1.0))
+    return np.hypot(px - (ax + t * dx), py - (ay + t * dy))
 
 
 # ---- matching ------------------------------------------------------------------------------------

@@ -29,6 +29,17 @@ def test_distance_matrix_shape_and_empty():
     assert L.distance_matrix([(0, 0)], []).shape == (1, 0)
 
 
+def test_fast_segment_path_equals_the_general_path():
+    rng = np.random.default_rng(3)
+    syms = [tuple(map(float, r)) for r in rng.uniform(0, 100, size=(12, 2))]
+    segs = rng.uniform(0, 100, size=(9, 4))
+    segs[2] = [5, 5, 5, 5]  # a degenerate segment is a point
+    geoms = [{"k": "poly", "pts": [[a, b], [c, d]]} for a, b, c, d in segs]
+    fast = L.distance_matrix(syms, geoms)
+    slow = np.stack([L.geometry_distances(np.asarray(syms), g) for g in geoms], axis=1)
+    assert np.allclose(fast, slow)
+
+
 def test_greedy_misses_a_match_that_hungarian_finds():
     # s0 is closest to p0, but s1 can only use p0: greedy takes (s0,p0) and loses s1
     d = np.array([[1.0, 2.0], [2.0, 99.0]])
