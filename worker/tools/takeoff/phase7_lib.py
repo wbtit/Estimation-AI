@@ -67,18 +67,40 @@ def geometry_distances(xy: np.ndarray, geom: dict) -> np.ndarray:
 
 
 def distance_matrix(symbols: Sequence[Pt], geoms: Sequence[dict]) -> np.ndarray:
-    """(n symbols) x (m pieces) distances."""
+    """(n symbols) x (m pieces) distances. Two-point polylines, rectangles and points are done in
+    bulk; longer polylines one by one."""
     n, m = len(symbols), len(geoms)
     out = np.full((n, m), np.inf)
     if n == 0 or m == 0:
         return out
     xy = np.asarray(symbols, dtype=float)
-    if all(g["k"] == "poly" and len(g["pts"]) == 2 for g in geoms):
-        segs = np.array([[*g["pts"][0], *g["pts"][1]] for g in geoms], dtype=float)
-        return segment_matrix(xy, segs)
-    for j, g in enumerate(geoms):
-        out[:, j] = geometry_distances(xy, g)
+    seg_cols = [j for j, g in enumerate(geoms) if g["k"] == "poly" and len(g["pts"]) == 2]
+    rect_cols = [j for j, g in enumerate(geoms) if g["k"] == "rect"]
+    pt_cols = [j for j, g in enumerate(geoms) if g["k"] == "point"]
+    done = set(seg_cols) | set(rect_cols) | set(pt_cols)
+    if seg_cols:
+        segs = np.array([[*geoms[j]["pts"][0], *geoms[j]["pts"][1]] for j in seg_cols], dtype=float)
+        out[:, seg_cols] = segment_matrix(xy, segs)
+    if rect_cols:
+        rects = np.array([geoms[j]["r"] for j in rect_cols], dtype=float)
+        out[:, rect_cols] = rect_matrix(xy, rects)
+    if pt_cols:
+        pts = np.array([geoms[j]["p"] for j in pt_cols], dtype=float)
+        out[:, pt_cols] = np.hypot(
+            xy[:, 0][:, None] - pts[:, 0][None, :], xy[:, 1][:, None] - pts[:, 1][None, :]
+        )
+    for j in range(m):
+        if j not in done:
+            out[:, j] = geometry_distances(xy, geoms[j])
     return out
+
+
+def rect_matrix(xy: np.ndarray, rects: np.ndarray) -> np.ndarray:
+    """(n points) x (m rectangles) distances (0 inside); rects is m x 4 (x0, y0, x1, y1)."""
+    px, py = xy[:, 0][:, None], xy[:, 1][:, None]
+    dx = np.maximum(np.maximum(rects[:, 0][None, :] - px, px - rects[:, 2][None, :]), 0.0)
+    dy = np.maximum(np.maximum(rects[:, 1][None, :] - py, py - rects[:, 3][None, :]), 0.0)
+    return np.hypot(dx, dy)
 
 
 def segment_matrix(xy: np.ndarray, segs: np.ndarray) -> np.ndarray:

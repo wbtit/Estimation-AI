@@ -40,6 +40,20 @@ def test_fast_segment_path_equals_the_general_path():
     assert np.allclose(fast, slow)
 
 
+def test_mixed_geometries_in_one_matrix_equal_the_one_by_one_distances():
+    rng = np.random.default_rng(5)
+    syms = [tuple(map(float, r)) for r in rng.uniform(0, 100, size=(10, 2))]
+    geoms = [
+        {"k": "poly", "pts": [[10, 10], [60, 20]]},
+        {"k": "rect", "r": [30, 30, 40, 45]},
+        {"k": "point", "p": [70, 70]},
+        {"k": "poly", "pts": [[0, 0], [50, 0], [50, 50]]},  # a three-point polyline
+    ]
+    mixed = L.distance_matrix(syms, geoms)
+    slow = np.stack([L.geometry_distances(np.asarray(syms), g) for g in geoms], axis=1)
+    assert np.allclose(mixed, slow)
+
+
 def test_greedy_misses_a_match_that_hungarian_finds():
     # s0 is closest to p0, but s1 can only use p0: greedy takes (s0,p0) and loses s1
     d = np.array([[1.0, 2.0], [2.0, 99.0]])
