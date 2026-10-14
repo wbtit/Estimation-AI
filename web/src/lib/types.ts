@@ -182,6 +182,8 @@ export interface SheetFlags {
   included: boolean;
   by_default: boolean;
   piece_count: number;
+  /** Count mode: linked suggestions nobody decided yet. */
+  suggested_count?: number;
   likely_not_framing: boolean;
   flags: SheetFlag[];
   confirmed_by: string | null;
@@ -227,6 +229,24 @@ export interface Candidate {
   length_mm: number | null;
 }
 
+/** Phase 8: the count state of a piece and the evidence of a click. */
+export interface CountView {
+  state: "suggested" | "confirmed" | "rejected";
+  source: "human_click" | "suggestion_accepted" | null;
+  click: { x: number; y: number; at: string } | null;
+  snapped: boolean | null;
+  snapped_line: {
+    id: number;
+    p: [number, number];
+    q: [number, number];
+    class: string | null;
+    version: string | null;
+  } | null;
+  snapped_distance_pt: number | null;
+  size_source: "linked_label" | "nearest_label" | "manual" | "none" | null;
+  size_evidence: { member_id: string; distance_pt: number } | null;
+}
+
 export interface MemberView {
   id: string;
   member_id: string;
@@ -254,6 +274,7 @@ export interface MemberView {
   length_mm: number | null;
   length_ft_in: string | null;
   length_source: string | null;
+  length_measurement?: string | null;
   status: { color: Color; confirmed: boolean; reasons: string[] };
   plan_point: { x_mm: number | null; y_mm: number | null } | null;
   system: { color: Color; confirmed: boolean; reasons: string[] } | null;
@@ -284,6 +305,8 @@ export interface MemberView {
   catalog: CatalogView | null;
   flags: MemberFlag[];
   changed_at: string;
+  /** Phase 8; older payloads and test fixtures may not have it (treated as `suggested`). */
+  count?: CountView;
 }
 
 export interface SharedLine {
@@ -389,6 +412,9 @@ export interface ExistingBlock {
 }
 
 export interface TakeoffData extends TakeoffSection {
+  /** Phase 8: only confirmed pieces are in the totals; suggestions nobody decided are listed apart. */
+  count_mode?: boolean;
+  suggested?: TakeoffSection;
   existing: ExistingBlock;
   not_member_reasons: {
     existing: number;
@@ -429,10 +455,10 @@ export interface TableRowS1 {
   size: string | null;
   name: string;
   name_is_system: boolean;
-  length_ft: null;
-  length_in: null;
+  length_ft: number | null;
+  length_in: number | null;
   unit_w: number | null;
-  total_w: null;
+  total_w: number | null;
   grade: string | null;
   grade_suggestion: string | null;
   colour: "green" | "amber" | "grey";
@@ -457,6 +483,7 @@ export interface PageTableS1 {
   existing: Apart;
   not_counted: Apart;
   misc: Apart;
+  suggested?: Apart;
   unlinked: number;
 }
 
@@ -480,6 +507,7 @@ export interface TablesResponse {
     existing: Apart;
     not_counted: Apart;
     misc: Apart;
+    suggested?: Apart;
     unlinked: number;
     sheets_excluded: number[];
   };

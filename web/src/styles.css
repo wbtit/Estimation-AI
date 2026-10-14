@@ -610,3 +610,103 @@ mark {
 .flag-badge.not-framing {
   background: #8d8d8d;
 }
+
+/* Phase 8: the counting copilot */
+.count-panel h4 {
+  margin: 12px 0 4px;
+}
+.count-panel .count-mode {
+  display: block;
+  padding: 6px 8px;
+  background: #f1f7ff;
+  border: 1px solid #c9dcf5;
+  border-radius: 4px;
+  margin-bottom: 8px;
+}
+.count-panel .row.small {
+  font-size: 12px;
+  align-items: center;
+  gap: 8px;
+}
+.count-panel input[type="number"] {
+  width: 56px;
+}
+.count-panel .piece-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  max-height: 260px;
+  overflow: auto;
+}
+.count-panel .piece-list li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  align-items: center;
+  padding: 3px 4px;
+  border-bottom: 1px solid #eee;
+  cursor: pointer;
+}
+.count-panel .piece-list li.sel {
+  background: #fffbe6;
+}
+.count-panel .piece-list .tag {
+  width: 44px;
+  font-weight: 600;
+}
+.count-panel .piece-list .size {
+  width: 96px;
+}
+.count-panel .piece-list .size.amber {
+  background: #fff3d6;
+  border: 1px solid #e0a100;
+}
+.count-panel .piece-list .kind {
+  color: #555;
+  font-size: 12px;
+}
+.count-panel .piece-list .badge {
+  font-size: 11px;
+  border: 1px solid #bbb;
+  border-radius: 8px;
+  padding: 0 6px;
+  background: #fafafa;
+}
+.count-panel .piece-list .note {
+  flex-basis: 100%;
+  font-size: 11px;
+  color: #555;
+}
+.count-panel .piece-list .note.amber {
+  color: #9a6700;
+}
+.count-panel .by-size {
+  columns: 2;
+  margin: 0 0 6px;
+  padding-left: 18px;
+  font-size: 13px;
+}
+.count-panel .measure-card {
+  margin: 8px 0;
+  padding: 6px 8px;
+  border: 1px solid #f0b8a8;
+  background: #fff6f2;
+  border-radius: 4px;
+}
+.count-panel button.link {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+}
+.suggested-count {
+  color: #666;
+  font-style: italic;
+}
+.count-note {
+  background: #f1f7ff;
+  border: 1px solid #c9dcf5;
+  padding: 4px 8px;
+  border-radius: 4px;
+}

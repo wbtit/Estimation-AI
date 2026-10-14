@@ -326,6 +326,20 @@ export const TakeoffPanel: React.FC<{
         nameHeader="profile"
         onJump={onJump}
       />
+      {data.count_mode && data.suggested && (
+        <>
+          <p className="count-note" data-testid="count-mode-note">
+            <b>Count mode:</b> the totals above are confirmed pieces only (a
+            click or an accepted suggestion).
+          </p>
+          <Section
+            title={`Suggested, not decided (${data.suggested.totals.pieces} pieces, in no total)`}
+            section={data.suggested}
+            nameHeader="profile"
+            onJump={onJump}
+          />
+        </>
+      )}
       <section>
         <h4>Existing (not counted)</h4>
         <p>

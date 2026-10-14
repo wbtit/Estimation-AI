@@ -2,6 +2,7 @@ import React from "react";
 import { REVIEWED_RING, SYMBOL_HEX } from "../lib/status";
 import { hasCountSymbol, symbolAnchor, symbolPath } from "../lib/symbols";
 import type { Box } from "../lib/geometry";
+import { clickAnchor, countStateOf } from "../lib/count";
 import type { MemberView } from "../lib/types";
 
 /** What a jump link highlights on the page: a label box or a line. */
@@ -28,12 +29,29 @@ export const SymbolOverlay: React.FC<{
   /** Pieces of the table row the person clicked: ringed in yellow. */
   markedIds?: ReadonlySet<string>;
   onSelect: (id: string) => void;
-}> = ({ members, selectedId, zoom, highlight, markedIds, onSelect }) => {
+  /** Count mode (Phase 8): undecided suggestions are dashed, confirmed pieces solid with a ring. */
+  countMode?: boolean;
+  /** In count mode a click on a symbol decides a suggestion instead of only selecting it. */
+  onSymbolClick?: (m: MemberView, e: React.MouseEvent) => void;
+}> = ({
+  members,
+  selectedId,
+  zoom,
+  highlight,
+  markedIds,
+  onSelect,
+  countMode,
+  onSymbolClick,
+}) => {
   const r = SYMBOL_PX / zoom;
   const offset = OFFSET_PX / zoom;
   const font = 11 / zoom;
   const live = members.filter(
-    (m) => !m.deleted && !m.merged_into && !m.not_member,
+    (m) =>
+      !m.deleted &&
+      !m.merged_into &&
+      !m.not_member &&
+      countStateOf(m) !== "rejected", // a rejected suggestion is kept, never drawn as a piece
   );
   return (
     <g className="symbols">
@@ -63,20 +81,27 @@ export const SymbolOverlay: React.FC<{
           );
         })}
       {live.filter(hasCountSymbol).map((m) => {
-        const a = symbolAnchor(m, offset);
+        const a = clickAnchor(m) ?? symbolAnchor(m, offset);
         if (!a) return null;
+        const state = countStateOf(m);
+        const undecided = !!countMode && state === "suggested";
+        const decided = !!countMode && state === "confirmed";
         const colour = SYMBOL_HEX[m.symbol_color];
         const selected = m.id === selectedId;
         const path = symbolPath(m.symbol_group, r);
-        const reviewed = m.human === "confirmed" || m.human === "edited";
+        const reviewed =
+          decided || m.human === "confirmed" || m.human === "edited";
         const sw = selected ? 3 : 1.5;
         return (
           <g
             key={m.id}
             transform={`translate(${a.x} ${a.y})`}
-            onClick={() => onSelect(m.id)}
+            onClick={(e) =>
+              onSymbolClick ? onSymbolClick(m, e) : onSelect(m.id)
+            }
             className={selected ? "symbol sel" : "symbol"}
             data-testid="count-symbol"
+            data-state={state}
             data-group={m.symbol_group}
             data-colour={m.symbol_color}
           >
@@ -105,18 +130,20 @@ export const SymbolOverlay: React.FC<{
               <path
                 d={path}
                 fill={colour}
-                fillOpacity={0.85}
+                fillOpacity={undecided ? 0.2 : 0.85}
                 stroke="#111"
                 strokeWidth={sw}
+                strokeDasharray={undecided ? "3 2" : undefined}
                 vectorEffect="non-scaling-stroke"
               />
             ) : (
               <circle
                 r={r}
                 fill={colour}
-                fillOpacity={0.85}
+                fillOpacity={undecided ? 0.2 : 0.85}
                 stroke="#111"
                 strokeWidth={sw}
+                strokeDasharray={undecided ? "3 2" : undefined}
                 vectorEffect="non-scaling-stroke"
               />
             )}

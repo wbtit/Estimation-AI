@@ -74,6 +74,15 @@ export const PageList: React.FC<{
               <small className="piece-count" title="pieces on this page">
                 {" "}
                 {flags.get(s.id)?.piece_count} pcs
+                {(flags.get(s.id)?.suggested_count ?? 0) > 0 && (
+                  <span
+                    className="suggested-count"
+                    title="suggested pieces nobody decided yet (count mode): in no total"
+                  >
+                    {" "}
+                    +{flags.get(s.id)?.suggested_count} suggested
+                  </span>
+                )}
               </small>
             )}
             {flags?.get(s.id)?.likely_not_framing && (

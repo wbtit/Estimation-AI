@@ -10,6 +10,8 @@ import { PageView } from "./components/PageView";
 import { AddLineForm } from "./components/AddLineForm";
 import { ClassPicker } from "./components/ClassPicker";
 import { ColumnForm } from "./components/ColumnForm";
+import { CountLayer, type MeasureDraft } from "./components/CountLayer";
+import { CountPanel } from "./components/CountPanel";
 import { LabelsPanel } from "./components/LabelsPanel";
 import { MemberActions, type LegendRow } from "./components/MemberActions";
 import { NameGate } from "./components/NameGate";
@@ -32,6 +34,7 @@ import {
   type LabelCategory,
 } from "./lib/labels";
 import type {
+  MemberView as MemberViewT,
   FlagsResponse,
   HistoryEdit,
   KindInfo,
@@ -45,6 +48,14 @@ import type {
 import { applyFilters, NO_FILTERS, type Filters } from "./lib/symbols";
 import { nearestLine, nextToReview, type Seg } from "./lib/pick";
 import { useMembers } from "./lib/useMembers";
+import { useCount } from "./lib/useCount";
+import { countStateOf, kindOptions } from "./lib/count";
+import {
+  nearestLine as nearestSnapLine,
+  snapPoint,
+  type LineRow,
+  type SnappedPoint,
+} from "./lib/snap";
 import { usePdf } from "./lib/usePdf";
 
 const MIN_BOX_PT = 20;
@@ -70,7 +81,7 @@ export const App: React.FC = () => {
   const [who, setWhoState] = useState(getWho());
   const [message, setMessage] = useState<string | null>(null);
   const [tab, setTab] = useState<
-    "views" | "members" | "tables" | "labels" | "notes" | "takeoff"
+    "views" | "members" | "tables" | "labels" | "notes" | "takeoff" | "count"
   >("members");
   const [rowIds, setRowIds] = useState<ReadonlySet<string>>(new Set());
   const [rowKeys, setRowKeys] = useState<ReadonlySet<string>>(new Set());
@@ -108,6 +119,28 @@ export const App: React.FC = () => {
   const [history, setHistory] = useState<HistoryEdit[]>([]);
   const [sameTag, setSameTag] = useState(0);
   const centerRef = useRef<HTMLElement>(null);
+  // Phase 8: the counting copilot
+  const [tool, setTool] = useState<"count" | "measure" | null>(null);
+  const [countKind, setCountKind] = useState("");
+  const [hover, setHover] = useState<Pt | null>(null);
+  const [hoverLine, setHoverLine] = useState<LineRow | null>(null);
+  const [hoverSnap, setHoverSnap] = useState<SnappedPoint | null>(null);
+  const [measure, setMeasure] = useState<MeasureDraft>({
+    a: null,
+    b: null,
+    aSnap: null,
+    bSnap: null,
+    text: null,
+  });
+  const rawClicks = useRef<{ a: Pt | null; b: Pt | null }>({
+    a: null,
+    b: null,
+  });
+  const [savedMeasure, setSavedMeasure] = useState<{
+    id: string;
+    text: string;
+  } | null>(null);
+  const hoverFrame = useRef<number | null>(null);
 
   const sheet = useMemo(
     () => sheets.find((s) => s.id === sheetId) ?? null,
@@ -272,6 +305,9 @@ export const App: React.FC = () => {
     if (!projectId) return setFlags(null);
     setFlags(await api<FlagsResponse>(`/api/projects/${projectId}/flags`));
   }, [projectId]);
+  const count = useCount(projectId, sheetId, who, fail, async () => {
+    await Promise.all([reloadMembers(), loadFlags()]);
+  });
   const project = projects.find((p) => p.id === projectId) ?? null;
   const scanning =
     !!project?.document && project.document.scan_status !== "done";
@@ -472,6 +508,114 @@ export const App: React.FC = () => {
     return who.trim();
   };
 
+  // ---- Phase 8: count and measure tools -----------------------------------------------------
+  const resetMeasure = useCallback(() => {
+    setMeasure({ a: null, b: null, aSnap: null, bSnap: null, text: null });
+    rawClicks.current = { a: null, b: null };
+    setSavedMeasure(null);
+  }, []);
+
+  const selectTool = (t: "count" | "measure" | null) => {
+    if (t && !requireWho()) return;
+    setTool(t);
+    setHover(null);
+    setHoverLine(null);
+    setHoverSnap(null);
+    resetMeasure();
+    if (t) {
+      setDrawing(false);
+      setAddingColumn(false);
+      setAddingBeam(false);
+      setLinkMode(null);
+      setTab("count");
+      void count.ensureLines();
+    }
+  };
+
+  // the kind to count: the first main kind of the list until a person chooses another
+  useEffect(() => {
+    if (!countKind && kinds.length > 0) {
+      const first =
+        kindOptions(kinds).find((k) => k.kind === "Beams") ??
+        kindOptions(kinds)[0];
+      if (first) setCountKind(first.kind);
+    }
+  }, [kinds, countKind]);
+
+  const updateHover = (p: Pt) => {
+    if (!tool) return;
+    if (hoverFrame.current !== null) return;
+    hoverFrame.current = window.requestAnimationFrame(() => {
+      hoverFrame.current = null;
+      setHover(p);
+      if (tool === "count") {
+        const hit = nearestSnapLine(
+          count.lines,
+          p.x,
+          p.y,
+          count.settings.snap_radius_pt,
+        );
+        setHoverLine(hit ? (count.lines[hit.index] as LineRow) : null);
+      } else {
+        setHoverSnap(snapPoint(count.lines, p.x, p.y, 12));
+      }
+    });
+  };
+
+  const measureClick = async (p: Pt) => {
+    if (rawClicks.current.a && !rawClicks.current.b) {
+      rawClicks.current.b = p;
+      const r = await count.preview(rawClicks.current.a, p);
+      if (!r) return resetMeasure();
+      setMeasure({
+        a: r.a,
+        b: r.b,
+        aSnap: r.a_snap,
+        bSnap: r.b_snap,
+        text: `${r.length_ft_in} (${Math.round(r.length_mm)} mm)`,
+      });
+      return;
+    }
+    // first click (or a new measurement after a finished one)
+    resetMeasure();
+    rawClicks.current = { a: p, b: null };
+    const sn = snapPoint(count.lines, p.x, p.y, 12);
+    setMeasure({
+      a: sn ? { x: sn.x, y: sn.y } : p,
+      b: null,
+      aSnap: sn,
+      bSnap: null,
+      text: null,
+    });
+  };
+
+  const saveMeasure = async () => {
+    const { a, b } = rawClicks.current;
+    if (!a || !b) return;
+    const r = await count.saveMeasurement(a, b);
+    if (r?.id)
+      setSavedMeasure({
+        id: r.id,
+        text: `${r.length_ft_in}, ${Math.round(r.length_mm)} mm`,
+      });
+  };
+
+  const symbolClick = (m: MemberViewT, e: React.MouseEvent) => {
+    if (
+      tool === "count" &&
+      m.origin === "extracted" &&
+      countStateOf(m) === "suggested"
+    ) {
+      e.stopPropagation();
+      if (!requireWho()) return;
+      void count.decide(m.id, e.shiftKey ? "reject" : "accept");
+      return;
+    }
+    if (pickedClick.current) return;
+    setMemberId(m.id);
+    setTab(tool ? "count" : "members");
+  };
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement).tagName;
@@ -483,6 +627,11 @@ export const App: React.FC = () => {
         );
       };
       if (e.key === "Escape") {
+        setTool(null);
+        setHover(null);
+        setHoverLine(null);
+        setHoverSnap(null);
+        resetMeasure();
         setDrawing(false);
         setAddingColumn(false);
         setAddingBeam(false);
@@ -493,6 +642,16 @@ export const App: React.FC = () => {
         setDrag(null);
         return;
       }
+      if (
+        (e.ctrlKey || e.metaKey) &&
+        (e.key.toLowerCase() === "y" ||
+          (e.shiftKey && e.key.toLowerCase() === "z"))
+      ) {
+        e.preventDefault();
+        if (!w) return needName();
+        void count.redo();
+        return;
+      }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
         e.preventDefault();
         if (!w) return needName();
@@ -500,7 +659,11 @@ export const App: React.FC = () => {
         return;
       }
       if (e.ctrlKey || e.metaKey || e.altKey) return;
-      if (e.key === "v") {
+      if (e.key === "k") {
+        selectTool(tool === "count" ? null : "count");
+      } else if (e.key === "m") {
+        selectTool(tool === "measure" ? null : "measure");
+      } else if (e.key === "v") {
         setAddingColumn(false);
         setAddingBeam(false);
         setLinkMode(null);
@@ -565,6 +728,9 @@ export const App: React.FC = () => {
     loadLines,
     fail,
     setMemberId,
+    tool,
+    count,
+    resetMeasure,
   ]);
 
   const createView = async (box: Box) => {
@@ -619,8 +785,28 @@ export const App: React.FC = () => {
     }
   };
 
-  const onPointerDown = (p: Pt): boolean => {
+  const onPointerDown = (p: Pt, e?: React.PointerEvent): boolean => {
     pickedClick.current = !!(linkMode || addingBeam || addingColumn);
+    if (tool === "count") {
+      // a click on a count symbol decides that suggestion (the symbol's own handler); elsewhere it counts
+      const onSymbol = (e?.target as Element | undefined)?.closest?.(
+        '[data-testid="count-symbol"]',
+      );
+      if (onSymbol) return false;
+      if (!requireWho()) return false;
+      if (!countKind) {
+        setMessage("Choose the kind to count first.");
+        return false;
+      }
+      void count.place(countKind, p.x, p.y).then((r) => {
+        if (r) setMemberId(r.member.id);
+      });
+      return false;
+    }
+    if (tool === "measure") {
+      void measureClick(p);
+      return false;
+    }
     if (linkMode) {
       const line = nearestLine(
         p.x,
@@ -691,6 +877,7 @@ export const App: React.FC = () => {
   };
   const onPointerMove = (p: Pt) => {
     if (drag) setDrag({ a: drag.a, b: p });
+    updateHover(p);
   };
   const onPointerUp = (p: Pt) => {
     if (!drag) return;
@@ -807,7 +994,7 @@ export const App: React.FC = () => {
               heightPt={heightPt}
               zoom={zoom}
               cursor={
-                drawing || addingColumn || addingBeam || linkMode
+                drawing || addingColumn || addingBeam || linkMode || tool
                   ? "crosshair"
                   : "default"
               }
@@ -861,11 +1048,24 @@ export const App: React.FC = () => {
                 zoom={zoom}
                 highlight={highlight}
                 markedIds={rowIds}
+                countMode={count.settings.count_mode || tool !== null}
+                onSymbolClick={symbolClick}
                 onSelect={(id) => {
                   if (pickedClick.current) return;
                   setMemberId(id);
                   setTab("members");
                 }}
+              />
+              <CountLayer
+                tool={tool}
+                zoom={zoom}
+                hover={hover}
+                hoverLine={hoverLine}
+                hoverSnap={hoverSnap}
+                radiusPt={
+                  tool === "measure" ? 12 : count.settings.snap_radius_pt
+                }
+                measure={measure}
               />
               {(linkMode || addingBeam) &&
                 pickLines.map((l, i) => (
@@ -932,6 +1132,7 @@ export const App: React.FC = () => {
                 "labels",
                 "notes",
                 "takeoff",
+                "count",
               ] as const
             ).map((t) => (
               <button
@@ -961,6 +1162,40 @@ export const App: React.FC = () => {
             />
           )}
           {tab === "notes" && <NotesPanel sheets={notes} />}
+          {tab === "count" && (
+            <CountPanel
+              members={members}
+              kinds={kinds}
+              settings={count.settings}
+              tool={tool}
+              kind={countKind}
+              linesState={count.linesState}
+              selectedId={memberId}
+              measure={{ text: measure.text, saved: savedMeasure }}
+              who={who}
+              onMode={(on) => {
+                if (requireWho()) void count.update({ count_mode: on });
+              }}
+              onRadius={(snap, label) =>
+                void count.update({
+                  snap_radius_pt: snap,
+                  label_radius_pt: label,
+                })
+              }
+              onTool={selectTool}
+              onKind={setCountKind}
+              onUndo={() => void undo()}
+              onRedo={() => void count.redo()}
+              onSelect={setMemberId}
+              onDecide={(id, d) => void count.decide(id, d)}
+              onDelete={(id) => void act(id, "/delete", "POST")}
+              onPatch={(id, patch) => void act(id, "", "PATCH", patch)}
+              onSaveMeasure={() => void saveMeasure()}
+              onAttach={(id) =>
+                savedMeasure && void count.attach(id, savedMeasure.id)
+              }
+            />
+          )}
           {tab === "takeoff" && projectId && (
             <TakeoffPanel
               projectId={projectId}

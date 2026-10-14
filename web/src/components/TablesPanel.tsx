@@ -113,10 +113,12 @@ const Table: React.FC<{
               }
             />
           </td>
-          <td />
-          <td />
+          <td className="num" title="from a two-click measurement">
+            {r.length_ft ?? ""}
+          </td>
+          <td className="num">{r.length_in ?? ""}</td>
           <td className="num">{r.unit_w ?? ""}</td>
-          <td />
+          <td className="num">{r.total_w ?? ""}</td>
           <td
             title={
               r.grade_suggestion
@@ -214,12 +216,19 @@ export const TablesPanel: React.FC<{
     notCounted: Apart,
     misc: Apart,
     unlinked: number,
+    suggested?: Apart,
   ) => (
     <>
       <ApartLine label="Red, not counted" a={red} red />
       <ApartLine label="Existing, not counted" a={existing} />
       <ApartLine label="Not counted (excluded kinds)" a={notCounted} />
       <ApartLine label="Not computed (misc)" a={misc} />
+      {suggested && (
+        <ApartLine
+          label="Suggested, not decided (count mode: in no total)"
+          a={suggested}
+        />
+      )}
       {unlinked > 0 && (
         <tr className="apart-row">
           <td colSpan={2}>Unlinked labels (in no total)</td>
@@ -319,6 +328,7 @@ export const TablesPanel: React.FC<{
             page.not_counted,
             page.misc,
             page.unlinked,
+            page.suggested,
           )}
         />
       ) : (
@@ -341,6 +351,7 @@ export const TablesPanel: React.FC<{
               data.job.not_counted,
               data.job.misc,
               data.job.unlinked,
+              data.job.suggested,
             )}
             {data.job.sheets_excluded.length > 0 && (
               <tr className="apart-row">
