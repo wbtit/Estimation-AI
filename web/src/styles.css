@@ -224,6 +224,7 @@ button.primary.active {
 }
 .tabs {
   display: flex;
+  flex-wrap: wrap; /* Phase 10: eight tabs with the pilot on */
   border-bottom: 1px solid #ccc;
 }
 .tab {
@@ -751,4 +752,19 @@ mark {
 .sheet-number.none {
   color: #888;
   font-style: italic;
+}
+
+/* Phase 10: the pilot report scrolls sideways inside the side panel; the typical editor */
+.pilot-report {
+  overflow-x: auto;
+}
+.typical-editor {
+  margin: 6px 0;
+  padding: 6px;
+  border: 1px solid #f0a30a;
+  background: #fff8e8;
+  border-radius: 4px;
+}
+.typical-editor input[type="number"] {
+  width: 4em;
 }
