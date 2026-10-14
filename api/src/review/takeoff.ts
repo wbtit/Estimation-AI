@@ -5,7 +5,7 @@ import { mmToFeetInches } from '../units/index.js';
 import type { MemberView } from './members.js';
 import type { ViewBox } from '../db/types.js';
 import { familyOf, GRADE_NOT_SET } from './grades.js';
-import { isPossibleDuplicate } from './shared-line.js';
+import { isPossibleDuplicate, pieceQuantity } from './shared-line.js';
 
 export type TakeoffColor = 'green' | 'amber' | 'red';
 
@@ -29,7 +29,14 @@ export interface TakeoffRow {
   family: string | null;
   /** The grade a person set for the family, or "not set". Never inferred. */
   grade: string;
+  /**
+   * Pieces on the display basis: ONE PIECE PER LINKED LINE. A label on a line that already has its
+   * piece adds 0 here (it is still listed, and counted in `labels`). A held-out possible duplicate
+   * shows its labels' quantity because it is not in the totals.
+   */
   quantity: number;
+  /** The same members on the older basis, one piece per label (kept for comparison and review). */
+  labels: number;
   members: number;
   /** Sum of quantity x unit length over the members with a TRUSTED length; null when none has one. */
   total_length_mm: number | null;
@@ -57,7 +64,10 @@ export interface TakeoffRow {
 }
 
 export interface TakeoffTotals {
+  /** Pieces on the display basis: one piece per linked line. */
   pieces: number;
+  /** Labels (one piece per label, the older basis) in the same rows. */
+  labels: number;
   members: number;
   /** Length of the pieces whose length is trusted (a line shared with other members is not). */
   total_length_mm: number;
@@ -137,6 +147,7 @@ const RANK: Record<TakeoffColor, number> = { green: 0, amber: 1, red: 2 };
 function emptyTotals(): TakeoffTotals {
   return {
     pieces: 0,
+    labels: 0,
     members: 0,
     total_length_mm: 0,
     total_length_ft_in: mmToFeetInches(0),
@@ -152,6 +163,7 @@ function finish(t: TakeoffTotals): TakeoffTotals {
 
 function add(t: TakeoffTotals, row: TakeoffRow): void {
   t.pieces += row.quantity;
+  t.labels += row.labels;
   t.members += row.members;
   t.total_length_mm += row.total_length_mm ?? 0;
   t.unmeasured += row.unmeasured;
@@ -289,8 +301,8 @@ function reviewSummary(members: MemberView[]): ReviewSummary {
     system,
     human,
     main_total_unreviewed: {
-      pieces: sum(open, (m) => m.quantity),
-      of_pieces: sum(inMain, (m) => m.quantity),
+      pieces: sum(open, pieceQuantity),
+      of_pieces: sum(inMain, pieceQuantity),
       total_length_mm: r1(sum(open, length)),
       of_length_mm: r1(sum(inMain, length)),
       total_length_ft_in: mmToFeetInches(sum(open, length)),
@@ -326,6 +338,10 @@ function section(
   const rows: TakeoffRow[] = [];
   for (const [key, list] of groups) {
     const first = list[0];
+    // pieces of the row on the display basis; a held-out duplicate candidate keeps its labels' quantity
+    // existing steel is listed, not counted: its quantity is its labels
+    const piecesOf = (m: MemberView): number =>
+      bySheet || kindIn(m) === 'duplicate' ? m.quantity : pieceQuantity(m);
     // a length on a line shared with other members is the whole line: not trusted, not added up
     const measured = list.filter((m) => m.length_mm !== null && !m.length_shared);
     const total = measured.reduce((sum, m) => sum + (m.length_mm as number) * m.quantity, 0);
@@ -349,14 +365,17 @@ function section(
       level: first.level,
       family: familyOf(first),
       grade: grades.get(familyOf(first) ?? '') ?? GRADE_NOT_SET,
-      quantity: list.reduce((n, m) => n + m.quantity, 0),
+      quantity: list.reduce((n, m) => n + piecesOf(m), 0),
+      labels: list.reduce((n, m) => n + m.quantity, 0),
       members: list.length,
       total_length_mm: measured.length ? Math.round(total * 10) / 10 : null,
       total_length_ft_in: measured.length ? mmToFeetInches(total) : null,
       unmeasured: list
         .filter((m) => m.length_mm === null && !m.length_shared)
-        .reduce((n, m) => n + m.quantity, 0),
-      length_shared_pieces: list.filter((m) => m.length_shared).reduce((n, m) => n + m.quantity, 0),
+        .reduce((n, m) => n + piecesOf(m), 0),
+      length_shared_pieces: list
+        .filter((m) => m.length_shared)
+        .reduce((n, m) => n + piecesOf(m), 0),
       unit_lengths_mm: [
         ...new Set(measured.map((m) => Math.round((m.length_mm as number) * 10) / 10)),
       ].sort((a, b) => a - b),

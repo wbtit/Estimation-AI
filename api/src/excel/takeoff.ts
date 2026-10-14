@@ -131,6 +131,12 @@ export async function buildTakeoffWorkbook(input: TakeoffExportInput): Promise<B
     d.total_length_ft_in,
     d.total_length_mm,
   ]);
+  ws.addRow([
+    'COUNT BASIS: one piece per linked line. Labels on a line that already has its piece are listed but add 0; labels in the rows above (older basis, one piece per label)',
+    null,
+    null,
+    t.labels,
+  ]);
   ws.getColumn(6).numFmt = '#,##0.0';
   ws.columns.forEach((col, i) => {
     col.width = i === 14 ? 60 : i === 0 ? 26 : 18;

@@ -8,6 +8,8 @@
 import type { Kysely } from 'kysely';
 import type { Database } from '../db/types.js';
 import { loadSheetInclusions, type SheetInclusion } from './takeoff-sheets.js';
+import { pieceQuantity } from './shared-line.js';
+import { loadMemberViews } from '../routes/members.js';
 
 export type FlagCode =
   | 'SHEET_INCLUDED_BY_DEFAULT'
@@ -30,7 +32,11 @@ export interface SheetFlags {
   page_number: number;
   included: boolean;
   by_default: boolean;
-  /** Pieces of the sheet (live members), so an outlier sheet is easy to see. */
+  /**
+   * Pieces of the sheet on the display basis (one piece per linked line), so an outlier sheet is
+   * easy to see. Live, linked members that are not existing steel; labels without a line are not
+   * pieces.
+   */
   piece_count: number;
   /** A vector sheet whose page type guess is not a framing plan (flag only). */
   likely_not_framing: boolean;
@@ -77,16 +83,16 @@ export async function loadSheetFlags(
   const viewsOf = new Map<string, typeof views>();
   for (const v of views) viewsOf.set(v.sheet_id, [...(viewsOf.get(v.sheet_id) ?? []), v]);
   const meta = new Map(sheets.map((s) => [s.id, s] as const));
-  const counts = sheets.length
-    ? await db
-        .selectFrom('members')
-        .select(['sheet_id', (eb) => eb.fn.countAll<string>().as('n')])
-        .where('project_id', '=', projectId)
-        .where('review_status', '!=', 'rejected')
-        .groupBy('sheet_id')
-        .execute()
-    : [];
-  const pieces = new Map(counts.map((c) => [c.sheet_id, Number(c.n)] as const));
+  const pieces = new Map<string, number>();
+  if (sheets.length) {
+    for (const m of await loadMemberViews(db, projectId)) {
+      if (m.sheet_id === null || m.deleted || m.merged_into !== null || m.not_member !== null) {
+        continue;
+      }
+      if (m.existing || m.status.color === 'unlinked') continue;
+      pieces.set(m.sheet_id, (pieces.get(m.sheet_id) ?? 0) + pieceQuantity(m));
+    }
+  }
   return incl.map((i) => {
     const flags: SheetFlag[] = [];
     const push = (code: FlagCode, view_id?: string) =>

@@ -5,6 +5,10 @@
 //   - pieces: every member of a shared line stays in the main total (amber, shown grouped);
 //   - length: the whole line is not the length of each member, so a member on a shared line has
 //     length_shared and its length is left out of the length totals (a typed length is trusted);
+//   - Phase 7 (owner decision 4 of Phase 6b, confirmed in 6c): the DISPLAY COUNT BASIS is one piece per
+//     linked line. Of the labels on one line only the best-ranked one that is not red carries the piece;
+//     the others stay listed (amber, grouped) but add 0 pieces. A label counts as its own piece when a
+//     person said "separate members" or typed its length. See `pieceQuantity`.
 //   - duplicates: only a true duplicate candidate (same line, same canonical profile, labels
 //     overlapping or closer than DUPLICATE_LABEL_HEIGHTS label heights) is held out of the main
 //     total, until a person says "separate members" or merges it (both are edits with undo).
@@ -19,6 +23,11 @@ export interface SharedLine {
   size: number;
   /** The best-ranked member of the group (a person's link first, then confidence, then score). */
   best: boolean;
+  /**
+   * This member carries a piece of the line (one piece per linked line): the best-ranked member that
+   * is not red, or a member a person made separate or gave a typed length.
+   */
+  line_piece: boolean;
   /** What a person decided for this member. */
   resolution: 'separate' | null;
   /** The whole group is resolved (every member is "separate"). The amber flag is lifted then. */
@@ -80,6 +89,14 @@ export function annotateSharedLines(members: MemberView[]): MemberView[] {
     if (list.length < 2) continue;
     const sorted = [...list].sort((a, b) => before(rank(a.m, a.order), rank(b.m, b.order)));
     const resolved = list.every((x) => x.m.shared_resolution === 'separate');
+    // the piece of the line: the best member that is not red (a red one is held out of the main total,
+    // so it must not take the piece of a line that has a usable label); all red: the best one
+    // (existing steel is listed apart and never carries the piece of a line with a new label)
+    const carrier = (
+      sorted.find((e) => e.m.status.color !== 'red' && !e.m.existing) ??
+      sorted.find((e) => !e.m.existing) ??
+      sorted[0]
+    ).m;
     sorted.forEach(({ m }, i) => {
       // a duplicate of a better-ranked member of this line, unless a person said "separate"
       const twin =
@@ -90,6 +107,8 @@ export function annotateSharedLines(members: MemberView[]): MemberView[] {
         group,
         size: list.length,
         best: i === 0,
+        line_piece:
+          m === carrier || m.shared_resolution === 'separate' || m.length_source === 'manual',
         resolution: m.shared_resolution,
         resolved,
         duplicate_of: twin ? twin.m.id : null,
@@ -102,6 +121,14 @@ export function annotateSharedLines(members: MemberView[]): MemberView[] {
     m.length_shared = m.shared_line !== null && m.length_source !== 'manual';
   }
   return members;
+}
+
+/**
+ * Pieces this member adds on the display basis (one piece per linked line): its quantity, except a
+ * label on a line that already has its piece, which adds 0. A member alone on its line counts fully.
+ */
+export function pieceQuantity(m: MemberView): number {
+  return m.shared_line !== null && !m.shared_line.line_piece ? 0 : m.quantity;
 }
 
 /** A true duplicate candidate: held out of the main total until a person decides. */

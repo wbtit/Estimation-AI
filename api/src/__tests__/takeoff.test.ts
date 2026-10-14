@@ -341,6 +341,13 @@ describe('takeoff routes', () => {
       .getRows(1, ws.rowCount)!
       .find((r) => r.getCell(1).value === 'TOTAL (rows in totals)')!;
     expect(total.getCell(4).value).toBe(2);
+    // the sheet says which count basis the pieces column uses, and gives the label count beside it
+    const basis = ws
+      .getRows(1, ws.rowCount)!
+      .find((r) =>
+        String(r.getCell(1).value).startsWith('COUNT BASIS: one piece per linked line'),
+      )!;
+    expect(basis.getCell(4).value).toBe(2);
   });
 });
 

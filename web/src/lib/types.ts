@@ -309,7 +309,10 @@ export interface TakeoffRow {
   level: string | null;
   family: string | null;
   grade: string;
+  /** Pieces on the display basis: one piece per linked line (a label on a shared line adds 0). */
   quantity: number;
+  /** Labels in the row (older basis: one piece per label). */
+  labels: number;
   members: number;
   total_length_mm: number | null;
   total_length_ft_in: string | null;
@@ -332,7 +335,10 @@ export interface TakeoffRow {
 }
 
 export interface TakeoffTotals {
+  /** One piece per linked line. */
   pieces: number;
+  /** One piece per label (the older basis), for comparison. */
+  labels: number;
   members: number;
   total_length_mm: number;
   total_length_ft_in: string;

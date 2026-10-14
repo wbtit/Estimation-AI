@@ -2,7 +2,12 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from '../app.js';
 import { closeDatabaseConnection, getDb } from '../db/client.js';
 import type { MemberView } from '../review/members.js';
-import { annotateSharedLines, isPossibleDuplicate, lineKey } from '../review/shared-line.js';
+import {
+  annotateSharedLines,
+  isPossibleDuplicate,
+  lineKey,
+  pieceQuantity,
+} from '../review/shared-line.js';
 import { buildTakeoff } from '../review/takeoff.js';
 import { REASONS, withSharedLine } from '../review/status.js';
 import { deleteProject, insertProject, insertSheet } from './helpers.js';
@@ -182,19 +187,97 @@ describe('shared line grouping', () => {
     expect(a.shared_line).toBeNull();
   });
 
-  it('takeoff: shared-line pieces stay in the total, their length is left out and counted apart', () => {
+  it('takeoff: one piece per linked line; the other labels on it are listed with 0 pieces', () => {
     const a = member('a', { quantity: 2 });
     const b = member('b', { profile: 'W10X12' });
     const lone = member('c', { link: { ...member('c').link, line: { p: [0, 0], q: [10, 0] } } });
     annotateSharedLines([a, b, lone]);
     const t = buildTakeoff([a, b, lone], new Map([['s1', 3]]));
-    expect(t.totals.pieces).toBe(4);
-    expect(t.totals.length_shared_pieces).toBe(3);
+    expect(t.totals.pieces).toBe(3); // the line of a and b (a carries it, quantity 2) + the lone line
+    expect(t.totals.labels).toBe(4); // the older basis, one piece per label
+    expect(t.totals.length_shared_pieces).toBe(2);
     expect(t.totals.total_length_mm).toBe(3000); // only the member alone on its line
     expect(t.possible_duplicates.pieces).toBe(0);
     const shared = t.rows.find((r) => r.profile === 'W10X12')!;
-    expect(shared).toMatchObject({ quantity: 1, total_length_mm: null, length_shared_pieces: 1 });
+    expect(shared).toMatchObject({
+      quantity: 0,
+      labels: 1,
+      members: 1,
+      total_length_mm: null,
+      length_shared_pieces: 0,
+    });
     expect(shared.unit_lengths_mm).toEqual([]);
+    expect(t.review.main_total_unreviewed.of_pieces).toBe(3);
+  });
+
+  describe('which label carries the piece of a line', () => {
+    it('the best-ranked label that is not red; a red label never takes the piece', () => {
+      const red = member('r', {
+        link: { ...member('r').link, confidence: 'high' },
+        status: { color: 'red', confirmed: false, reasons: ['x'] },
+      });
+      const ok = member('o', {
+        profile: 'W10X12',
+        link: { ...member('o').link, confidence: 'low' },
+      });
+      annotateSharedLines([red, ok]);
+      expect(red.shared_line?.best).toBe(true); // ranked first ...
+      expect(red.shared_line?.line_piece).toBe(false); // ... but red, so it does not carry the piece
+      expect(ok.shared_line?.line_piece).toBe(true);
+      const t = buildTakeoff([red, ok], new Map([['s1', 3]]));
+      expect(t.totals.pieces).toBe(1);
+      expect(t.excluded_red.pieces).toBe(0);
+    });
+
+    it('a line whose labels are all red keeps one red piece', () => {
+      const r1 = member('r1', { status: { color: 'red', confirmed: false, reasons: ['x'] } });
+      const r2 = member('r2', {
+        profile: 'W10X12',
+        status: { color: 'red', confirmed: false, reasons: ['x'] },
+      });
+      annotateSharedLines([r1, r2]);
+      expect([r1, r2].filter((m) => m.shared_line?.line_piece)).toHaveLength(1);
+      expect(buildTakeoff([r1, r2], new Map([['s1', 3]])).excluded_red.pieces).toBe(1);
+    });
+
+    it('a person saying "separate members" makes every label its own piece', () => {
+      const a = member('a', { shared_resolution: 'separate' });
+      const b = member('b', { profile: 'W10X12', shared_resolution: 'separate' });
+      annotateSharedLines([a, b]);
+      expect(buildTakeoff([a, b], new Map([['s1', 3]])).totals.pieces).toBe(2);
+    });
+
+    it('a typed length makes the label its own piece', () => {
+      const a = member('a');
+      const b = member('b', { profile: 'W10X12', length_source: 'manual' });
+      annotateSharedLines([a, b]);
+      expect(a.shared_line?.line_piece).toBe(true);
+      expect(b.shared_line?.line_piece).toBe(true);
+      expect(buildTakeoff([a, b], new Map([['s1', 3]])).totals.pieces).toBe(2);
+    });
+
+    it('existing steel never carries the piece of a line that has a new label', () => {
+      const old = member('e', {
+        existing: true,
+        link: { ...member('e').link, confidence: 'high' },
+      });
+      const fresh = member('f', {
+        profile: 'W10X12',
+        link: { ...member('f').link, confidence: 'low' },
+      });
+      annotateSharedLines([old, fresh]);
+      expect(fresh.shared_line?.line_piece).toBe(true);
+      expect(old.shared_line?.line_piece).toBe(false);
+      const t = buildTakeoff([old, fresh], new Map([['s1', 3]]));
+      expect(t.totals.pieces).toBe(1);
+      expect(t.existing.totals.pieces).toBe(1); // existing steel is listed with its labels
+    });
+
+    it('a label alone on its line counts its full quantity', () => {
+      const a = member('a', { quantity: 3 });
+      annotateSharedLines([a]);
+      expect(pieceQuantity(a)).toBe(3);
+    });
   });
 
   it('takeoff: a true duplicate candidate is held out of the main total on its own line, not deleted', () => {
@@ -277,16 +360,26 @@ describe('shared line routes', () => {
     await deleteProject(db, projectId);
   });
 
-  it('two members on one line are grouped; both pieces count, their length does not', async () => {
+  it('two members on one line are grouped; ONE piece counts (the line), their length does not', async () => {
     const ms = await members();
     expect(ms.map((m) => m.shared_line?.size)).toEqual([2, 2]);
     expect(ms.every((m) => m.status.color === 'amber' && m.length_shared)).toBe(true);
     expect(ms.filter((m) => m.shared_line?.best)).toHaveLength(1);
     const t = await takeoff();
-    expect(t.totals.pieces).toBe(2);
-    expect(t.totals.length_shared_pieces).toBe(2);
+    expect(t.totals.pieces).toBe(1);
+    expect(t.totals.labels).toBe(2);
+    expect(t.totals.length_shared_pieces).toBe(1);
     expect(t.totals.total_length_mm).toBe(0);
     expect(t.possible_duplicates.pieces).toBe(0);
+  });
+
+  it('the sheet list counts the same basis: one piece for the shared line', async () => {
+    const f = (await app.inject({ method: 'GET', url: `/api/projects/${projectId}/flags` })).json();
+    const total = f.sheets.reduce(
+      (n: number, sh: { piece_count: number }) => n + sh.piece_count,
+      0,
+    );
+    expect(total).toBe(1);
   });
 
   it('"separate members" lifts the amber flag for everybody (the length stays untrusted); undo re-opens it', async () => {
@@ -294,7 +387,7 @@ describe('shared line routes', () => {
     let ms = await members();
     expect(ms.every((m) => m.shared_line?.resolved && m.status.color === 'green')).toBe(true);
     expect(ms.every((m) => m.length_shared)).toBe(true);
-    expect((await takeoff()).totals.pieces).toBe(2);
+    expect((await takeoff()).totals.pieces).toBe(2); // every label is its own piece once a person says so
     const undo = await app.inject({
       method: 'POST',
       url: `/api/projects/${projectId}/undo`,
@@ -324,7 +417,7 @@ describe('shared line routes', () => {
       url: `/api/projects/${projectId}/undo`,
       payload: { who: 'alice' },
     });
-    expect((await takeoff()).totals.pieces).toBe(2);
+    expect((await takeoff()).totals.pieces).toBe(1); // still one piece for the one line
   });
 
   it('refuses a member that is not in a group, and an unknown member to keep', async () => {
@@ -417,11 +510,12 @@ describe('true duplicate candidates through the routes', () => {
     await deleteProject(db, projectId);
   });
 
-  it('only the twin is held out of the main total; the other three count as pieces', async () => {
+  it('only the twin is held out of the main total; the other three share the one piece of the line', async () => {
     const t = await takeoff();
-    expect(t.totals.pieces).toBe(3);
+    expect(t.totals.pieces).toBe(1);
+    expect(t.totals.labels).toBe(3);
     expect(t.possible_duplicates.pieces).toBe(1);
-    expect(t.totals.length_shared_pieces).toBe(3);
+    expect(t.totals.length_shared_pieces).toBe(1);
     const twin = t.rows.find((r: { kind: string }) => r.kind === 'duplicate');
     expect(twin.member_ids).toEqual([ids.twin]);
   });
@@ -429,7 +523,7 @@ describe('true duplicate candidates through the routes', () => {
   it('"separate members" brings the twin into the total; an undo holds it out again', async () => {
     expect((await post(ids.twin, { resolution: 'separate' })).statusCode).toBe(200);
     let t = await takeoff();
-    expect(t.totals.pieces).toBe(4);
+    expect(t.totals.pieces).toBe(4); // "separate members" resolves the whole line: every label is a piece
     expect(t.possible_duplicates.pieces).toBe(0);
     expect((await undo()).statusCode).toBe(200);
     t = await takeoff();
@@ -440,7 +534,8 @@ describe('true duplicate candidates through the routes', () => {
     expect((await post(ids.twin, { resolution: 'merge', keep: ids.a })).statusCode).toBe(200);
     const t = await takeoff();
     expect(t.possible_duplicates.pieces).toBe(0);
-    expect(t.totals.pieces).toBe(3);
+    expect(t.totals.pieces).toBe(1); // a, far and other still share the one line
+    expect(t.totals.labels).toBe(3);
     expect((await undo()).statusCode).toBe(200);
     expect((await takeoff()).possible_duplicates.pieces).toBe(1);
   });

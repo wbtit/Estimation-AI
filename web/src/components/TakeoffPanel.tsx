@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { api, send } from "../lib/api";
 import { COLOUR_HEX } from "../lib/status";
+import { piecesText, rowLabelsNote } from "../lib/pieces";
 import type {
   TakeoffData,
   TakeoffRow,
@@ -9,7 +10,7 @@ import type {
 } from "../lib/types";
 
 const totalsLine = (t: TakeoffTotals) =>
-  `${t.pieces} pieces, trusted length ${t.total_length_ft_in} (${Math.round(t.total_length_mm)} mm)${
+  `${piecesText(t.pieces, t.labels)}, trusted length ${t.total_length_ft_in} (${Math.round(t.total_length_mm)} mm)${
     t.unmeasured ? `, ${t.unmeasured} without length` : ""
   }${
     t.length_shared_pieces
@@ -39,7 +40,15 @@ const Section: React.FC<{
       <td>{r.mark ?? ""}</td>
       <td>{r.profile_raw ?? ""}</td>
       <td>{r.profile ?? "?"}</td>
-      <td className="num">{r.quantity}</td>
+      <td className="num">
+        {r.quantity}
+        {r.labels !== r.quantity && (
+          <small title="labels in this row; a label on a line that already has its piece adds no extra piece">
+            {" "}
+            {rowLabelsNote(r.quantity, r.labels)}
+          </small>
+        )}
+      </td>
       <td className="num">
         {r.total_length_ft_in ?? (r.length_shared_pieces ? "not trusted" : "-")}
         {r.total_length_mm !== null && (

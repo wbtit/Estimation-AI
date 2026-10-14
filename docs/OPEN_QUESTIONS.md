@@ -172,3 +172,8 @@ Each item is an assumption I made so Phase 1 could proceed while you were away. 
 105. **Page map for 13 pages (142 symbols, 3.2%).** A text alignment disagrees with the Phase 5t map; a geometry test is mixed. May the map be checked by a person on those pages (job-005, job-006, job-014, job-019) before any re-scoring?
 106. **Columns and posts.** About 13% of the sample are rings beside column or footing marks, which are not beam lines. Count them with the beams, separately, or leave out of the line count?
 107. **Raster pictures inside vector pages.** 5% of the missed symbols (two jobs) sit on pictures placed inside vector pages. Out of scope, or flagged on the sheet list?
+
+### Answers recorded in Phase 7 Part A (2026-10-14)
+- **99 (count basis).** Applied: one piece per linked line is the display and Excel basis (see the SPEC Decision Log). Open detail for the owner: the BOM and its Excel summary still count one piece per label; should they follow? A shared line with different profiles (the usual case on job-005) now shows one piece with the other labels listed at 0; a person's "separate members" restores one piece per label.
+- **Stray duplicate project.** Preview counts: 1 project row, 1 file record, 20 sheets, 1 job; 0 views, text items, legend rows, members, edits. The rule was "delete only if every count is zero", so nothing was deleted. Say if it should go anyway (it is the aborted first scan attempt; the uploaded PDF file on disk would stay unless you say so).
+
