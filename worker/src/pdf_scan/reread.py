@@ -3,7 +3,9 @@
 Only the number columns of `sheets` are touched (sheet_number, sheet_number_source,
 sheet_number_old, sheet_number_old_source, sheet_number_flag); nothing else of a scan is redone.
 `apply=False` (the default) is a preview: it reports how many sheets would change and writes
-nothing.
+nothing. `only_missing=True` writes only fill-ins: a sheet that had no number gets the new reading;
+a stored number is never overwritten (Phase 10, owner decision 123). The per-page changes are
+returned under "changes" (for the private review file); they are never logged.
 Counts only in the result and in logs (no sheet number is logged).
 """
 
@@ -23,7 +25,12 @@ log = logging.getLogger("worker.reread")
 
 
 def reread_sheet_numbers(
-    conn: psycopg.Connection, config: WorkerConfig, project_id: str, *, apply: bool = False
+    conn: psycopg.Connection,
+    config: WorkerConfig,
+    project_id: str,
+    *,
+    apply: bool = False,
+    only_missing: bool = False,
 ) -> dict[str, Any]:
     file = conn.execute(
         "SELECT stored_path FROM project_files WHERE project_id = %s", (project_id,)
@@ -48,6 +55,8 @@ def reread_sheet_numbers(
         "fallback_old": 0,
         "no_number": 0,
         "flag_only": 0,
+        "written": 0,
+        "changes": [],
     }
     with pymupdf.open(pdf) as doc:
         for s in sheets:
@@ -60,11 +69,21 @@ def reread_sheet_numbers(
             if found.sheet_number != s["sheet_number"]:
                 key = "number_read_where_none" if s["sheet_number"] is None else "number_changed"
                 out[key] += 1
+                out["changes"].append(
+                    {
+                        "page_index": s["page_index"],
+                        "kind": key,
+                        "old": s["sheet_number"],
+                        "new": found.sheet_number,
+                    }
+                )
             elif found.sheet_number_flag != s["sheet_number_flag"]:
                 out["flag_only"] += 1
             else:
                 out["unchanged"] += 1
-            if apply:
+            fill_in = s["sheet_number"] is None and found.sheet_number is not None
+            if apply and (not only_missing or fill_in):
+                out["written"] += 1
                 conn.execute(
                     "UPDATE sheets SET sheet_number = %s, sheet_number_source = %s,"
                     " sheet_number_old = %s, sheet_number_old_source = %s, sheet_number_flag = %s"
@@ -80,5 +99,5 @@ def reread_sheet_numbers(
                 )
     if apply:
         conn.commit()
-    log.info("reread sheet numbers: %s", out)
+    log.info("reread sheet numbers: %s", {k: v for k, v in out.items() if k != "changes"})
     return out

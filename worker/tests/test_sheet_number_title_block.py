@@ -142,3 +142,29 @@ def test_the_reread_previews_without_writing_and_then_applies(dbp: DbProject):
 
 def test_pymupdf_is_imported_for_the_factory():
     assert pymupdf.__name__ == "pymupdf"
+
+
+def test_fill_ins_only_never_overwrite_a_stored_number(dbp: DbProject):
+    doc = new_doc()
+    block_page(doc, "S4-01", other="S4")
+    block_page(doc, "S4-02", other="S4")
+    doc.save(str(dbp.pdf_path))
+    doc.close()
+    dbp.scan()
+    # page 0 had the earlier reading stored, page 1 had no number at all
+    dbp.conn.execute(
+        "UPDATE sheets SET sheet_number = CASE page_index WHEN 0 THEN 'S4' ELSE NULL END,"
+        " sheet_number_old = NULL, sheet_number_flag = NULL WHERE project_id = %s",
+        (dbp.project_id,),
+    )
+    dbp.conn.commit()
+    done = reread_sheet_numbers(dbp.conn, dbp.config, dbp.project_id, apply=True, only_missing=True)
+    assert done["written"] == 1
+    assert {c["kind"] for c in done["changes"]} == {"number_changed", "number_read_where_none"}
+    rows = dbp.conn.execute(
+        "SELECT page_index, sheet_number, sheet_number_flag FROM sheets WHERE project_id = %s"
+        " ORDER BY page_index",
+        (dbp.project_id,),
+    ).fetchall()
+    assert rows[0] == {"page_index": 0, "sheet_number": "S4", "sheet_number_flag": None}
+    assert rows[1] == {"page_index": 1, "sheet_number": "S4-02", "sheet_number_flag": "title_block"}
