@@ -43,6 +43,6 @@ Branch `phase-9` (from `phase-8`). Local only, nothing pushed.
 
 ## What was run
 - Lint (`make lint`): clean. API 576 tests, worker 626, web 117, all passing (before this phase: 556, 576, 95).
-- New tests: `api/src/__tests__/pilot-copilot.test.ts` (11), ranked snap cases (shared fixture, API 25 snap tests, web 22), `worker/tests/test_line_roles.py` (8), `test_sheet_number_title_block.py` (8), `test_phase9_lib.py` (34), `web/src/components/pilot.test.tsx` (12).
+- New tests: `api/src/__tests__/pilot-copilot.test.ts` (11), ranked snap cases (shared fixture, API 25 snap tests, web 22), `worker/tests/test_line_roles.py` (8), `test_sheet_number_title_block.py` (8), `test_phase9_lib.py` (34), `web/src/components/pilot.test.tsx` (14).
 - Processes (PIDs recorded, stopped by PID): a read-only API on port 3100 for Part C (stopped); the browser demo's API, worker, web server and geckodriver (all stopped, pid file empty). The API on port 3000 was not touched. The scratch database of the demo was dropped.
 - **Not applied to the real database:** migration 014 and the sheet-number re-read (questions 123).
