@@ -25,3 +25,6 @@ Switched through the app's own route (`PUT /api/projects/<pilot-01>/count`, who 
 ## Step 5: estimator prefix meanings
 `fixtures/private/review/prefix_meanings.csv` does not exist, so nothing was loaded; every project's mapping stays empty and new pieces use the kind list's own prefix.
 Note for when the file comes: today's mapping is per project only, and a file that gives one prefix for two kinds is refused as a whole. Decision 132 asks for a company-wide default with a per-project override, and for such a prefix to stay unmapped and be flagged. That needs a small additive migration (016, a company-level table) and changes to the loader; it is not built yet (question 135).
+
+## Step 6: runbook
+`docs/PILOT_RUNBOOK.md`: one page, plain language. For the estimator: name and pilot switch, confirming the scale, choosing a kind, clicking, Tab to change the line, accepting and rejecting suggestions, x N typical with a note, measuring and attaching a length, undo and redo, and export. For the owner: reading the Report tab and exporting the CSV.
