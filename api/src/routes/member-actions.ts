@@ -46,6 +46,7 @@ import { parseJoist } from '../review/joist.js';
 import { parseProfile } from '../review/profile.js';
 import { parseLengthMm } from '../units/parse.js';
 import { loadKinds } from '../review/kinds.js';
+import { tagPool } from '../review/tag-scope.js';
 import { correctionLines } from '../review/corrections.js';
 import { loadMemberViews } from './members.js';
 import { HttpError } from './http-error.js';
@@ -421,7 +422,7 @@ export const memberActionRoutes: FastifyPluginAsync<MemberActionOptions> = async
         );
         if (patch.tag_text && patch.tag_text.trim() !== '') {
           const wanted = patch.tag_text.trim().toUpperCase();
-          const clash = (await sheetMembersOf(projectId, m)).find(
+          const clash = (await tagPoolOf(projectId, m)).find(
             (o) =>
               o.id !== m.id &&
               !o.deleted &&
@@ -444,6 +445,11 @@ export const memberActionRoutes: FastifyPluginAsync<MemberActionOptions> = async
       });
     },
   );
+
+  /** The members a tag of this one must not collide with (the job or the sheet, by the project's setting). */
+  async function tagPoolOf(projectId: string, m: MemberView): Promise<MemberView[]> {
+    return tagPool(db(), projectId, await sheetMembersOf(projectId, m));
+  }
 
   /** Every member of the sheet of this one, with effective values. */
   async function sheetMembersOf(projectId: string, m: MemberView): Promise<MemberView[]> {
@@ -526,7 +532,10 @@ export const memberActionRoutes: FastifyPluginAsync<MemberActionOptions> = async
       return act(projectId, memberId, request.body.who, async (m) => {
         const sheet = await sheetMembersOf(projectId, m);
         const targets = [m, ...(allSameTag ? sameTagMembers(m, sheet) : [])];
-        return kindEntries(targets, sheet, await loadKinds(db()), { kind, confirm });
+        return kindEntries(targets, await tagPoolOf(projectId, m), await loadKinds(db()), {
+          kind,
+          confirm,
+        });
       });
     },
   );

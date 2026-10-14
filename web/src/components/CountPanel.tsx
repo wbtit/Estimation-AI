@@ -6,6 +6,8 @@ import {
   pieceLists,
   sizeNote,
   type CountSettings,
+  type TagScope,
+  isUnlinkedSuggestion,
 } from "../lib/count";
 import type { LinesState } from "../lib/useCount";
 import type { KindInfo, MemberView } from "../lib/types";
@@ -28,6 +30,7 @@ export const CountPanel: React.FC<{
   who: string;
   onMode: (on: boolean) => void;
   onRadius: (snap: number, label: number) => void;
+  onScope: (scope: TagScope) => void;
   onTool: (t: "count" | "measure" | null) => void;
   onKind: (k: string) => void;
   onUndo: () => void;
@@ -42,7 +45,7 @@ export const CountPanel: React.FC<{
   onSaveMeasure: () => void;
   onAttach: (memberId: string) => void;
 }> = (p) => {
-  const lists = pieceLists(p.members);
+  const lists = pieceLists(p.members, p.settings.count_mode);
   const bySize = confirmedBySize(p.members);
   const [showRejected, setShowRejected] = useState(false);
   const selected = p.members.find((m) => m.id === p.selectedId) ?? null;
@@ -130,6 +133,17 @@ export const CountPanel: React.FC<{
           />{" "}
           pt
         </label>
+        <label>
+          tag numbers{" "}
+          <select
+            value={p.settings.tag_scope}
+            onChange={(e) => p.onScope(e.target.value as TagScope)}
+            aria-label="tag numbering"
+          >
+            <option value="job">run on across the job</option>
+            <option value="sheet">restart on each sheet</option>
+          </select>
+        </label>
         <span className="hint" data-testid="lines-state">
           {p.linesState === "preparing"
             ? "extracting the page's lines..."
@@ -146,6 +160,12 @@ export const CountPanel: React.FC<{
         <b>{total}</b> confirmed · <b>{lists.suggested.length}</b> suggested
         (dashed, in no total) · {lists.rejected.length} rejected ·{" "}
         {lists.unlinked.length} labels with no line
+        {p.tool === "count" && (
+          <>
+            {" "}
+            · <small>Tab: next line under the pointer</small>
+          </>
+        )}
       </p>
       {bySize.length > 0 && (
         <ul className="by-size" data-testid="by-size">
@@ -249,6 +269,15 @@ export const CountPanel: React.FC<{
             <span className="tag">{m.tag.text || "?"}</span>
             <span className="kind">{m.kind.name ?? "no kind"}</span>
             <span className="size-text">{m.profile_raw ?? "no size"}</span>
+            {isUnlinkedSuggestion(m) && (
+              <span
+                className="badge amber"
+                data-testid="no-line-badge"
+                title="A size label with no line near it: counting it adds a piece with no length until a line is given."
+              >
+                no line
+              </span>
+            )}
             <button
               onClick={() => p.onDecide(m.id, "accept")}
               data-testid="accept"

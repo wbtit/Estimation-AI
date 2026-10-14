@@ -10,7 +10,7 @@ from typing import Any
 
 from src.pdf_scan.classify import classify, view_titles
 from src.pdf_scan.scale import distinct_scales, find_scales_in_line
-from src.pdf_scan.sheet_id import SHEET_NUMBER_RE, find_sheet_id
+from src.pdf_scan.sheet_id import TITLE_BLOCK_NUMBER_RE, find_sheet_id
 from src.pdf_scan.textlines import Line, Word
 
 CONF_NUMBER_LABEL = 0.9
@@ -25,6 +25,12 @@ CONF_SCALE_MULTIPLE = 0.5
 class TextScan:
     sheet_number: str | None = None
     sheet_number_source: str | None = None
+    # Phase 9: the earlier reading kept when the title-block reading replaced it with another value,
+    # and how the shown number was found ('title_block', or 'fallback_old' when the earlier reading
+    # is shown because no title-block number was found)
+    sheet_number_old: str | None = None
+    sheet_number_old_source: str | None = None
+    sheet_number_flag: str | None = None
     title: str | None = None
     kind: str = "other"
     kind_confidence: float = 0.0
@@ -51,7 +57,7 @@ def _locate_number(words: list[Word], number: str) -> Word | None:
     best: Word | None = None
     for w in words:
         token = w.text.strip().strip(".,;:()[]").upper()
-        if token == number and SHEET_NUMBER_RE.match(token):
+        if token == number and TITLE_BLOCK_NUMBER_RE.match(token):
             if best is None or w.box.height > best.box.height:
                 best = w
     return best
@@ -59,18 +65,28 @@ def _locate_number(words: list[Word], number: str) -> Word | None:
 
 def scan_text(words: list[Word], lines: list[Line], page_w: float, page_h: float) -> TextScan:
     out = TextScan()
-    sheet = find_sheet_id(words, lines, page_w, page_h)
-    out.sheet_number, out.sheet_number_source, out.title = (
-        sheet.number,
-        sheet.number_source,
-        sheet.title,
-    )
+    # the title-block reading is preferred; the earlier reading is the fallback (and is kept when
+    # it differs), with a flag
+    sheet = find_sheet_id(words, lines, page_w, page_h, title_block=True)
+    earlier = find_sheet_id(words, lines, page_w, page_h)
+    if sheet.number is None and earlier.number is not None:
+        out.sheet_number_flag = "fallback_old"
+        out.sheet_number, out.sheet_number_source = earlier.number, earlier.number_source
+        sheet = earlier  # the earlier reading is shown, so its flags and alternatives apply
+    else:
+        out.sheet_number, out.sheet_number_source = sheet.number, sheet.number_source
+        if sheet.number is not None:
+            out.sheet_number_flag = "title_block"
+            if earlier.number is not None and earlier.number != sheet.number:
+                out.sheet_number_old = earlier.number
+                out.sheet_number_old_source = earlier.number_source
+    out.title = sheet.title
     reasons = list(sheet.flags)
     conflicts: list[dict[str, Any]] = []
     evidence: dict[str, Any] = {"method": "pdf_text", "conflicts": conflicts}
 
-    if sheet.number:
-        located = _locate_number(words, sheet.number)
+    if out.sheet_number:
+        located = _locate_number(words, out.sheet_number)
         conflict = "sheet_number_conflict" in sheet.flags
         confidence = (
             CONF_NUMBER_CONFLICT
@@ -80,14 +96,16 @@ def scan_text(words: list[Word], lines: list[Line], page_w: float, page_h: float
             else CONF_NUMBER_REGION
         )
         evidence["sheet_number"] = {
-            "value": sheet.number,
-            "rule": sheet.number_source,
+            "value": out.sheet_number,
+            "rule": out.sheet_number_source,
             "confidence": confidence,
             "bbox": _bbox(located.box) if located else None,
+            "reading": out.sheet_number_flag,
+            "earlier_value": out.sheet_number_old,
         }
         if conflict:
             conflicts.append(
-                {"field": "sheet_number", "values": [sheet.number, *sheet.alternatives]}
+                {"field": "sheet_number", "values": [out.sheet_number, *sheet.alternatives]}
             )
     else:
         evidence["sheet_number"] = None

@@ -6,7 +6,9 @@ import {
   nearestLine,
   pointSegmentDistance,
   segmentIntersection,
+  snapCandidates,
   snapPoint,
+  snapTier,
 } from '../review/snap.js';
 
 const cases = JSON.parse(
@@ -19,6 +21,16 @@ const cases = JSON.parse(
   ),
 ) as {
   lines: number[][];
+  classes: string[];
+  ranked_lines: number[][];
+  legacy_lines: number[][];
+  candidates: {
+    name: string;
+    lines: 'ranked' | 'legacy';
+    click: [number, number];
+    radius: number;
+    expect: number[];
+  }[];
   nearest: {
     name: string;
     click: [number, number];
@@ -52,6 +64,35 @@ describe('snap: the shared cases', () => {
       }
     });
   }
+});
+
+describe('snap: ranked candidates (Phase 9)', () => {
+  for (const c of cases.candidates) {
+    it(c.name, () => {
+      const lines = c.lines === 'ranked' ? cases.ranked_lines : cases.legacy_lines;
+      const got = snapCandidates(lines, cases.classes, c.click[0], c.click[1], c.radius);
+      expect(got.map((g) => g.index)).toEqual(c.expect);
+    });
+  }
+
+  it('never offers hatch or a dimension line, even when they are the only lines near', () => {
+    const got = snapCandidates(cases.ranked_lines, cases.classes, 250, 98.5, 3);
+    expect(got.map((g) => g.index)).not.toContain(3);
+    expect(got.map((g) => g.index)).not.toContain(4);
+  });
+
+  it('tiers: solid medium or heavy 0, solid thin 1, dashed 2', () => {
+    expect(snapTier(cases.ranked_lines[0] as number[], cases.classes)).toBe(0);
+    expect(snapTier(cases.ranked_lines[1] as number[], cases.classes)).toBe(1);
+    expect(snapTier(cases.ranked_lines[2] as number[], cases.classes)).toBe(2);
+  });
+
+  it('offers at most eight candidates and is deterministic', () => {
+    const many = Array.from({ length: 20 }, (_, k) => [0, k * 0.5, 100, k * 0.5, 0, 1, 2, 0]);
+    const a = snapCandidates(many, cases.classes, 50, 5, 24);
+    expect(a).toHaveLength(8);
+    expect(snapCandidates(many, cases.classes, 50, 5, 24)).toEqual(a);
+  });
 });
 
 describe('snap: geometry', () => {

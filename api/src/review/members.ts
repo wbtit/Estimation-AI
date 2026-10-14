@@ -75,6 +75,9 @@ export interface CountView {
     q: [number, number];
     class: string | null;
     version: string | null;
+    /** Phase 9: the place in the ranked candidate list and whether Tab chose it. */
+    rank?: number;
+    by?: 'rank' | 'tab';
   } | null;
   snapped_distance_pt: number | null;
   size_source: SizeSource | null;
@@ -359,6 +362,7 @@ export function memberView(
     linkConfidence: row.link_confidence,
     hasLine: line !== null,
     manualLength: typedLength !== null,
+    personPiece: countConfirmed,
     humanConfirmed,
     // a column's length comes from its elevations, so its view scale does not matter
     kind: { state: kindState, weak: !strongSource },

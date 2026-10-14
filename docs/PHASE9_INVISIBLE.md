@@ -8,7 +8,7 @@ Definitions: `docs/PHASE9_PREREGISTRATION.md` section 3 and its addendum (commit
 **The size is not invisible to the text reader; it is nearly absent from the drawings.** The estimators' 62 pieces are three rows of 30, 26 and 6. On the four sheets those rows point to, the size is written **twice in all** (once on each of two sheets), as a typical note, and the estimators placed **no count symbol on two of the four sheets** and 14 symbols (a different mark prefix) on the other two. So the quantity does not come from counting labels or lines: it comes from a repeat count stated outside the drawing marks. "Label count x lines in the region" does not approach it (ratio 0.03 to 0.15). The control shows the diagnostic can tell the difference: for the 110-piece size the label count alone equals the takeoff quantity (110 / 110).
 
 ## C1. Where the size sits
-Rows of the size: 3 (quantities 30, 26, 6); 3 references each, all mapped, pointing to sheets (page indexes) **1, 4, 5 and 9** (rows 1, 5, 9 / 1, 4, 9 / 1, 5, 9).
+Rows of the size: 3 (quantities 30, 26, 6); 3 references each, all mapped, pointing to sheets (page indexes) **1, 4, 5 and 9** (rows: 1, 4, 9 / 1, 5, 9 / 1, 5, 9).
 
 | | text layer (full size written) | stroke text | dimensions only / fragment | nowhere |
 |---|---|---|---|---|

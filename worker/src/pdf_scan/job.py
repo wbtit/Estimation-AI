@@ -36,7 +36,7 @@ INSERT INTO sheets (
     text_char_count, vector_path_count, image_count, image_coverage, sheet_number_source,
     scales, scale_parsed, scale_parsed_ratio, scale_source, needs_review, review_reasons,
     thumbnail_path, text_quality, scan_evidence, page_type_guess, page_type_reason, level_guess,
-    plan_frame, scanned_at
+    plan_frame, sheet_number_old, sheet_number_old_source, sheet_number_flag, scanned_at
 ) VALUES (
     %(project_id)s, %(page_index)s, %(sheet_number)s, %(title)s, %(kind)s, %(kind_confidence)s,
     %(kind_reason)s, %(width_pt)s, %(height_pt)s, %(rotation)s, %(page_kind)s,
@@ -44,7 +44,8 @@ INSERT INTO sheets (
     %(image_count)s, %(image_coverage)s, %(sheet_number_source)s, %(scales)s, %(scale_parsed)s,
     %(scale_parsed_ratio)s, %(scale_source)s, %(needs_review)s, %(review_reasons)s,
     %(thumbnail_path)s, %(text_quality)s, %(scan_evidence)s, %(page_type_guess)s,
-    %(page_type_reason)s, %(level_guess)s, %(plan_frame)s, NOW()
+    %(page_type_reason)s, %(level_guess)s, %(plan_frame)s, %(sheet_number_old)s,
+    %(sheet_number_old_source)s, %(sheet_number_flag)s, NOW()
 )
 ON CONFLICT (project_id, page_index) DO UPDATE SET
     sheet_number = EXCLUDED.sheet_number, title = EXCLUDED.title, kind = EXCLUDED.kind,
@@ -63,7 +64,9 @@ ON CONFLICT (project_id, page_index) DO UPDATE SET
     thumbnail_path = EXCLUDED.thumbnail_path, text_quality = EXCLUDED.text_quality,
     scan_evidence = EXCLUDED.scan_evidence, page_type_guess = EXCLUDED.page_type_guess,
     page_type_reason = EXCLUDED.page_type_reason, level_guess = EXCLUDED.level_guess,
-    plan_frame = EXCLUDED.plan_frame, scanned_at = NOW()
+    plan_frame = EXCLUDED.plan_frame, sheet_number_old = EXCLUDED.sheet_number_old,
+    sheet_number_old_source = EXCLUDED.sheet_number_old_source,
+    sheet_number_flag = EXCLUDED.sheet_number_flag, scanned_at = NOW()
 """
 
 

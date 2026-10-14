@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { SheetNumber } from "./SheetNumber";
 import type { Sheet, SheetFlags } from "../lib/types";
 
 export const PAGE_TYPE_OPTIONS: [string, string][] = [
@@ -38,7 +39,12 @@ export const SheetHeader: React.FC<{
   return (
     <div className="sheet-header">
       <span>
-        Page <b>{sheet.page_number}</b> {sheet.sheet_number ?? ""}
+        Page <b>{sheet.page_number}</b>{" "}
+        <SheetNumber
+          value={sheet.sheet_number}
+          flag={sheet.sheet_number_flag}
+          earlier={sheet.sheet_number_old}
+        />
       </span>
       <label>
         type{" "}

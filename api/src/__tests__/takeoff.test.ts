@@ -148,6 +148,7 @@ describe('takeoff grouping', () => {
     expect(t.excluded_red.pieces).toBe(0);
     expect(t.unlinked_labels).toEqual({
       count: 3,
+      as_suggestions: 0,
       by_sheet: [
         { sheet_id: 'sheet-14', page_number: 14, count: 2 },
         { sheet_id: 'sheet-15', page_number: 15, count: 1 },

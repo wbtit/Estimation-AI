@@ -119,6 +119,7 @@ describe('count mode: settings and the lines of a sheet', () => {
       count_mode: false,
       snap_radius_pt: 24,
       label_radius_pt: 80,
+      tag_scope: 'job',
     });
     const put = await app.inject({
       method: 'PUT',
@@ -257,7 +258,15 @@ describe('count mode: a click makes a confirmed piece with evidence', () => {
     });
     expect(patch.json().member).toMatchObject({ profile: 'W10X12' });
     expect(patch.json().member.count.size_source).toBe('manual');
-    expect(patch.json().member.status.color).not.toBe('amber');
+    // typing the size lifts "size missing"; with no line the piece is still a counted piece (amber,
+    // "no line"), not dropped into the unlinked list (Phase 9 fix of the Phase 8 status rule)
+    const st = patch.json().member.status;
+    expect(st.color).toBe('amber');
+    expect(st.reasons.join(' ')).toContain('no line');
+    expect(st.reasons.join(' ')).not.toContain('size missing');
+    const t = await takeoff();
+    const inRows = t.rows.flatMap((r: { member_ids: string[] }) => r.member_ids);
+    expect(inRows).toContain(ids.click4);
   });
 
   it('the radius is configurable per click; a different kind has its own running number', async () => {
@@ -410,13 +419,13 @@ describe('count mode: totals, tables and the Excel export count confirmed pieces
     const f = (await get('/flags')).json();
     const sheet = f.sheets.find((s: { sheet_id: string }) => s.sheet_id === sheetId);
     expect(sheet.piece_count).toBeGreaterThan(0);
-    expect(sheet.suggested_count).toBe(1); // D
+    expect(sheet.suggested_count).toBe(2); // D, and the unlinked label C (an amber suggestion)
   });
 
   it('the page and job tables list suggestions apart, not in a total', async () => {
     const t = (await get('/tables')).json();
-    expect(t.job.suggested.pieces).toBe(1);
-    expect(t.pages[0].suggested.pieces).toBe(1);
+    expect(t.job.suggested.pieces).toBe(2); // D and the unlinked label C
+    expect(t.pages[0].suggested.pieces).toBe(2);
     const inRows = t.job.rows.flatMap((r: { member_ids: string[] }) => r.member_ids);
     expect(inRows).not.toContain(ids.D);
     expect(inRows).not.toContain(ids.B);

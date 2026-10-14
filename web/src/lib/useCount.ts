@@ -39,6 +39,7 @@ export interface MeasureResult {
 
 interface SheetLines {
   version: string;
+  classes: string[];
   lines: LineRow[];
 }
 
@@ -53,6 +54,8 @@ export function useCount(
   const [settings, setSettings] = useState<CountSettings>(DEFAULT_SETTINGS);
   const [linesState, setLinesState] = useState<LinesState>("idle");
   const [lines, setLines] = useState<LineRow[]>([]);
+  const [classes, setClasses] = useState<string[]>([]);
+  const [version, setVersion] = useState<string | null>(null);
   const cache = useRef(new Map<string, SheetLines>());
   const [last, setLast] = useState<ClickResult | null>(null);
 
@@ -65,6 +68,8 @@ export function useCount(
 
   useEffect(() => {
     setLines([]);
+    setClasses([]);
+    setVersion(null);
     setLinesState("idle");
     setLast(null);
   }, [sheetId]);
@@ -75,6 +80,8 @@ export function useCount(
     const hit = cache.current.get(sheetId);
     if (hit) {
       setLines(hit.lines);
+      setClasses(hit.classes);
+      setVersion(hit.version);
       setLinesState("ready");
       return;
     }
@@ -94,6 +101,8 @@ export function useCount(
       );
       cache.current.set(sheetId, l);
       setLines(l.lines);
+      setClasses(l.classes);
+      setVersion(l.version);
       setLinesState("ready");
     } catch (err) {
       setLinesState("error");
@@ -120,7 +129,7 @@ export function useCount(
   );
 
   const place = useCallback(
-    async (kind: string, x: number, y: number) => {
+    async (kind: string, x: number, y: number, snapLineId?: number) => {
       if (!projectId || !sheetId) return null;
       try {
         const r = await send<ClickResult>(
@@ -134,6 +143,10 @@ export function useCount(
             y,
             radius: settings.snap_radius_pt,
             label_radius: settings.label_radius_pt,
+            // the line Tab walked to (the server checks it is among the ranked candidates)
+            ...(snapLineId !== undefined && version
+              ? { snap_choice: { line_id: snapLineId, version } }
+              : {}),
           },
         );
         setLast(r);
@@ -144,7 +157,7 @@ export function useCount(
         return null;
       }
     },
-    [projectId, sheetId, who, settings, onError, afterChange],
+    [projectId, sheetId, who, settings, version, onError, afterChange],
   );
 
   const decide = useCallback(
@@ -232,6 +245,7 @@ export function useCount(
     update,
     linesState,
     lines,
+    classes,
     ensureLines,
     place,
     decide,

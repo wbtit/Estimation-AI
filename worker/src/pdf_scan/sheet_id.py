@@ -9,6 +9,13 @@ Sheet number:
      looks like a sheet number and is clearly larger than the other text there. If two different
      candidates are too close in size -> ambiguous.
 Title: only when it sits on, right of, or under a "SHEET TITLE" / "DRAWING TITLE" / "TITLE" label.
+
+Phase 9 (`title_block=True`): the title-block reading. The number pattern also accepts the common
+`S4-01` form (letter, digit, hyphen, digits) that the earlier pattern could not match, so the
+earlier
+reading picked another token in the corner; and a label's number may sit below and to the right of
+the label (a right-aligned cell), up to NUMBER_BELOW_RIGHT_MAX of the page width. The earlier
+reading (`title_block=False`) is kept unchanged as the fallback.
 """
 
 import re
@@ -20,6 +27,11 @@ from src.pdf_scan.textlines import Line, Word
 # Letters, optional hyphen, digits, optional decimal part, optional trailing letter:
 # S001, S030, S4.1, S-101, S2.01, S101A, SD1.2.
 SHEET_NUMBER_RE = re.compile(r"^[A-Z]{1,3}-?\d{1,4}(?:\.\d{1,3})?[A-Z]?$")
+# Phase 9: also S4-01, S1.01-A, A-101.2 (letters, digits, then any run of "-nn" or ".nn" groups).
+TITLE_BLOCK_NUMBER_RE = re.compile(r"^[A-Z]{1,3}-?\d{1,4}(?:[.-]\d{1,3})*[A-Z]?$")
+NUMBER_BELOW_RIGHT_MAX = (
+    0.05  # of page width: a number below a label may start this far right of it
+)
 
 _NUMBER_LABEL = r"(?:SHEET|SHT|DWG|DRAWING)\s*(?:NO|NUM|NUMBER|#)\.?"
 _NUMBER_LABEL_ALONE_RE = re.compile(rf"^{_NUMBER_LABEL}\s*:?$")
@@ -54,9 +66,10 @@ def _clean(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip().upper()
 
 
-def _candidate(text: str) -> str | None:
+def _candidate(text: str, title_block: bool = False) -> str | None:
     token = _clean(text).strip(".,;:()[]")
-    return token if SHEET_NUMBER_RE.match(token) else None
+    rx = TITLE_BLOCK_NUMBER_RE if title_block else SHEET_NUMBER_RE
+    return token if rx.match(token) else None
 
 
 def _in_title_block_region(word: Word, page_w: float, page_h: float) -> bool:
@@ -65,13 +78,18 @@ def _in_title_block_region(word: Word, page_w: float, page_h: float) -> bool:
     return corner or cx >= TITLE_BLOCK_STRIP * page_w
 
 
-def _numbers_near_label(label: Line, words: list[Word], page_w: float) -> list[tuple[float, str]]:
+def _numbers_near_label(
+    label: Line, words: list[Word], page_w: float, title_block: bool = False
+) -> list[tuple[float, str]]:
     """(distance, number) for number-like words right of or below a label line."""
     found: list[tuple[float, str]] = []
     lb = label.box
     max_dx = NUMBER_LABEL_MAX_DISTANCE * page_w
+    slack = lb.width * 0.5
+    if title_block:
+        slack = max(slack, NUMBER_BELOW_RIGHT_MAX * page_w)
     for w in words:
-        token = _candidate(w.text)
+        token = _candidate(w.text, title_block)
         if token is None:
             continue
         b = w.box
@@ -80,7 +98,7 @@ def _numbers_near_label(label: Line, words: list[Word], page_w: float) -> list[t
             b.cy > lb.cy
             and b.y0 - lb.y1 <= 4 * lb.height
             and b.x1 >= lb.x0 - lb.width * 0.5
-            and b.x0 <= lb.x1 + lb.width * 0.5
+            and b.x0 <= lb.x1 + slack
         )
         if right_of or below:
             found.append(((b.cx - lb.cx) ** 2 + (b.cy - lb.cy) ** 2, token))
@@ -88,13 +106,13 @@ def _numbers_near_label(label: Line, words: list[Word], page_w: float) -> list[t
 
 
 def _find_number(
-    words: list[Word], lines: list[Line], page_w: float, page_h: float
+    words: list[Word], lines: list[Line], page_w: float, page_h: float, title_block: bool = False
 ) -> tuple[str | None, str | None, list[str]]:
     anchored: list[str] = []
     for line in lines:
         text = _clean(line.text)
         if _NUMBER_LABEL_ALONE_RE.match(text):
-            near = sorted(_numbers_near_label(line, words, page_w))
+            near = sorted(_numbers_near_label(line, words, page_w, title_block))
             if near:
                 nearest = near[0][0]
                 # candidates at (almost) the same distance as the nearest are ties
@@ -103,7 +121,7 @@ def _find_number(
             continue
         inline = _NUMBER_LABEL_INLINE_RE.match(text)
         if inline:
-            value = _candidate(inline.group("value"))
+            value = _candidate(inline.group("value"), title_block)
             if value:
                 anchored.append(value)
     distinct = sorted(set(anchored))
@@ -112,11 +130,13 @@ def _find_number(
     if len(distinct) > 1:
         return None, None, ["sheet_number_ambiguous"]
 
-    number, flags = _region_number(words, page_w, page_h)
+    number, flags = _region_number(words, page_w, page_h, title_block)
     return number, ("title_block_region" if number else None), flags
 
 
-def _region_number(words: list[Word], page_w: float, page_h: float) -> tuple[str | None, list[str]]:
+def _region_number(
+    words: list[Word], page_w: float, page_h: float, title_block: bool = False
+) -> tuple[str | None, list[str]]:
     """The sheet number from the title-block region alone: clearly the largest candidate."""
     region = [w for w in words if _in_title_block_region(w, page_w, page_h)]
     if not region:
@@ -124,7 +144,7 @@ def _region_number(words: list[Word], page_w: float, page_h: float) -> tuple[str
     typical = median(w.box.height for w in region)
     sizes: dict[str, float] = {}
     for w in region:
-        token = _candidate(w.text)
+        token = _candidate(w.text, title_block)
         if token is not None and w.box.height >= REGION_SIZE_FACTOR * typical:
             sizes[token] = max(sizes.get(token, 0.0), w.box.height)
     if not sizes:
@@ -191,14 +211,21 @@ def _find_title(lines: list[Line]) -> tuple[str | None, list[str]]:
     return None, ["title_not_found"]
 
 
-def find_sheet_id(words: list[Word], lines: list[Line], page_w: float, page_h: float) -> SheetId:
-    number, source, number_flags = _find_number(words, lines, page_w, page_h)
+def find_sheet_id(
+    words: list[Word],
+    lines: list[Line],
+    page_w: float,
+    page_h: float,
+    *,
+    title_block: bool = False,
+) -> SheetId:
+    number, source, number_flags = _find_number(words, lines, page_w, page_h, title_block)
     title, title_flags = _find_title(lines)
     flags = [*number_flags, *title_flags]
     alternatives: list[str] = []
     if source == "label":
         # a label-anchored number that disagrees with a clear title-block candidate is a conflict
-        other, _ = _region_number(words, page_w, page_h)
+        other, _ = _region_number(words, page_w, page_h, title_block)
         if other is not None and other != number:
             alternatives = [other]
             flags.append("sheet_number_conflict")

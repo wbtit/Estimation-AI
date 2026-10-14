@@ -1,181 +1,386 @@
 {
-  "_doc": "Synthetic snap cases shared by the API (api/src/review/snap.ts) and the web (web/src/lib/snap.ts). Lines are [x0, y0, x1, y1, class_index, width] in page points. nearest: the extracted line nearest to the click within the radius (any class). point: the nearest line endpoint or intersection within the radius (the measure tool).",
-  "lines": [
-    [
-      100,
-      100,
-      300,
-      100,
-      0,
-      1.0
-    ],
-    [
-      100,
-      100,
-      100,
-      300,
-      1,
-      0.5
-    ],
-    [
-      200,
-      50,
-      200,
-      250,
-      2,
-      0.25
-    ],
-    [
-      150,
-      160,
-      350,
-      160,
-      0,
-      1.0
-    ],
-    [
-      400,
-      400,
-      410,
-      400,
-      0,
-      0.5
-    ]
+ "_doc": "Synthetic snap cases shared by the API (api/src/review/snap.ts) and the web (web/src/lib/snap.ts). Lines are [x0, y0, x1, y1, class_index, width] in page points. nearest: the extracted line nearest to the click within the radius (any class). point: the nearest line endpoint or intersection within the radius (the measure tool). candidates (Phase 9): the ranked snap candidates, using classes + ranked_lines (rows have role and dimension columns: role 0 hatch, 1 thin, 2 medium, 3 heavy; dimension 1 = a detected dimension line); expect is the list of line indexes, best first (hatch and dimension lines never appear; solid medium/heavy first, then solid thin, then dashed; then distance, then the longer line, then the lower index). legacy_lines have six columns (no role): medium when the width is 0.5 pt or more.",
+ "lines": [
+  [
+   100,
+   100,
+   300,
+   100,
+   0,
+   1.0
   ],
-  "nearest": [
-    {
-      "name": "on the first line",
-      "click": [
-        150,
-        102
-      ],
-      "radius": 24,
-      "expect": {
-        "index": 0
-      }
-    },
-    {
-      "name": "nothing within the radius",
-      "click": [
-        600,
-        600
-      ],
-      "radius": 24,
-      "expect": null
-    },
-    {
-      "name": "a thinner line that is nearer wins (any class)",
-      "click": [
-        198,
-        140
-      ],
-      "radius": 24,
-      "expect": {
-        "index": 2
-      }
-    },
-    {
-      "name": "inside the radius",
-      "click": [
-        150,
-        142
-      ],
-      "radius": 20,
-      "expect": {
-        "index": 3
-      }
-    },
-    {
-      "name": "just outside the radius",
-      "click": [
-        150,
-        138
-      ],
-      "radius": 20,
-      "expect": null
-    },
-    {
-      "name": "a tie goes to the longer line, then the lower index",
-      "click": [
-        100,
-        100
-      ],
-      "radius": 5,
-      "expect": {
-        "index": 0
-      }
-    }
+  [
+   100,
+   100,
+   100,
+   300,
+   1,
+   0.5
   ],
-  "point": [
-    {
-      "name": "an endpoint within the radius",
-      "click": [
-        296,
-        105
-      ],
-      "radius": 12,
-      "expect": {
-        "kind": "endpoint",
-        "x": 300,
-        "y": 100
-      }
-    },
-    {
-      "name": "an intersection within the radius",
-      "click": [
-        204,
-        104
-      ],
-      "radius": 12,
-      "expect": {
-        "kind": "intersection",
-        "x": 200,
-        "y": 100
-      }
-    },
-    {
-      "name": "a shared endpoint",
-      "click": [
-        103,
-        98
-      ],
-      "radius": 12,
-      "expect": {
-        "kind": "endpoint",
-        "x": 100,
-        "y": 100
-      }
-    },
-    {
-      "name": "nothing within the radius",
-      "click": [
-        250,
-        250
-      ],
-      "radius": 12,
-      "expect": null
-    },
-    {
-      "name": "the nearer of an endpoint and an intersection",
-      "click": [
-        196,
-        163
-      ],
-      "radius": 12,
-      "expect": {
-        "kind": "intersection",
-        "x": 200,
-        "y": 160
-      }
-    },
-    {
-      "name": "a smaller radius finds nothing",
-      "click": [
-        296,
-        110
-      ],
-      "radius": 5,
-      "expect": null
-    }
+  [
+   200,
+   50,
+   200,
+   250,
+   2,
+   0.25
+  ],
+  [
+   150,
+   160,
+   350,
+   160,
+   0,
+   1.0
+  ],
+  [
+   400,
+   400,
+   410,
+   400,
+   0,
+   0.5
   ]
+ ],
+ "nearest": [
+  {
+   "name": "on the first line",
+   "click": [
+    150,
+    102
+   ],
+   "radius": 24,
+   "expect": {
+    "index": 0
+   }
+  },
+  {
+   "name": "nothing within the radius",
+   "click": [
+    600,
+    600
+   ],
+   "radius": 24,
+   "expect": null
+  },
+  {
+   "name": "a thinner line that is nearer wins (any class)",
+   "click": [
+    198,
+    140
+   ],
+   "radius": 24,
+   "expect": {
+    "index": 2
+   }
+  },
+  {
+   "name": "inside the radius",
+   "click": [
+    150,
+    142
+   ],
+   "radius": 20,
+   "expect": {
+    "index": 3
+   }
+  },
+  {
+   "name": "just outside the radius",
+   "click": [
+    150,
+    138
+   ],
+   "radius": 20,
+   "expect": null
+  },
+  {
+   "name": "a tie goes to the longer line, then the lower index",
+   "click": [
+    100,
+    100
+   ],
+   "radius": 5,
+   "expect": {
+    "index": 0
+   }
+  }
+ ],
+ "point": [
+  {
+   "name": "an endpoint within the radius",
+   "click": [
+    296,
+    105
+   ],
+   "radius": 12,
+   "expect": {
+    "kind": "endpoint",
+    "x": 300,
+    "y": 100
+   }
+  },
+  {
+   "name": "an intersection within the radius",
+   "click": [
+    204,
+    104
+   ],
+   "radius": 12,
+   "expect": {
+    "kind": "intersection",
+    "x": 200,
+    "y": 100
+   }
+  },
+  {
+   "name": "a shared endpoint",
+   "click": [
+    103,
+    98
+   ],
+   "radius": 12,
+   "expect": {
+    "kind": "endpoint",
+    "x": 100,
+    "y": 100
+   }
+  },
+  {
+   "name": "nothing within the radius",
+   "click": [
+    250,
+    250
+   ],
+   "radius": 12,
+   "expect": null
+  },
+  {
+   "name": "the nearer of an endpoint and an intersection",
+   "click": [
+    196,
+    163
+   ],
+   "radius": 12,
+   "expect": {
+    "kind": "intersection",
+    "x": 200,
+    "y": 160
+   }
+  },
+  {
+   "name": "a smaller radius finds nothing",
+   "click": [
+    296,
+    110
+   ],
+   "radius": 5,
+   "expect": null
+  }
+ ],
+ "classes": [
+  "2-3|black|solid",
+  "0-1|black|solid",
+  "0.5-1|black|dash"
+ ],
+ "ranked_lines": [
+  [
+   100,
+   100,
+   300,
+   100,
+   0,
+   2.0,
+   3,
+   0
+  ],
+  [
+   100,
+   104,
+   300,
+   104,
+   1,
+   0.25,
+   1,
+   0
+  ],
+  [
+   100,
+   108,
+   300,
+   108,
+   2,
+   0.75,
+   2,
+   0
+  ],
+  [
+   100,
+   98,
+   300,
+   98,
+   1,
+   0.25,
+   0,
+   0
+  ],
+  [
+   100,
+   102,
+   300,
+   102,
+   1,
+   0.25,
+   1,
+   1
+  ],
+  [
+   100,
+   120,
+   300,
+   120,
+   0,
+   1.0,
+   2,
+   0
+  ],
+  [
+   100,
+   101,
+   300,
+   101,
+   1,
+   0.25,
+   1,
+   0
+  ],
+  [
+   100,
+   100,
+   200,
+   100,
+   0,
+   2.0,
+   3,
+   0
+  ]
+ ],
+ "legacy_lines": [
+  [
+   100,
+   100,
+   300,
+   100,
+   0,
+   2.0
+  ],
+  [
+   100,
+   104,
+   300,
+   104,
+   1,
+   0.25
+  ],
+  [
+   100,
+   108,
+   300,
+   108,
+   2,
+   0.75
+  ],
+  [
+   100,
+   120,
+   300,
+   120,
+   0,
+   1.0
+  ]
+ ],
+ "candidates": [
+  {
+   "name": "solid heavy and medium come before a nearer thin line; hatch and dimension never",
+   "lines": "ranked",
+   "click": [
+    150,
+    103
+   ],
+   "radius": 24,
+   "expect": [
+    0,
+    7,
+    5,
+    1,
+    6,
+    2
+   ]
+  },
+  {
+   "name": "a small radius leaves only the near ones, still ranked by tier",
+   "lines": "ranked",
+   "click": [
+    150,
+    103
+   ],
+   "radius": 6,
+   "expect": [
+    0,
+    7,
+    1,
+    6,
+    2
+   ]
+  },
+  {
+   "name": "the heavy line wins the tie with its shorter twin by length",
+   "lines": "ranked",
+   "click": [
+    150,
+    100
+   ],
+   "radius": 2,
+   "expect": [
+    0,
+    7,
+    6
+   ]
+  },
+  {
+   "name": "only a hatch line and a dimension line near: nothing to snap to",
+   "lines": "ranked",
+   "click": [
+    250,
+    98.5
+   ],
+   "radius": 0.8,
+   "expect": []
+  },
+  {
+   "name": "outside every line",
+   "lines": "ranked",
+   "click": [
+    500,
+    500
+   ],
+   "radius": 24,
+   "expect": []
+  },
+  {
+   "name": "legacy rows without a role: width decides medium, dashed last",
+   "lines": "legacy",
+   "click": [
+    150,
+    103
+   ],
+   "radius": 24,
+   "expect": [
+    0,
+    3,
+    1,
+    2
+   ]
+  }
+ ]
 }

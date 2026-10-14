@@ -1,4 +1,5 @@
 import React from "react";
+import { SheetNumber } from "./SheetNumber";
 import type { Sheet, SheetFlags } from "../lib/types";
 
 const TYPE_LABEL: Record<string, string> = {
@@ -45,7 +46,12 @@ export const PageList: React.FC<{
             <div className="thumb empty" />
           )}
           <span className="page-meta">
-            <b>{s.page_number}</b> {s.sheet_number ?? ""}
+            <b>{s.page_number}</b>{" "}
+            <SheetNumber
+              value={s.sheet_number}
+              flag={s.sheet_number_flag}
+              earlier={s.sheet_number_old}
+            />
             <br />
             <small>
               {pageTypeLabel(s)}

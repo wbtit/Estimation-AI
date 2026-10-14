@@ -95,6 +95,10 @@ export function sheetView(sheet: Selectable<SheetsTable>, overrides: SheetOverri
     page_number: sheet.page_index + 1,
     sheet_number: sheet.sheet_number,
     sheet_number_source: sheet.sheet_number_source,
+    // Phase 9: 'title_block' = read from the title block; 'fallback_old' = the earlier reading is shown
+    // because no title-block number was found; sheet_number_old = the earlier reading when it differed
+    sheet_number_flag: sheet.sheet_number_flag,
+    sheet_number_old: sheet.sheet_number_old,
     title: sheet.title,
     kind: sheet.kind,
     kind_confidence: num(sheet.kind_confidence),

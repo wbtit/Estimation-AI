@@ -3,16 +3,22 @@
 import type { KindInfo, MemberView } from "./types";
 import type { Pt } from "./geometry";
 
+export type TagScope = "job" | "sheet";
+
 export interface CountSettings {
+  /** The pilot switch of the project: count mode on means confirmed pieces only (default off). */
   count_mode: boolean;
   snap_radius_pt: number;
   label_radius_pt: number;
+  /** Tag numbering: one running number per kind across the job (default), or restarting per sheet. */
+  tag_scope: TagScope;
 }
 
 export const DEFAULT_SETTINGS: CountSettings = {
   count_mode: false,
   snap_radius_pt: 24,
   label_radius_pt: 80,
+  tag_scope: "job",
 };
 
 export type CountState = "suggested" | "confirmed" | "rejected";
@@ -42,6 +48,21 @@ function carriesLine(m: MemberView): boolean {
   return sl?.line_piece ?? sl?.best ?? true;
 }
 
+/**
+ * Count mode (Phase 9): a size label that has no line is listed as an amber suggestion, never
+ * dropped; one click counts it (it has no length until a line is given), shift-click rejects it.
+ */
+export function isUnlinkedSuggestion(m: MemberView): boolean {
+  return (
+    live(m) &&
+    m.origin === "extracted" &&
+    countStateOf(m) === "suggested" &&
+    m.status.color === "unlinked" &&
+    m.counting === "counted" &&
+    !!m.profile
+  );
+}
+
 export interface PieceLists {
   confirmed: MemberView[];
   suggested: MemberView[];
@@ -50,7 +71,10 @@ export interface PieceLists {
   unlinked: MemberView[];
 }
 
-export function pieceLists(members: readonly MemberView[]): PieceLists {
+export function pieceLists(
+  members: readonly MemberView[],
+  countMode = false,
+): PieceLists {
   const out: PieceLists = {
     confirmed: [],
     suggested: [],
@@ -62,8 +86,10 @@ export function pieceLists(members: readonly MemberView[]): PieceLists {
     const state = countStateOf(m);
     if (state === "rejected") out.rejected.push(m);
     else if (state === "confirmed") out.confirmed.push(m);
-    else if (m.status.color === "unlinked") out.unlinked.push(m);
-    else if (isSuggestion(m)) out.suggested.push(m);
+    else if (m.status.color === "unlinked") {
+      if (countMode && isUnlinkedSuggestion(m)) out.suggested.push(m);
+      else out.unlinked.push(m);
+    } else if (isSuggestion(m)) out.suggested.push(m);
   }
   return out;
 }

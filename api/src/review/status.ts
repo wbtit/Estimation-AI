@@ -34,6 +34,11 @@ export interface StatusInput {
   /** A person typed the length (a label that has no line can still become a member). */
   manualLength?: boolean;
   /**
+   * A person counted this piece (a click, or accepting a suggestion): it has no line, so no length,
+   * but it is a counted piece (amber, "no line"), never dropped into the unlinked list (Phase 9).
+   */
+  personPiece?: boolean;
+  /**
    * The state of the member kind: `ambiguous` (a person must choose) and `weak` (guessed from
    * nearby text, the legend or the sheet title, not from the label's own line) make the member amber
    * until a person confirms; a missing kind is shown by a grey symbol, not by a colour change here.
@@ -52,6 +57,7 @@ export const REASONS = {
   noLine: 'no candidate line',
   confidenceLow: 'link confidence low',
   confidenceMedium: 'link confidence medium',
+  noLinePerson: 'counted by a person with no line: the length is not known',
   markAmbiguous: 'mark has several legend rows',
   kindAmbiguous: 'kind is ambiguous (a bare brace, rail or ladder): choose the kind',
   kindWeak: 'kind guessed from nearby text, the legend or the sheet title',
@@ -66,6 +72,9 @@ export function statusOf(i: StatusInput): Status {
   const isColumn = i.memberType === 'column';
 
   if (!isColumn && !i.hasLine && !i.manualLength) {
+    if (i.personPiece) {
+      return { color: 'amber', confirmed: true, reasons: [REASONS.noLinePerson] };
+    }
     return { color: 'unlinked', confirmed: false, reasons: [REASONS.noLine] };
   }
 

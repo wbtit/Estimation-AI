@@ -2,7 +2,7 @@ import React from "react";
 import { REVIEWED_RING, SYMBOL_HEX } from "../lib/status";
 import { hasCountSymbol, symbolAnchor, symbolPath } from "../lib/symbols";
 import type { Box } from "../lib/geometry";
-import { clickAnchor, countStateOf } from "../lib/count";
+import { clickAnchor, countStateOf, isUnlinkedSuggestion } from "../lib/count";
 import type { MemberView } from "../lib/types";
 
 /** What a jump link highlights on the page: a label box or a line. */
@@ -60,6 +60,9 @@ export const SymbolOverlay: React.FC<{
         .map((m) => {
           const b = m.bbox as Box;
           const s = 6 / zoom;
+          // count mode: a size label with no line is an amber suggestion (dashed), never dropped;
+          // a click counts it, shift-click rejects it
+          const suggestion = !!countMode && isUnlinkedSuggestion(m);
           return (
             <rect
               key={m.id}
@@ -67,15 +70,25 @@ export const SymbolOverlay: React.FC<{
               y={(b.y0 + b.y1) / 2 - s}
               width={2 * s}
               height={2 * s}
-              fill="none"
-              stroke={SYMBOL_HEX.red}
+              fill={suggestion ? SYMBOL_HEX.amber : "none"}
+              fillOpacity={suggestion ? 0.25 : undefined}
+              stroke={suggestion ? SYMBOL_HEX.amber : SYMBOL_HEX.red}
               strokeWidth={2}
+              strokeDasharray={suggestion ? "3 2" : undefined}
               vectorEffect="non-scaling-stroke"
-              onClick={() => onSelect(m.id)}
-              data-testid="unlinked-square"
+              onClick={(e) =>
+                suggestion && onSymbolClick
+                  ? onSymbolClick(m, e)
+                  : onSelect(m.id)
+              }
+              data-testid={
+                suggestion ? "unlinked-suggestion" : "unlinked-square"
+              }
             >
               <title>
-                unlinked label (not counted): no line was found near it
+                {suggestion
+                  ? "size label with no line (suggestion, in no total): click to count it, shift-click to reject"
+                  : "unlinked label (not counted): no line was found near it"}
               </title>
             </rect>
           );

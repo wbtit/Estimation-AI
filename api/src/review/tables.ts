@@ -145,7 +145,9 @@ export function classify(
     } else if (m.counting === 'misc_reserved') {
       addApart(misc, m);
     } else if (m.status.color === 'unlinked') {
-      unlinked += 1;
+      // count mode (Phase 9): a size label with no line is an amber suggestion, never dropped
+      if (countMode && m.profile !== null && m.count.state !== 'confirmed') addApart(suggested, m);
+      else unlinked += 1;
     } else if (countMode && m.count.state !== 'confirmed') {
       addApart(suggested, m); // count mode: only confirmed pieces are in the totals
     } else if (m.status.color === 'red') {

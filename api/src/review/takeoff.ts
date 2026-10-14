@@ -12,6 +12,8 @@ export type TakeoffColor = 'green' | 'amber' | 'red';
 /** Profile labels with no line and no typed length. They are not members and are in no total. */
 export interface UnlinkedSummary {
   count: number;
+  /** Count mode: how many of them are listed as amber suggestions (a size label, nobody decided). */
+  as_suggestions: number;
   by_sheet: { sheet_id: string; page_number: number | null; count: number }[];
 }
 /** main = in the totals; red = held out because red; duplicate = held out as a possible duplicate (shared line). */
@@ -216,7 +218,15 @@ export function buildTakeoff(
   }
   const linkedAll = counted.filter((m) => m.status.color !== 'unlinked');
   const linked = countMode ? linkedAll.filter((m) => m.count.state === 'confirmed') : linkedAll;
-  const undecided = countMode ? linkedAll.filter((m) => m.count.state !== 'confirmed') : [];
+  // count mode (Phase 9): a size label with no line is listed as an amber suggestion, never dropped
+  const unlinkedSuggestions = countMode
+    ? counted.filter(
+        (m) => m.status.color === 'unlinked' && m.profile !== null && m.count.state !== 'confirmed',
+      )
+    : [];
+  const undecided = countMode
+    ? [...linkedAll.filter((m) => m.count.state !== 'confirmed'), ...unlinkedSuggestions]
+    : [];
   return {
     count_mode: countMode,
     suggested: section(undecided, pageOf, grades),
@@ -235,6 +245,7 @@ export function buildTakeoff(
     ),
     unlinked_labels: {
       count: [...unlinked.values()].reduce((a, b) => a + b, 0),
+      as_suggestions: unlinkedSuggestions.length,
       by_sheet: [...unlinked.entries()]
         .map(([sheet_id, count]) => ({
           sheet_id,
@@ -376,7 +387,8 @@ function section(
     const measured = list.filter((m) => m.length_mm !== null && !m.length_shared);
     const total = measured.reduce((sum, m) => sum + (m.length_mm as number) * m.quantity, 0);
     const color = list.reduce<TakeoffColor>((worst, m) => {
-      const c = m.status.color as TakeoffColor;
+      // an unlinked label listed as a suggestion (count mode) is amber
+      const c = (m.status.color === 'unlinked' ? 'amber' : m.status.color) as TakeoffColor;
       return RANK[c] > RANK[worst] ? c : worst;
     }, 'green');
     const pages = [

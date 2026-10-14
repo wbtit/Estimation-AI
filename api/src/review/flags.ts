@@ -101,7 +101,14 @@ export async function loadSheetFlags(
       if (m.sheet_id === null || m.deleted || m.merged_into !== null || m.not_member !== null) {
         continue;
       }
-      if (m.existing || m.status.color === 'unlinked' || m.count.state === 'rejected') continue;
+      if (m.existing || m.count.state === 'rejected') continue;
+      if (m.status.color === 'unlinked') {
+        // count mode (Phase 9): a size label with no line is an amber suggestion
+        if (countMode && m.profile !== null && m.count.state !== 'confirmed') {
+          suggested.set(m.sheet_id, (suggested.get(m.sheet_id) ?? 0) + pieceQuantity(m));
+        }
+        continue;
+      }
       if (countMode && m.count.state !== 'confirmed') {
         suggested.set(m.sheet_id, (suggested.get(m.sheet_id) ?? 0) + pieceQuantity(m));
         continue;

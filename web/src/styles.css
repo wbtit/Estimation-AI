@@ -719,3 +719,36 @@ mark {
 .count-panel .row select {
   max-width: 170px;
 }
+
+/* Phase 9: the pilot switch, the unlinked-suggestion badge and the sheet-number reading */
+.pilot-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border: 1px solid #b8b8b8;
+  border-radius: 12px;
+  font-size: 12px;
+  background: #fafafa;
+}
+.pilot-switch.on {
+  border-color: #13a8a8;
+  background: #e3f6f6;
+  color: #0b6e6e;
+  font-weight: 600;
+}
+.count-panel .piece-list .badge.amber {
+  background: #fff1d6;
+  border: 1px solid #f0a30a;
+  color: #7a4d00;
+}
+.sheet-number.fallback {
+  color: #7a4d00;
+  background: #fff1d6;
+  border-radius: 3px;
+  padding: 0 3px;
+}
+.sheet-number.none {
+  color: #888;
+  font-style: italic;
+}

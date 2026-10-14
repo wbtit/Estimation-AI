@@ -23,7 +23,18 @@ export const CountLayer: React.FC<{
   hoverSnap: SnappedPoint | null;
   radiusPt: number;
   measure: MeasureDraft;
-}> = ({ tool, zoom, hover, hoverLine, hoverSnap, radiusPt, measure }) => {
+  /** The ranked snap candidates under the pointer: which one is highlighted, of how many (Tab walks on). */
+  candidate?: { index: number; total: number } | null;
+}> = ({
+  tool,
+  zoom,
+  hover,
+  hoverLine,
+  hoverSnap,
+  radiusPt,
+  measure,
+  candidate,
+}) => {
   if (!tool) return null;
   const px = 1 / zoom;
   const marker = (s: SnappedPoint, key: string) =>
@@ -76,6 +87,20 @@ export const CountLayer: React.FC<{
           vectorEffect="non-scaling-stroke"
           data-testid="snap-line"
         />
+      )}
+      {tool === "count" && hover && candidate && candidate.total > 1 && (
+        <text
+          x={hover.x + 10 * px}
+          y={hover.y - 10 * px}
+          fontSize={12 * px}
+          fill="#0b6e6e"
+          stroke="#fff"
+          strokeWidth={3 * px}
+          paintOrder="stroke"
+          data-testid="snap-candidate-hint"
+        >
+          {`line ${candidate.index + 1} of ${candidate.total} (Tab: next)`}
+        </text>
       )}
       {hover && (
         <circle

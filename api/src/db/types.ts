@@ -20,6 +20,7 @@ export interface ProjectsTable {
   drawing_issue: string | null;
   // Phase 8 (migration 013)
   count_mode: Generated<boolean>;
+  tag_scope: Generated<'job' | 'sheet'>;
   snap_radius_pt: Generated<Numeric>;
   label_radius_pt: Generated<Numeric>;
   created_at: Timestamp;
@@ -57,6 +58,9 @@ export interface SheetsTable {
   image_count: number | null;
   image_coverage: Numeric | null;
   sheet_number_source: string | null;
+  sheet_number_old: string | null;
+  sheet_number_old_source: string | null;
+  sheet_number_flag: 'title_block' | 'fallback_old' | null;
   kind_confidence: Numeric | null;
   kind_reason: string | null;
   scales: Json<ScaleEntry[]>;

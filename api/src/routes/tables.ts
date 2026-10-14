@@ -13,6 +13,7 @@ import { draftStatus, loadSheetFlags } from '../review/flags.js';
 import { familyOf, loadGrades, setGrade } from '../review/grades.js';
 import { loadKinds } from '../review/kinds.js';
 import { applyEntries, kindEntries, OpError } from '../review/member-ops.js';
+import { tagPool } from '../review/tag-scope.js';
 import { loadSheetInclusions } from '../review/takeoff-sheets.js';
 import { buildJobTable, buildPageTables, GRADE_SUGGESTION } from '../review/tables.js';
 import { HttpError } from './http-error.js';
@@ -191,8 +192,10 @@ export const tableRoutes: FastifyPluginAsync<TableRouteOptions> = async (app, op
     const sheet = (
       await Promise.all(sheetIds.map((sid) => loadMemberViews(db(), projectId, { sheetId: sid })))
     ).flat();
+    // new tag numbers must not collide with the job (default) or the sheets of the targets
+    const pool = await tagPool(db(), projectId, sheet);
     try {
-      const entries = build(targets, sheet);
+      const entries = build(targets, pool);
       const actionId = await applyEntries(db(), name, entries);
       return { action_id: actionId, changed: entries.length };
     } catch (err) {

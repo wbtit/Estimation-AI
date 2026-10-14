@@ -1,7 +1,8 @@
 """The `sheet_lines` job: every extracted line of one sheet, of ANY class (the snap targets).
 
 Payload: {"sheet_id": "<uuid>"}. It writes one row of `sheet_lines`: the class keys, the lines as
-[x0, y0, x1, y1, class_index, width] in displayed page points, and a version hash of the lines (the
+[x0, y0, x1, y1, class_index, width, role, dimension] in displayed page points, and a version
+hash of the lines (the
 click evidence names the version, so it stays meaningful after a re-extraction). Lines shorter
 than MIN_SNAP_PT are left out (they are drawn dots and tick marks). Logs counts only.
 """
@@ -18,6 +19,7 @@ from psycopg.types.json import Jsonb
 from src.config import WorkerConfig
 from src.linking.lines import Line, page_lines
 from src.queue import Job
+from src.review.line_roles import classify_page
 
 log = logging.getLogger("worker.sheet_lines")
 
@@ -30,8 +32,12 @@ class SheetLinesError(Exception):
     """A failure with a message that is safe to store (no page text)."""
 
 
-def lines_payload(lines: list[Line]) -> tuple[list[str], list[list[float]], str]:
-    """(class keys, rows, version): deterministic, so the same page gives the same version."""
+def lines_payload(
+    lines: list[Line], page: pymupdf.Page | None = None
+) -> tuple[list[str], list[list[float]], str]:
+    """(class keys, rows, version): deterministic, so the same page gives the same version. With a
+    page the rows get two more columns, the line role (0 hatch, 1 thin, 2 medium, 3 heavy) and a
+    dimension-line flag (Phase 9, src/review/line_roles.py); without one they stay six wide."""
     kept = [ln for ln in lines if ln.length >= MIN_SNAP_PT]
     classes = sorted({ln.klass for ln in kept})
     index = {k: i for i, k in enumerate(classes)}
@@ -48,6 +54,9 @@ def lines_payload(lines: list[Line]) -> tuple[list[str], list[list[float]], str]
     ]
     rows.sort(key=lambda r: (r[4], r[0], r[1], r[2], r[3]))
     rows = rows[:MAX_LINES]
+    if page is not None:
+        roles, dims = classify_page(page, rows)
+        rows = [[*r, role, dim] for r, role, dim in zip(rows, roles, dims, strict=True)]
     version = hashlib.sha1(json.dumps([classes, rows], separators=(",", ":")).encode()).hexdigest()[
         :16
     ]
@@ -70,7 +79,8 @@ def sheet_lines(conn: psycopg.Connection, config: WorkerConfig, sheet_id: str) -
     if not pdf_path.is_file():
         raise SheetLinesError("stored PDF is missing")
     with pymupdf.open(pdf_path) as doc:
-        classes, rows, version = lines_payload(page_lines(doc[row["page_index"]]))
+        page = doc[row["page_index"]]
+        classes, rows, version = lines_payload(page_lines(page), page)
     conn.execute(
         "INSERT INTO sheet_lines (sheet_id, classes, lines, n_lines, version)"
         " VALUES (%s, %s, %s, %s, %s)"

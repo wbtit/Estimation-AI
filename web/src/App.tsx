@@ -12,6 +12,7 @@ import { ClassPicker } from "./components/ClassPicker";
 import { ColumnForm } from "./components/ColumnForm";
 import { CountLayer, type MeasureDraft } from "./components/CountLayer";
 import { CountPanel } from "./components/CountPanel";
+import { PilotSwitch } from "./components/PilotSwitch";
 import { LabelsPanel } from "./components/LabelsPanel";
 import { MemberActions, type LegendRow } from "./components/MemberActions";
 import { NameGate } from "./components/NameGate";
@@ -51,9 +52,11 @@ import { useMembers } from "./lib/useMembers";
 import { useCount } from "./lib/useCount";
 import { countStateOf, kindOptions } from "./lib/count";
 import {
-  nearestLine as nearestSnapLine,
+  sameCandidates,
+  snapCandidates,
   snapPoint,
   type LineRow,
+  type SnapCandidate,
   type SnappedPoint,
 } from "./lib/snap";
 import { usePdf } from "./lib/usePdf";
@@ -123,7 +126,18 @@ export const App: React.FC = () => {
   const [tool, setTool] = useState<"count" | "measure" | null>(null);
   const [countKind, setCountKind] = useState("");
   const [hover, setHover] = useState<Pt | null>(null);
-  const [hoverLine, setHoverLine] = useState<LineRow | null>(null);
+  // the ranked snap candidates under the pointer and the one Tab has walked to (Phase 9)
+  const [hoverCands, setHoverCands] = useState<SnapCandidate[]>([]);
+  const [candIdx, setCandIdx] = useState(0);
+  const hoverCandsRef = useRef<SnapCandidate[]>([]);
+  const candIdxRef = useRef(0);
+  const setCands = (c: SnapCandidate[], idx: number) => {
+    hoverCandsRef.current = c;
+    candIdxRef.current = idx;
+    setHoverCands(c);
+    setCandIdx(idx);
+  };
+
   const [hoverSnap, setHoverSnap] = useState<SnappedPoint | null>(null);
   const [measure, setMeasure] = useState<MeasureDraft>({
     a: null,
@@ -308,6 +322,10 @@ export const App: React.FC = () => {
   const count = useCount(projectId, sheetId, who, fail, async () => {
     await Promise.all([reloadMembers(), loadFlags()]);
   });
+  const hoverLine: LineRow | null =
+    tool === "count" && hoverCands[candIdx]
+      ? (count.lines[hoverCands[candIdx].index] as LineRow)
+      : null;
   const project = projects.find((p) => p.id === projectId) ?? null;
   const scanning =
     !!project?.document && project.document.scan_status !== "done";
@@ -515,11 +533,40 @@ export const App: React.FC = () => {
     setSavedMeasure(null);
   }, []);
 
+  // the pilot switch: the counting copilot is on or off per project (default off)
+  const pilot = count.settings.count_mode;
+  useEffect(() => {
+    if (tab === "count" && !pilot) setTab("members");
+  }, [tab, pilot]);
+  const setPilot = (on: boolean) => {
+    if (!requireWho()) return;
+    if (
+      on &&
+      !window.confirm(
+        "Turn the counting copilot on for this project? Totals, tables and the Excel will then count confirmed pieces only (a click or an accepted suggestion). You can turn it off again.",
+      )
+    ) {
+      return;
+    }
+    if (!on) {
+      setTool(null);
+      setCands([], 0);
+      setHover(null);
+      setHoverSnap(null);
+      if (tab === "count") setTab("members");
+    }
+    void count.update({ count_mode: on });
+  };
+
   const selectTool = (t: "count" | "measure" | null) => {
+    if (t && !pilot) {
+      setMessage("Turn the pilot on (top bar) to use the counting tools.");
+      return;
+    }
     if (t && !requireWho()) return;
     setTool(t);
     setHover(null);
-    setHoverLine(null);
+    setCands([], 0);
     setHoverSnap(null);
     resetMeasure();
     if (t) {
@@ -549,13 +596,18 @@ export const App: React.FC = () => {
       hoverFrame.current = null;
       setHover(p);
       if (tool === "count") {
-        const hit = nearestSnapLine(
+        const cands = snapCandidates(
           count.lines,
+          count.classes,
           p.x,
           p.y,
           count.settings.snap_radius_pt,
         );
-        setHoverLine(hit ? (count.lines[hit.index] as LineRow) : null);
+        // the same candidates as a moment ago keep the line Tab walked to; new ones start at the best
+        setCands(
+          cands,
+          sameCandidates(cands, hoverCandsRef.current) ? candIdxRef.current : 0,
+        );
       } else {
         setHoverSnap(snapPoint(count.lines, p.x, p.y, 12));
       }
@@ -629,7 +681,7 @@ export const App: React.FC = () => {
       if (e.key === "Escape") {
         setTool(null);
         setHover(null);
-        setHoverLine(null);
+        setCands([], 0);
         setHoverSnap(null);
         resetMeasure();
         setDrawing(false);
@@ -656,6 +708,20 @@ export const App: React.FC = () => {
         e.preventDefault();
         if (!w) return needName();
         void undo();
+        return;
+      }
+      if (
+        e.key === "Tab" &&
+        tool === "count" &&
+        hoverCandsRef.current.length > 1
+      ) {
+        // walk to the next (Shift+Tab: previous) snap candidate before the click is confirmed
+        e.preventDefault();
+        const n = hoverCandsRef.current.length;
+        setCands(
+          hoverCandsRef.current,
+          (candIdxRef.current + (e.shiftKey ? n - 1 : 1)) % n,
+        );
         return;
       }
       if (e.ctrlKey || e.metaKey || e.altKey) return;
@@ -798,8 +864,21 @@ export const App: React.FC = () => {
         setMessage("Choose the kind to count first.");
         return false;
       }
-      void count.place(countKind, p.x, p.y).then((r) => {
+      // the line Tab walked to, if the candidates under the click are the ones that were shown
+      const cands = snapCandidates(
+        count.lines,
+        count.classes,
+        p.x,
+        p.y,
+        count.settings.snap_radius_pt,
+      );
+      const walked =
+        sameCandidates(cands, hoverCandsRef.current) && candIdxRef.current > 0
+          ? cands[candIdxRef.current]
+          : undefined;
+      void count.place(countKind, p.x, p.y, walked?.index).then((r) => {
         if (r) setMemberId(r.member.id);
+        setCands([], 0);
       });
       return false;
     }
@@ -925,6 +1004,13 @@ export const App: React.FC = () => {
             setProjectId(p.id);
           }}
         />
+        {projectId && (
+          <PilotSwitch
+            on={count.settings.count_mode}
+            disabled={!who.trim()}
+            onChange={(on) => setPilot(on)}
+          />
+        )}
         <label>
           you:{" "}
           <input
@@ -1048,7 +1134,7 @@ export const App: React.FC = () => {
                 zoom={zoom}
                 highlight={highlight}
                 markedIds={rowIds}
-                countMode={count.settings.count_mode || tool !== null}
+                countMode={count.settings.count_mode}
                 onSymbolClick={symbolClick}
                 onSelect={(id) => {
                   if (pickedClick.current) return;
@@ -1066,6 +1152,11 @@ export const App: React.FC = () => {
                   tool === "measure" ? 12 : count.settings.snap_radius_pt
                 }
                 measure={measure}
+                candidate={
+                  tool === "count" && hoverCands.length > 0
+                    ? { index: candIdx, total: hoverCands.length }
+                    : null
+                }
               />
               {(linkMode || addingBeam) &&
                 pickLines.map((l, i) => (
@@ -1132,7 +1223,7 @@ export const App: React.FC = () => {
                 "labels",
                 "notes",
                 "takeoff",
-                "count",
+                ...(pilot ? (["count"] as const) : []),
               ] as const
             ).map((t) => (
               <button
@@ -1162,7 +1253,7 @@ export const App: React.FC = () => {
             />
           )}
           {tab === "notes" && <NotesPanel sheets={notes} />}
-          {tab === "count" && (
+          {tab === "count" && pilot && (
             <CountPanel
               members={members}
               kinds={kinds}
@@ -1176,6 +1267,7 @@ export const App: React.FC = () => {
               onMode={(on) => {
                 if (requireWho()) void count.update({ count_mode: on });
               }}
+              onScope={(tag_scope) => void count.update({ tag_scope })}
               onRadius={(snap, label) =>
                 void count.update({
                   snap_radius_pt: snap,

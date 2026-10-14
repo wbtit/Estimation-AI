@@ -1,7 +1,9 @@
 // Snapping of a click to the extracted lines of a sheet (Phase 8). Lines are rows
-// [x0, y0, x1, y1, class_index, width] in displayed page points, of ANY class (the sheet_lines
-// table). Pure and deterministic; the web has a copy of the same algorithm
-// (web/src/lib/snap.ts) and both run the same cases (fixtures/synthetic/snap-cases.json).
+// [x0, y0, x1, y1, class_index, width, role, dimension] in displayed page points, of ANY class (the
+// sheet_lines table; the last two columns exist from Phase 9: role 0 hatch, 1 thin, 2 medium,
+// 3 heavy, dimension 1 for a detected dimension line). Pure and deterministic; the web has a copy of
+// the same algorithm (web/src/lib/snap.ts) and both run the same cases
+// (fixtures/synthetic/snap-cases.json).
 
 export type LineRow = readonly number[];
 
@@ -61,6 +63,73 @@ export function nearestLine(
     }
   }
   return best;
+}
+
+export interface SnapCandidate extends NearestLine {
+  /** 0 solid medium or heavy, 1 solid thin, 2 dashed. */
+  tier: 0 | 1 | 2;
+}
+
+export const MAX_SNAP_CANDIDATES = 8;
+
+/** A row's role and dimension flag; absent (a row stored before Phase 9) is "unknown". */
+const roleOf = (l: LineRow): number | null => (l.length > 6 ? (l[6] as number) : null);
+const isDimension = (l: LineRow): boolean => l.length > 7 && l[7] === 1;
+
+/** Hatch and detected dimension lines are never a snap target. */
+export function snappable(l: LineRow): boolean {
+  return roleOf(l) !== 0 && !isDimension(l);
+}
+
+/**
+ * The tier of a line for the snap preference: solid medium or heavy first, solid thin next, dashed
+ * last. A row with no role (stored before Phase 9) is medium when its width is 0.5 pt or more.
+ */
+export function snapTier(l: LineRow, classes: readonly string[]): 0 | 1 | 2 {
+  const cls = classes[l[4] as number] ?? '';
+  if (cls.endsWith('|dash')) return 2;
+  const role = roleOf(l);
+  const medium = role !== null ? role >= 2 : (l[5] as number) >= 0.5;
+  return medium ? 0 : 1;
+}
+
+/**
+ * The candidates for a click, best first: lines within `radius` that can be snapped to (no hatch, no
+ * dimension line), by tier (solid medium or heavy, solid thin, dashed), then distance, then the
+ * longer line, then the lower index. The first is the snap; Tab walks down the list before the click
+ * is confirmed. At most MAX_SNAP_CANDIDATES.
+ */
+export function snapCandidates(
+  lines: readonly LineRow[],
+  classes: readonly string[],
+  x: number,
+  y: number,
+  radius: number,
+): SnapCandidate[] {
+  const found: SnapCandidate[] = [];
+  for (let i = 0; i < lines.length; i += 1) {
+    const l = lines[i] as LineRow;
+    if (
+      x < Math.min(l[0], l[2]) - radius ||
+      x > Math.max(l[0], l[2]) + radius ||
+      y < Math.min(l[1], l[3]) - radius ||
+      y > Math.max(l[1], l[3]) + radius ||
+      !snappable(l)
+    ) {
+      continue;
+    }
+    const d = pointSegmentDistance(x, y, l);
+    if (d > radius) continue;
+    found.push({ index: i, distance: d, tier: snapTier(l, classes) });
+  }
+  found.sort(
+    (a, b) =>
+      a.tier - b.tier ||
+      (Math.abs(a.distance - b.distance) > 1e-9 ? a.distance - b.distance : 0) ||
+      lengthOf(lines[b.index] as LineRow) - lengthOf(lines[a.index] as LineRow) ||
+      a.index - b.index,
+  );
+  return found.slice(0, MAX_SNAP_CANDIDATES);
 }
 
 /** Intersection point of two segments (touching counts), or null when parallel or apart. */

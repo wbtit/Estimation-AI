@@ -22,11 +22,12 @@ import { recordAction } from '../review/actions.js';
 import { logCountAction, pageTimes } from '../review/count-log.js';
 import { loadKinds, typeOfKind } from '../review/kinds.js';
 import { nextTagNumber } from '../review/member-ops.js';
+import { tagPool, type TagScope } from '../review/tag-scope.js';
 import { parseJoist } from '../review/joist.js';
 import { parseProfile } from '../review/profile.js';
 import { measureTwoClicks, scaleViewFor, DEFAULT_MEASURE_SNAP_PT } from '../review/measure.js';
 import { fillSize } from '../review/size-fill.js';
-import { nearestLine, type LineRow } from '../review/snap.js';
+import { snapCandidates, type LineRow } from '../review/snap.js';
 import type { MemberView } from '../review/members.js';
 import { loadMemberViews } from './members.js';
 import { HttpError } from './http-error.js';
@@ -74,7 +75,7 @@ export const countRoutes: FastifyPluginAsync<CountRouteOptions> = async (app, op
   async function settings(projectId: string) {
     const p = await db()
       .selectFrom('projects')
-      .select(['id', 'count_mode', 'snap_radius_pt', 'label_radius_pt'])
+      .select(['id', 'count_mode', 'snap_radius_pt', 'label_radius_pt', 'tag_scope'])
       .where('id', '=', projectId)
       .executeTakeFirst();
     if (!p) throw new HttpError(404, { error: 'project not found' });
@@ -82,6 +83,7 @@ export const countRoutes: FastifyPluginAsync<CountRouteOptions> = async (app, op
       count_mode: p.count_mode,
       snap_radius_pt: Number(p.snap_radius_pt),
       label_radius_pt: Number(p.label_radius_pt),
+      tag_scope: p.tag_scope as TagScope,
     };
   }
 
@@ -132,6 +134,7 @@ export const countRoutes: FastifyPluginAsync<CountRouteOptions> = async (app, op
       count_mode?: boolean;
       snap_radius_pt?: number;
       label_radius_pt?: number;
+      tag_scope?: TagScope;
     };
   }>(
     '/api/projects/:projectId/count',
@@ -147,6 +150,7 @@ export const countRoutes: FastifyPluginAsync<CountRouteOptions> = async (app, op
             count_mode: { type: 'boolean' },
             snap_radius_pt: { type: 'number', exclusiveMinimum: 0, maximum: 200 },
             label_radius_pt: { type: 'number', exclusiveMinimum: 0, maximum: 500 },
+            tag_scope: { type: 'string', enum: ['job', 'sheet'] },
           },
         },
       },
@@ -161,6 +165,7 @@ export const countRoutes: FastifyPluginAsync<CountRouteOptions> = async (app, op
       if (b.count_mode !== undefined) set.count_mode = b.count_mode;
       if (b.snap_radius_pt !== undefined) set.snap_radius_pt = b.snap_radius_pt;
       if (b.label_radius_pt !== undefined) set.label_radius_pt = b.label_radius_pt;
+      if (b.tag_scope !== undefined) set.tag_scope = b.tag_scope;
       if (Object.keys(set).length > 0) {
         await db().updateTable('projects').set(set).where('id', '=', projectId).execute();
         await logCountAction(db(), {
@@ -233,6 +238,8 @@ export const countRoutes: FastifyPluginAsync<CountRouteOptions> = async (app, op
     y: number;
     radius?: number;
     label_radius?: number;
+    /** The candidate a person walked to with Tab before clicking (checked against the ranked list). */
+    snap_choice?: { line_id: number; version: string };
   }
   app.post<{ Params: { projectId: string }; Body: ClickBody }>(
     '/api/projects/:projectId/count/click',
@@ -251,6 +258,15 @@ export const countRoutes: FastifyPluginAsync<CountRouteOptions> = async (app, op
             y: { type: 'number' },
             radius: { type: 'number', exclusiveMinimum: 0, maximum: 200 },
             label_radius: { type: 'number', exclusiveMinimum: 0, maximum: 500 },
+            snap_choice: {
+              type: 'object',
+              required: ['line_id', 'version'],
+              additionalProperties: false,
+              properties: {
+                line_id: { type: 'integer', minimum: 0 },
+                version: { type: 'string', maxLength: 64 },
+              },
+            },
           },
         },
       },
@@ -274,7 +290,8 @@ export const countRoutes: FastifyPluginAsync<CountRouteOptions> = async (app, op
       const labelRadius = b.label_radius ?? cfg.label_radius_pt;
       const clickedAt = new Date();
 
-      // snap: the nearest extracted line of ANY class; a click is never dropped
+      // snap: the best-ranked extracted line (solid medium or heavy first, no hatch, no dimension
+      // line); a click is never dropped. Tab may have walked to another candidate of the same list.
       const lines = await loadLines(b.sheet_id);
       let snappedLine: {
         id: number;
@@ -282,10 +299,20 @@ export const countRoutes: FastifyPluginAsync<CountRouteOptions> = async (app, op
         q: [number, number];
         class: string | null;
         version: string | null;
+        rank: number;
+        by: 'rank' | 'tab';
       } | null = null;
       let snapDistance: number | null = null;
+      let nCandidates = 0;
       if (lines) {
-        const hit = nearestLine(lines.lines as LineRow[], b.x, b.y, radius);
+        const cands = snapCandidates(lines.lines as LineRow[], lines.classes, b.x, b.y, radius);
+        nCandidates = cands.length;
+        const wanted =
+          b.snap_choice && b.snap_choice.version === lines.version
+            ? cands.findIndex((c) => c.index === b.snap_choice?.line_id)
+            : -1;
+        const rank = wanted >= 0 ? wanted : 0;
+        const hit = cands[rank];
         if (hit) {
           const l = lines.lines[hit.index] as number[];
           snappedLine = {
@@ -294,6 +321,8 @@ export const countRoutes: FastifyPluginAsync<CountRouteOptions> = async (app, op
             q: [l[2] as number, l[3] as number],
             class: lines.classes[l[4] as number] ?? null,
             version: lines.version,
+            rank,
+            by: wanted > 0 ? 'tab' : 'rank',
           };
           snapDistance = Math.round(hit.distance * 10) / 10;
         }
@@ -309,7 +338,11 @@ export const countRoutes: FastifyPluginAsync<CountRouteOptions> = async (app, op
       const parsed = size.profile_text ? parseProfile(size.profile_text) : null;
       const type = typeOfKind(kindInfo, 'beam');
       const prefix = kindInfo.prefix;
-      const number = nextTagNumber(sheetMembers, prefix);
+      // the next number of this kind: across the job (default) or on this sheet, in click order
+      const number = nextTagNumber(
+        await tagPool(db(), projectId, sheetMembers, cfg.tag_scope),
+        prefix,
+      );
       const view = await db()
         .selectFrom('sheet_views')
         .select(['id', 'box', 'scale_ratio', 'scale_confirmed'])
@@ -415,6 +448,9 @@ export const countRoutes: FastifyPluginAsync<CountRouteOptions> = async (app, op
               snapped: snappedLine !== null,
               snapped_line_id: snappedLine?.id ?? null,
               snap_distance_pt: snapDistance,
+              snap_rank: snappedLine?.rank ?? null,
+              snap_by: snappedLine?.by ?? null,
+              snap_candidates: nCandidates,
               size_source: size.source,
               size: size.profile_text,
               tag: `${prefix}${number}`,

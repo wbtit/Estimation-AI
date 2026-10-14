@@ -19,6 +19,10 @@ export interface Sheet {
   page_index: number;
   page_number: number;
   sheet_number: string | null;
+  /** 'title_block' = read from the title block; 'fallback_old' = the earlier reading, no title-block number found. */
+  sheet_number_flag?: "title_block" | "fallback_old" | null;
+  /** The earlier reading, when the title-block reading replaced it with another value. */
+  sheet_number_old?: string | null;
   title: string | null;
   kind: string;
   page: {

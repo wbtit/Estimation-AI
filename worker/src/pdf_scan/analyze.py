@@ -49,6 +49,9 @@ class PageScan:
     page_type_guess: str | None = None
     page_type_reason: str | None = None
     level_guess: str | None = None
+    sheet_number_old: str | None = None
+    sheet_number_old_source: str | None = None
+    sheet_number_flag: str | None = None
 
     @property
     def needs_review(self) -> bool:
@@ -130,6 +133,9 @@ def analyze_page(page: pymupdf.Page) -> PageScan:
     found = scan_text(words, lines, rect.width, rect.height)
     scan.sheet_number = found.sheet_number
     scan.sheet_number_source = found.sheet_number_source
+    scan.sheet_number_old = found.sheet_number_old
+    scan.sheet_number_old_source = found.sheet_number_old_source
+    scan.sheet_number_flag = found.sheet_number_flag
     scan.title = found.title
     scan.kind = found.kind
     scan.kind_confidence = found.kind_confidence
