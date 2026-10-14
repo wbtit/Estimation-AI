@@ -13,6 +13,7 @@ import { ColumnForm } from "./components/ColumnForm";
 import { CountLayer, type MeasureDraft } from "./components/CountLayer";
 import { CountPanel } from "./components/CountPanel";
 import { PilotSwitch } from "./components/PilotSwitch";
+import { PrefixKinds } from "./components/PrefixKinds";
 import { LabelsPanel } from "./components/LabelsPanel";
 import { MemberActions, type LegendRow } from "./components/MemberActions";
 import { NameGate } from "./components/NameGate";
@@ -1253,6 +1254,14 @@ export const App: React.FC = () => {
             />
           )}
           {tab === "notes" && <NotesPanel sheets={notes} />}
+          {tab === "count" && pilot && projectId && (
+            <PrefixKinds
+              projectId={projectId}
+              kinds={kinds}
+              who={who}
+              onError={fail}
+            />
+          )}
           {tab === "count" && pilot && (
             <CountPanel
               members={members}

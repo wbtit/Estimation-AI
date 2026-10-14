@@ -80,10 +80,17 @@ export function parsePrefixCsv(text: string, kinds: KindIndex): ParsedRow[] {
     if (!PREFIX_RE.test(prefix)) problem = 'prefix must be 1 to 6 letters';
     else if (!kinds.has(kind)) problem = 'kind is not on the scope-of-work list';
     else if (seen.has(prefix)) problem = 'prefix given twice';
+    else if (clashesWithList(prefix, kind, kinds))
+      problem = 'prefix is the tag prefix of another kind';
     seen.add(prefix);
     out.push({ line: i + 2, prefix, kind, problem });
   });
   return out;
+}
+
+/** A prefix that another kind of the list already uses as its tag prefix would make tags ambiguous. */
+export function clashesWithList(prefix: string, kind: string, kinds: KindIndex): boolean {
+  return [...kinds.values()].some((k) => k.kind !== kind && k.prefix === prefix);
 }
 
 function splitCsv(line: string): string[] {

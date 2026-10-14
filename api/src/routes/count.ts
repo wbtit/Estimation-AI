@@ -29,6 +29,7 @@ import { nextTagNumber } from '../review/member-ops.js';
 import { tagPool, type TagScope } from '../review/tag-scope.js';
 import {
   applyPrefixChanges,
+  clashesWithList,
   importChanges,
   loadPrefixKinds,
   parsePrefixCsv,
@@ -675,8 +676,12 @@ export const countRoutes: FastifyPluginAsync<CountRouteOptions> = async (app, op
         throw new HttpError(400, { error: 'a prefix is 1 to 6 letters' });
       }
       const kind = request.body.kind;
-      if (kind !== null && !(await loadKinds(db())).has(kind)) {
+      const kindList = await loadKinds(db());
+      if (kind !== null && !kindList.has(kind)) {
         throw new HttpError(400, { error: `"${kind}" is not a kind of the list` });
+      }
+      if (kind !== null && clashesWithList(prefix, kind, kindList)) {
+        throw new HttpError(400, { error: `${prefix} is the tag prefix of another kind` });
       }
       const before =
         (await loadPrefixKinds(db(), projectId)).find((r) => r.prefix === prefix)?.kind ?? null;
