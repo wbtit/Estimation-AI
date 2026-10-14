@@ -3,7 +3,7 @@
 // unconfirmed the header of every sheet says DRAFT (and the file name carries DRAFT too).
 import ExcelJS from 'exceljs';
 import type { DraftStatus } from '../review/flags.js';
-import type { JobTable, PageTable, TableRow } from '../review/tables.js';
+import type { JobTable, PageTable, TableRow, WeightTotals } from '../review/tables.js';
 
 export const TABLE_HEADERS = [
   'Kind',
@@ -110,6 +110,23 @@ function sheetName(used: Set<string>, base: string): string {
   return name;
 }
 
+/** Phase 10: the weight of the rows with a length and a Unit W, and the pieces that have none. */
+function addWeight(ws: ExcelJS.Worksheet, w: WeightTotals): void {
+  ws.addRow(['Total W (lb), rows with a length and a Unit W', '', w.total_w]);
+  ws.addRow([
+    `${w.pieces_without_length} pieces without length (in the quantity, Total W blank)`,
+    '',
+    w.pieces_without_length,
+  ]);
+  if (w.pieces_without_unit_w > 0) {
+    ws.addRow([
+      `${w.pieces_without_unit_w} pieces with a length but no Unit W (Total W blank)`,
+      '',
+      w.pieces_without_unit_w,
+    ]);
+  }
+}
+
 export async function buildTablesWorkbook(input: TablesExportInput): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
   const used = new Set<string>();
@@ -122,7 +139,9 @@ export async function buildTablesWorkbook(input: TablesExportInput): Promise<Buf
     size: 13,
     color: { argb: input.draft.reviewed ? 'FF1F7A3A' : 'FFA15C00' },
   };
-  job.addRow(['Lengths and Total W are added in Stage 2 (the cells are empty on purpose).']);
+  job.addRow([
+    'Length and Total W are filled only from a two-click measurement; a counted piece without a length stays in the quantity with Total W blank.',
+  ]);
   job.addRow([]);
   job.addRow(['Summary by kind']).font = { bold: true };
   const sh = job.addRow(['Kind', 'Scope', 'Quantity', 'Groups', 'Note']);
@@ -133,6 +152,7 @@ export async function buildTablesWorkbook(input: TablesExportInput): Promise<Buf
   job.addRow([]);
   addTable(job, input.job.rows);
   job.addRow(['TOTAL (main total)', '', input.job.quantity]).font = { bold: true };
+  addWeight(job, input.job.weight);
   addApart(job, 'Red, not counted', input.job.red);
   addApart(job, 'Existing, not counted', input.job.existing);
   addApart(job, 'Not counted (excluded kinds)', input.job.not_counted);
@@ -157,10 +177,11 @@ export async function buildTablesWorkbook(input: TablesExportInput): Promise<Buf
       color: { argb: input.draft.reviewed ? 'FF1F7A3A' : 'FFA15C00' },
     };
     ws.addRow([
-      `Page ${p.page_number}${p.sheet_number ? ` (${p.sheet_number})` : ''}. Lengths are added in Stage 2.`,
+      `Page ${p.page_number}${p.sheet_number ? ` (${p.sheet_number})` : ''}. Lengths come from two-click measurements only.`,
     ]);
     addTable(ws, p.rows);
     ws.addRow(['TOTAL (page)', '', p.quantity]).font = { bold: true };
+    addWeight(ws, p.weight);
     addApart(ws, 'Red, not counted', p.red);
     addApart(ws, 'Existing, not counted', p.existing);
     addApart(ws, 'Not counted (excluded kinds)', p.not_counted);

@@ -331,7 +331,9 @@ export type CountActionName =
   | 'redo'
   | 'measure'
   | 'attach_length'
-  | 'mode';
+  | 'mode'
+  | 'typical'
+  | 'prefix_map';
 
 export interface SheetLinesTable {
   sheet_id: string;
@@ -435,6 +437,15 @@ export interface JobsTable {
   updated_at: Timestamp;
 }
 
+/** Phase 10: the estimators' mark prefix -> kind, per project (owner decision 124). */
+export interface ProjectPrefixKindsTable {
+  project_id: string;
+  prefix: string;
+  kind: string;
+  set_by: string;
+  set_at: Generated<Date>;
+}
+
 export interface Database {
   projects: ProjectsTable;
   sheets: SheetsTable;
@@ -453,4 +464,5 @@ export interface Database {
   sheet_lines: SheetLinesTable;
   count_actions: CountActionsTable;
   measurements: MeasurementsTable;
+  project_prefix_kinds: ProjectPrefixKindsTable;
 }

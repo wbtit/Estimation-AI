@@ -43,6 +43,8 @@ export const CountPanel: React.FC<{
     patch: { profile_text?: string; tag_text?: string },
   ) => void;
   onSaveMeasure: () => void;
+  /** Phase 10: "x N typical" on a counted piece (n null removes it). */
+  onTypical: (id: string, n: number | null, note: string) => void;
   onAttach: (memberId: string) => void;
 }> = (p) => {
   const lists = pieceLists(p.members, p.settings.count_mode);
@@ -237,6 +239,15 @@ export const CountPanel: React.FC<{
               <span className="badge">
                 {m.count?.source === "human_click" ? "click" : "accepted"}
               </span>
+              {m.typical && (
+                <span
+                  className="badge amber"
+                  data-testid="typical-badge"
+                  title={m.typical.note}
+                >
+                  typical x{m.typical.n}
+                </span>
+              )}
               {m.length_ft_in && (
                 <span className="length" title={m.length_source ?? ""}>
                   {m.length_ft_in}
@@ -257,6 +268,16 @@ export const CountPanel: React.FC<{
           );
         })}
       </ul>
+
+      {selected &&
+        countStateOf(selected) === "confirmed" &&
+        !selected.deleted && (
+          <TypicalEditor
+            key={`${selected.id}-${selected.typical?.n ?? 0}`}
+            piece={selected}
+            onSave={(n, note) => p.onTypical(selected.id, n, note)}
+          />
+        )}
 
       <h4>Suggested, not decided ({lists.suggested.length})</h4>
       <ul className="piece-list" data-testid="suggested-list">
@@ -311,6 +332,51 @@ export const CountPanel: React.FC<{
           ))}
         </ul>
       )}
+    </div>
+  );
+};
+
+/** "x N typical" on the selected counted piece: N of 2 or more and a note (where N comes from). */
+const TypicalEditor: React.FC<{
+  piece: MemberView;
+  onSave: (n: number | null, note: string) => void;
+}> = ({ piece, onSave }) => {
+  const [n, setN] = useState(String(piece.typical?.n ?? ""));
+  const [note, setNote] = useState(piece.typical?.note ?? "");
+  const value = Number(n);
+  const ok = Number.isInteger(value) && value >= 2 && note.trim() !== "";
+  return (
+    <div className="typical-editor" data-testid="typical-editor">
+      <b>{piece.tag.text || "selected piece"}</b>: typical x{" "}
+      <input
+        type="number"
+        min={2}
+        step={1}
+        value={n}
+        onChange={(e) => setN(e.target.value)}
+        aria-label="typical multiplier"
+      />{" "}
+      <input
+        value={note}
+        onChange={(e) => setNote(e.target.value)}
+        placeholder="note: where the N comes from (required)"
+        aria-label="typical note"
+      />{" "}
+      <button
+        disabled={!ok}
+        onClick={() => onSave(value, note.trim())}
+        data-testid="typical-save"
+      >
+        Save
+      </button>
+      {piece.typical && (
+        <button onClick={() => onSave(null, "")} data-testid="typical-remove">
+          Remove
+        </button>
+      )}
+      <div className="hint">
+        The piece then counts N in every total, table and export (amber).
+      </div>
     </div>
   );
 };

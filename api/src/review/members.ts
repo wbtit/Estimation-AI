@@ -116,6 +116,11 @@ export interface MemberView {
   length_source: string | null;
   /** The two-click measurement this length came from (Phase 8 Part C), or null. */
   length_measurement: string | null;
+  /**
+   * Phase 10 (owner decision 126): a person's "x N typical" on a counted piece, with a required note.
+   * `quantity` above is already base_quantity x n, so every total, table and export counts N.
+   */
+  typical: { n: number; note: string; base_quantity: number } | null;
   base_elevation_mm: number | null;
   top_elevation_mm: number | null;
   status: Status;
@@ -219,6 +224,8 @@ export interface ViewLookups {
   catalog?: CatalogLookup | null;
   /** Effective tags of the other members of the sheet, to number a person's kind change. */
   tagOverrides?: Map<string, { prefix: string | null; number: number | null }>;
+  /** Phase 10: the project's estimator prefixes mapped to a kind (an owner-given prefix is not provisional). */
+  mappedPrefixes?: ReadonlySet<string>;
 }
 
 const num = (v: string | null): number | null => (v === null ? null : Number(v));
@@ -375,13 +382,26 @@ export function memberView(
   const countSource = pick<CountSource | null>('count_source', row.count_source);
   const clickedNoSize =
     row.count_source === 'human_click' && type !== 'joist' && !profile && !rawProfile;
-  const status: Status = clickedNoSize
+  const clickedStatus: Status = clickedNoSize
     ? {
         color: baseStatus.color === 'red' ? 'red' : 'amber',
         confirmed: false,
         reasons: [...baseStatus.reasons, 'size missing: type the size'],
       }
     : baseStatus;
+  // a person's "x N typical" is amber: one drawn piece stands for N (red keeps its meaning)
+  const typicalEdit = (e.get('typical') as { n: number; note: string } | null | undefined) ?? null;
+  const baseQuantity = pick('quantity', row.quantity);
+  const status: Status = typicalEdit
+    ? {
+        color: clickedStatus.color === 'red' ? 'red' : 'amber',
+        confirmed: clickedStatus.confirmed,
+        reasons: [
+          ...clickedStatus.reasons,
+          `typical x${typicalEdit.n}: counted ${typicalEdit.n} times (a person's multiplier)`,
+        ],
+      }
+    : clickedStatus;
 
   // the system's own result: the stored row alone, no edits
   const storedKindInfo = row.kind ? lookups.kinds?.get(row.kind) : undefined;
@@ -432,7 +452,8 @@ export function memberView(
     fieldEdited('start_elevation_mm', storedBase) ||
     fieldEdited('end_elevation_mm', storedTop) ||
     fieldEdited('shared_line', null) ||
-    fieldEdited('merged_into', null);
+    fieldEdited('merged_into', null) ||
+    fieldEdited('typical', null);
   const notMember = (e.get('not_member') as { reason: string } | null | undefined) ?? null;
   const existing = e.get('existing') === true;
   const human: HumanState =
@@ -458,7 +479,10 @@ export function memberView(
     prefix: tagEdit.prefix,
     number: tagEdit.number,
     text: tagEdit.number === null ? '' : `${tagEdit.prefix ?? '?'}${tagEdit.number}`,
-    provisional: tagEdit.prefix !== null && (tagKind?.provisional ?? true),
+    provisional:
+      tagEdit.prefix !== null &&
+      !(lookups.mappedPrefixes?.has(tagEdit.prefix) ?? false) &&
+      (tagKind?.provisional ?? true),
   };
   const iso = (d: Date | string) => new Date(d as string).toISOString();
   const changedAt = [row.updated_at, ...edits.map((x) => x.created_at)]
@@ -527,7 +551,7 @@ export function memberView(
     mark,
     profile_raw: rawProfile,
     profile,
-    quantity: pick('quantity', row.quantity),
+    quantity: typicalEdit ? baseQuantity * typicalEdit.n : baseQuantity,
     level: pick<string | null>('level', null) ?? sheetLevel,
     deleted: reviewStatus === 'rejected',
     review_status: reviewStatus,
@@ -548,6 +572,9 @@ export function memberView(
     length_ft_in: lengthMm === null ? null : mmToFeetInches(lengthMm),
     length_source: lengthMm === null ? null : lengthSource,
     length_measurement: lengthMm !== null && typedLength !== null ? measurementId : null,
+    typical: typicalEdit
+      ? { n: typicalEdit.n, note: typicalEdit.note, base_quantity: baseQuantity }
+      : null,
     base_elevation_mm: baseElev,
     top_elevation_mm: topElev,
     status,

@@ -279,6 +279,8 @@ export interface MemberView {
   length_ft_in: string | null;
   length_source: string | null;
   length_measurement?: string | null;
+  /** Phase 10: a person's "x N typical" (quantity is already base x N) with its note. */
+  typical?: { n: number; note: string; base_quantity: number } | null;
   status: { color: Color; confirmed: boolean; reasons: string[] };
   plan_point: { x_mm: number | null; y_mm: number | null } | null;
   system: { color: Color; confirmed: boolean; reasons: string[] } | null;
@@ -477,12 +479,20 @@ export interface Apart {
   member_ids: string[];
 }
 
+export interface WeightTotals {
+  total_w: number;
+  pieces_without_length: number;
+  pieces_without_unit_w: number;
+}
+
 export interface PageTableS1 {
   sheet_id: string;
   page_number: number;
   sheet_number: string | null;
   rows: TableRowS1[];
   quantity: number;
+  /** Phase 10: weight of the rows with a length and a Unit W, and the pieces without one. */
+  weight?: WeightTotals;
   red: Apart;
   existing: Apart;
   not_counted: Apart;
@@ -506,6 +516,7 @@ export interface TablesResponse {
   job: {
     rows: TableRowS1[];
     quantity: number;
+    weight?: WeightTotals;
     summary: KindSummaryLine[];
     red: Apart;
     existing: Apart;

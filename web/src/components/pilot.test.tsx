@@ -164,6 +164,7 @@ describe("unlinked size labels are amber suggestions in count mode", () => {
         onPatch={vi.fn()}
         onSaveMeasure={vi.fn()}
         onAttach={vi.fn()}
+        onTypical={vi.fn()}
       />,
     );
     expect(screen.getByTestId("no-line-badge")).toBeTruthy();
@@ -202,6 +203,7 @@ describe("tag numbering setting and the Tab hint", () => {
     onPatch: vi.fn(),
     onSaveMeasure: vi.fn(),
     onAttach: vi.fn(),
+    onTypical: vi.fn(),
     ...over,
   });
 

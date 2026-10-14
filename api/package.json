@@ -15,7 +15,8 @@
     "catalog:import": "tsx src/scripts/import-catalog.ts",
     "kinds:load-abbreviations": "tsx src/scripts/load-kind-abbreviations.ts",
     "seed:synthetic": "tsx src/scripts/seed-synthetic.ts",
-    "test-db": "tsx src/scripts/ensure-test-db.ts"
+    "test-db": "tsx src/scripts/ensure-test-db.ts",
+    "prefixes:load": "tsx src/scripts/load-prefix-meanings.ts"
   },
   "dependencies": {
     "@fastify/multipart": "^10.1.2",

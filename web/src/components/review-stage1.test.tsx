@@ -256,6 +256,22 @@ describe("ExplanationPanel", () => {
     return onJump;
   };
 
+  it("shows a typical multiplier and its note in the evidence (Phase 10)", () => {
+    render1(
+      member("t", {
+        quantity: 6,
+        typical: {
+          n: 6,
+          note: "six bays per the typical note",
+          base_quantity: 1,
+        },
+      }),
+    );
+    expect(screen.getByTestId("typical-evidence").textContent).toBe(
+      "x6 (counts 6 pieces): six bays per the typical note",
+    );
+  });
+
   it("lists every piece of evidence and says 'not found' for what is missing", () => {
     render1(
       member("a", {

@@ -1,7 +1,13 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { api, send } from "../lib/api";
 import { SYMBOL_HEX } from "../lib/status";
-import type { Apart, KindInfo, TableRowS1, TablesResponse } from "../lib/types";
+import type {
+  Apart,
+  KindInfo,
+  TableRowS1,
+  TablesResponse,
+  WeightTotals,
+} from "../lib/types";
 
 const COLOUR: Record<TableRowS1["colour"], string> = {
   green: SYMBOL_HEX.green,
@@ -24,10 +30,20 @@ const ApartLine: React.FC<{ label: string; a: Apart; red?: boolean }> = ({
     </tr>
   );
 
+/** "Total W 1,234.5 lb · 7 pieces without length" (owner decision 127: they stay in the quantity). */
+export function weightText(w: WeightTotals): string {
+  const parts = [`Total W ${w.total_w.toLocaleString("en-US")} lb`];
+  parts.push(`${w.pieces_without_length} pieces without length`);
+  if (w.pieces_without_unit_w > 0)
+    parts.push(`${w.pieces_without_unit_w} with a length but no Unit W`);
+  return parts.join(" · ");
+}
+
 /** One table (page or job): the estimator's columns with Kind first; a row click selects its symbols. */
 const Table: React.FC<{
   rows: TableRowS1[];
   quantity: number;
+  weight?: WeightTotals;
   kinds: KindInfo[];
   selectedKeys: ReadonlySet<string>;
   onRow: (row: TableRowS1) => void;
@@ -38,6 +54,7 @@ const Table: React.FC<{
 }> = ({
   rows,
   quantity,
+  weight,
   kinds,
   selectedKeys,
   onRow,
@@ -149,7 +166,9 @@ const Table: React.FC<{
       <tr className="total">
         <td colSpan={2}>TOTAL</td>
         <td className="num">{quantity}</td>
-        <td colSpan={8}>lengths and Total W are added in Stage 2</td>
+        <td colSpan={8} data-testid="weight-total">
+          {weight ? weightText(weight) : "Total W only from two-click lengths"}
+        </td>
       </tr>
       {footer}
     </tfoot>
@@ -321,6 +340,7 @@ export const TablesPanel: React.FC<{
           label="page table"
           rows={page.rows}
           quantity={page.quantity}
+          weight={page.weight}
           onRow={(r) => onSelectRow(r, page.page_number)}
           footer={footerOf(
             page.red,
@@ -342,6 +362,7 @@ export const TablesPanel: React.FC<{
         label="job table"
         rows={data.job.rows}
         quantity={data.job.quantity}
+        weight={data.job.weight}
         onRow={(r) => onSelectRow(r, r.sheets[0] ?? null)}
         footer={
           <>

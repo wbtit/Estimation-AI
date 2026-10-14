@@ -113,6 +113,13 @@ export async function buildTakeoffWorkbook(input: TakeoffExportInput): Promise<B
     null,
     t.length_shared_pieces,
   ]);
+  // Phase 10 (owner decision 127): pieces with no length stay in the pieces above
+  ws.addRow([
+    `${t.unmeasured} pieces without length (counted in the pieces above; no length, so no weight)`,
+    null,
+    null,
+    t.unmeasured,
+  ]);
   const x = takeoff.excluded_red;
   ws.addRow([
     'EXCLUDED (red), not in totals',

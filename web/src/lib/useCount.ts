@@ -177,6 +177,23 @@ export function useCount(
     [projectId, who, onError, afterChange],
   );
 
+  const typical = useCallback(
+    async (memberId: string, n: number | null, note: string) => {
+      if (!projectId) return;
+      try {
+        await send(
+          "POST",
+          `/api/projects/${projectId}/members/${memberId}/typical`,
+          { who: who.trim(), n, ...(n === null ? {} : { note }) },
+        );
+        await afterChange();
+      } catch (err) {
+        onError(err);
+      }
+    },
+    [projectId, who, onError, afterChange],
+  );
+
   const redo = useCallback(async () => {
     if (!projectId) return;
     try {
@@ -249,6 +266,7 @@ export function useCount(
     ensureLines,
     place,
     decide,
+    typical,
     redo,
     preview,
     saveMeasurement,

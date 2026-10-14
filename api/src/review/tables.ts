@@ -61,12 +61,41 @@ export interface Apart {
 /** Phase 8: pieces the system found that nobody has decided yet (count mode only; never in a total). */
 export type Suggested = Apart;
 
+/**
+ * Phase 10 (owner decision 127): the weight of the rows that have a length and a Unit W, and how
+ * many counted pieces have no length (they stay in the quantity; their Total W is blank).
+ */
+export interface WeightTotals {
+  /** lb: the sum of Total W over the rows that have one. */
+  total_w: number;
+  pieces_without_length: number;
+  /** Pieces with a length but no Unit W (a size not in the catalog): no Total W either. */
+  pieces_without_unit_w: number;
+}
+
+export function weightTotals(rows: readonly TableRow[]): WeightTotals {
+  let w = 0;
+  let noLength = 0;
+  let noUnit = 0;
+  for (const r of rows) {
+    if (r.total_w !== null) w += r.total_w;
+    if (r.length_ft === null) noLength += r.quantity;
+    else if (r.unit_w === null) noUnit += r.quantity;
+  }
+  return {
+    total_w: Math.round(w * 10) / 10,
+    pieces_without_length: noLength,
+    pieces_without_unit_w: noUnit,
+  };
+}
+
 export interface PageTable {
   sheet_id: string;
   page_number: number;
   sheet_number: string | null;
   rows: TableRow[];
   quantity: number;
+  weight: WeightTotals;
   red: Apart;
   existing: Apart;
   not_counted: Apart;
@@ -87,6 +116,7 @@ export interface KindSummary {
 export interface JobTable {
   rows: TableRow[];
   quantity: number;
+  weight: WeightTotals;
   summary: KindSummary[];
   red: Apart;
   existing: Apart;
@@ -207,8 +237,11 @@ function buildRows(
       };
       groups.set(key, row);
     }
-    row.quantity += 1;
+    // one piece each; a person's "x N typical" counts N
+    row.quantity += m.typical ? m.typical.n : 1;
     row.member_ids.push(m.id);
+    if (m.typical && !row.flags.includes(`typical x${m.typical.n}`))
+      row.flags.push(`typical x${m.typical.n}`);
     if (m.tag.text) row.tags.push(m.tag.text);
     if (sheet && !row.sheets.includes(sheet.page_number)) row.sheets.push(sheet.page_number);
     if (RANK[colour] > RANK[row.colour]) row.colour = colour;
@@ -276,6 +309,7 @@ export function buildPageTables(input: TableInput): PageTable[] {
       sheet_number: s.sheet_number,
       rows,
       quantity: rows.reduce((n, r) => n + r.quantity, 0),
+      weight: weightTotals(rows),
       red: c.red,
       existing: c.existing,
       not_counted: c.notCounted,
@@ -317,6 +351,7 @@ export function buildJobTable(input: TableInput): JobTable {
   return {
     rows,
     quantity: rows.reduce((n, r) => n + r.quantity, 0),
+    weight: weightTotals(rows),
     summary,
     red: c.red,
     existing: c.existing,

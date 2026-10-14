@@ -128,6 +128,13 @@ export const ExplanationPanel: React.FC<ExplanationProps> = ({
       )}
       <table className="kv evidence">
         <tbody>
+          {m.typical && (
+            <Row label="Typical">
+              <span data-testid="typical-evidence">
+                x{m.typical.n} (counts {m.typical.n} pieces): {m.typical.note}
+              </span>
+            </Row>
+          )}
           <Row label="Label text" onJump={labelJump}>
             {m.profile_raw ?? m.mark ?? "not found"}
             {m.mark && m.profile_raw ? ` (mark ${m.mark})` : ""}

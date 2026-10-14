@@ -1280,6 +1280,7 @@ export const App: React.FC = () => {
               onRedo={() => void count.redo()}
               onSelect={setMemberId}
               onDecide={(id, d) => void count.decide(id, d)}
+              onTypical={(id, n, note) => void count.typical(id, n, note)}
               onDelete={(id) => void act(id, "/delete", "POST")}
               onPatch={(id, patch) => void act(id, "", "PATCH", patch)}
               onSaveMeasure={() => void saveMeasure()}

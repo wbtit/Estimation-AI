@@ -14,6 +14,7 @@ import { loadSheetOverrides } from '../review/overrides.js';
 import { loadKinds } from '../review/kinds.js';
 import { defaultCatalogLookup } from '../catalog/lookup.js';
 import { HttpError } from './http-error.js';
+import { loadPrefixKinds } from '../review/prefix-kinds.js';
 
 export interface MemberRouteOptions {
   db?: Kysely<Database>;
@@ -114,7 +115,11 @@ export async function loadMemberViews(
   const levelOf = new Map(
     sheets.map((s) => [s.id, overrides.get(s.id)?.level ?? s.level_guess ?? null] as const),
   );
-  const lookups = { kinds: await loadKinds(db), catalog: await defaultCatalogLookup(db) };
+  const lookups = {
+    kinds: await loadKinds(db),
+    catalog: await defaultCatalogLookup(db),
+    mappedPrefixes: new Set((await loadPrefixKinds(db, projectId)).map((p) => p.prefix)),
+  };
   const out = rows.map((r) =>
     memberView(
       r,

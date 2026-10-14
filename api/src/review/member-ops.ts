@@ -88,7 +88,9 @@ export function patchEntries(
   if (patch.mark !== undefined) push('mark', m.mark, patch.mark?.trim() || null);
   if (patch.level !== undefined) push('level', memberLevelOverride, patch.level?.trim() || null);
   if (patch.type !== undefined) push('type', m.type, patch.type);
-  if (patch.quantity !== undefined) push('quantity', m.quantity, patch.quantity);
+  // the stored quantity is the base one: a typical multiplier is its own edit
+  if (patch.quantity !== undefined)
+    push('quantity', m.typical ? m.typical.base_quantity : m.quantity, patch.quantity);
   if (patch.name !== undefined) push('name', m.name, patch.name?.trim() || null);
   if (patch.length !== undefined) {
     const text = patch.length === null ? '' : patch.length.trim();

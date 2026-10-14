@@ -116,6 +116,7 @@ function panel(members: MemberView[], over: Record<string, unknown> = {}) {
     onSelect: vi.fn(),
     onRadius: vi.fn(),
     onScope: vi.fn(),
+    onTypical: vi.fn(),
   };
   render(
     <CountPanel

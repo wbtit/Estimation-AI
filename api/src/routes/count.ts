@@ -7,6 +7,10 @@
 //   GET  /api/projects/:projectId/sheets/:sheetId/lines              the lines (snap targets, drawn client side)
 //   POST /api/projects/:projectId/count/click                        a click with a kind: a new confirmed piece
 //   POST /api/projects/:projectId/members/:memberId/count-decision   accept / reject / reset a suggestion
+//   POST /api/projects/:projectId/members/:memberId/typical          "x N typical" with a note, or null (Phase 10)
+//   GET  /api/projects/:projectId/prefix-kinds                       estimator mark prefix -> kind (Phase 10)
+//   PUT  /api/projects/:projectId/prefix-kinds                       set or remove one (a log row)
+//   POST /api/projects/:projectId/prefix-kinds/import                the owner's file: preview, or apply
 //   GET  /api/projects/:projectId/count-actions                      the action log (+ time per page and person)
 //   POST /api/projects/:projectId/measure                            preview a two-click measurement (nothing saved)
 //   POST /api/projects/:projectId/measurements                       save one
@@ -23,6 +27,14 @@ import { logCountAction, pageTimes } from '../review/count-log.js';
 import { loadKinds, typeOfKind } from '../review/kinds.js';
 import { nextTagNumber } from '../review/member-ops.js';
 import { tagPool, type TagScope } from '../review/tag-scope.js';
+import {
+  applyPrefixChanges,
+  importChanges,
+  loadPrefixKinds,
+  parsePrefixCsv,
+  prefixForKind,
+  PREFIX_RE,
+} from '../review/prefix-kinds.js';
 import { parseJoist } from '../review/joist.js';
 import { parseProfile } from '../review/profile.js';
 import { measureTwoClicks, scaleViewFor, DEFAULT_MEASURE_SNAP_PT } from '../review/measure.js';
@@ -337,7 +349,9 @@ export const countRoutes: FastifyPluginAsync<CountRouteOptions> = async (app, op
       );
       const parsed = size.profile_text ? parseProfile(size.profile_text) : null;
       const type = typeOfKind(kindInfo, 'beam');
-      const prefix = kindInfo.prefix;
+      // the estimators' own prefix of this kind when the project maps one, else the kind list's prefix
+      const prefix =
+        prefixForKind(await loadPrefixKinds(db(), projectId), b.kind) ?? kindInfo.prefix;
       // the next number of this kind: across the job (default) or on this sheet, in click order
       const number = nextTagNumber(
         await tagPool(db(), projectId, sheetMembers, cfg.tag_scope),
@@ -547,6 +561,197 @@ export const countRoutes: FastifyPluginAsync<CountRouteOptions> = async (app, op
       }
       const [after] = await loadMemberViews(db(), projectId, { memberIds: [memberId] });
       return { action_id: editActionId, changed: entries.length > 0, member: after };
+    },
+  );
+
+  // ---- "x N typical" on a counted piece (Phase 10, owner decision 126) ---------------------------
+  app.post<{
+    Params: { projectId: string; memberId: string };
+    Body: { who: string; n: number | null; note?: string };
+  }>(
+    '/api/projects/:projectId/members/:memberId/typical',
+    {
+      schema: {
+        params: memberParams,
+        body: {
+          type: 'object',
+          required: ['who', 'n'],
+          additionalProperties: false,
+          properties: {
+            who,
+            n: { type: ['integer', 'null'], minimum: 2, maximum: 10000 },
+            note: { type: 'string', maxLength: 300 },
+          },
+        },
+      },
+    },
+    async (request) => {
+      const { projectId, memberId } = request.params;
+      const name = request.body.who.trim();
+      if (name === '') throw new HttpError(400, { error: 'who must not be blank' });
+      const cfg = await settings(projectId);
+      if (!cfg.count_mode) {
+        throw new HttpError(409, { error: 'count mode (the pilot) is off for this project' });
+      }
+      const [m] = await loadMemberViews(db(), projectId, { memberIds: [memberId] });
+      if (!m) throw new HttpError(404, { error: 'member not found' });
+      if (m.deleted || m.merged_into !== null || m.count.state !== 'confirmed') {
+        throw new HttpError(409, {
+          error: 'only a counted piece (a click or an accepted suggestion) can be typical',
+        });
+      }
+      const n = request.body.n;
+      const note = (request.body.note ?? '').trim();
+      if (n !== null && note === '') {
+        throw new HttpError(400, {
+          error: 'a typical piece needs a note (where the N comes from)',
+        });
+      }
+      const before = m.typical ? { n: m.typical.n, note: m.typical.note } : null;
+      const after = n === null ? null : { n, note };
+      if (JSON.stringify(before) === JSON.stringify(after)) {
+        return { action_id: null, changed: false, member: m };
+      }
+      const editActionId = await recordAction(db(), name, [
+        { memberId: m.id, field: 'typical', before, after, status: 'edited' },
+      ]);
+      await logCountAction(db(), {
+        projectId,
+        sheetId: m.sheet_id,
+        memberId: m.id,
+        action: 'typical',
+        who: name,
+        editActionId,
+        detail: {
+          change: before === null ? 'create' : after === null ? 'remove' : 'edit',
+          before,
+          after,
+          tag: m.tag.text,
+          size: m.profile_raw,
+        },
+      });
+      const [changed] = await loadMemberViews(db(), projectId, { memberIds: [memberId] });
+      return { action_id: editActionId, changed: true, member: changed };
+    },
+  );
+
+  // ---- estimator mark prefix -> kind (Phase 10, owner decision 124) ------------------------------
+  app.get<{ Params: { projectId: string } }>(
+    '/api/projects/:projectId/prefix-kinds',
+    { schema: { params: projectParams } },
+    async (request) => {
+      await settings(request.params.projectId);
+      return { rows: await loadPrefixKinds(db(), request.params.projectId) };
+    },
+  );
+
+  app.put<{
+    Params: { projectId: string };
+    Body: { who: string; prefix: string; kind: string | null };
+  }>(
+    '/api/projects/:projectId/prefix-kinds',
+    {
+      schema: {
+        params: projectParams,
+        body: {
+          type: 'object',
+          required: ['who', 'prefix', 'kind'],
+          additionalProperties: false,
+          properties: {
+            who,
+            prefix: { type: 'string', minLength: 1, maxLength: 6 },
+            kind: { type: ['string', 'null'], maxLength: 80 },
+          },
+        },
+      },
+    },
+    async (request) => {
+      const { projectId } = request.params;
+      const name = request.body.who.trim();
+      if (name === '') throw new HttpError(400, { error: 'who must not be blank' });
+      await settings(projectId);
+      const prefix = request.body.prefix.trim().toUpperCase();
+      if (!PREFIX_RE.test(prefix)) {
+        throw new HttpError(400, { error: 'a prefix is 1 to 6 letters' });
+      }
+      const kind = request.body.kind;
+      if (kind !== null && !(await loadKinds(db())).has(kind)) {
+        throw new HttpError(400, { error: `"${kind}" is not a kind of the list` });
+      }
+      const before =
+        (await loadPrefixKinds(db(), projectId)).find((r) => r.prefix === prefix)?.kind ?? null;
+      if (before !== kind) {
+        if (kind === null) {
+          await db()
+            .deleteFrom('project_prefix_kinds')
+            .where('project_id', '=', projectId)
+            .where('prefix', '=', prefix)
+            .execute();
+        } else {
+          await db()
+            .insertInto('project_prefix_kinds')
+            .values({ project_id: projectId, prefix, kind, set_by: name })
+            .onConflict((oc) =>
+              oc
+                .columns(['project_id', 'prefix'])
+                .doUpdateSet({ kind, set_by: name, set_at: new Date() }),
+            )
+            .execute();
+        }
+        await logCountAction(db(), {
+          projectId,
+          action: 'prefix_map',
+          who: name,
+          detail: { prefix, before, after: kind },
+        });
+      }
+      return { rows: await loadPrefixKinds(db(), projectId) };
+    },
+  );
+
+  app.post<{
+    Params: { projectId: string };
+    Body: { who: string; csv: string; apply?: boolean };
+  }>(
+    '/api/projects/:projectId/prefix-kinds/import',
+    {
+      schema: {
+        params: projectParams,
+        body: {
+          type: 'object',
+          required: ['who', 'csv'],
+          additionalProperties: false,
+          properties: {
+            who,
+            csv: { type: 'string', maxLength: 200000 },
+            apply: { type: 'boolean' },
+          },
+        },
+      },
+    },
+    async (request) => {
+      const { projectId } = request.params;
+      const name = request.body.who.trim();
+      if (name === '') throw new HttpError(400, { error: 'who must not be blank' });
+      await settings(projectId);
+      let rows;
+      try {
+        rows = parsePrefixCsv(request.body.csv, await loadKinds(db()));
+      } catch (err) {
+        throw new HttpError(400, { error: (err as Error).message });
+      }
+      const problems = rows.filter((r) => r.problem !== null);
+      const changes = importChanges(rows, await loadPrefixKinds(db(), projectId));
+      const preview = { rows: rows.length, problems, changes };
+      if (!request.body.apply) return { applied: false, ...preview };
+      if (problems.length > 0) {
+        throw new HttpError(409, {
+          error: 'the file has problems: nothing was applied',
+          ...preview,
+        });
+      }
+      await applyPrefixChanges(db(), projectId, name, changes);
+      return { applied: true, ...preview, current: await loadPrefixKinds(db(), projectId) };
     },
   );
 
