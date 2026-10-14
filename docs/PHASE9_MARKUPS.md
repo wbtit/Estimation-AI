@@ -22,7 +22,7 @@ Count symbol = Polygon with 3 or 8 vertices (5,323 in all files, 4,373 on mapped
 | Circle | 119 | 100% | 0% | empty | 0% / 0% | 0% |
 
 - **Subject** is a Bluebeam tool name (7 to 52 distinct short values across the whole set per subtype): never a size.
-- **Contents of a tag** is a mark code, unique per symbol (5,345 distinct among 5,528): **letters followed by a number on 4,841 of the 4,873 reply-linked tags (99.3%)**. It is not a size. Common letter prefixes: B 2,120, C 974, GR 353, M 273, L 241, LT 185, HR 141, P 109, EP 68, SL 51, RTU 50, BD 45, BPL 34, G 30.
+- **Contents of a tag** is a mark code, unique per symbol (5,345 distinct among 5,528): **letters followed by a number on 4,841 of the 4,873 reply-linked tags (99.3%)**. It is not a size. The 14 most common prefixes (one to three letters; the letters are not listed here) cover 96.5% of them; the largest two cover 64%.
 - **Custom columns** (15 slots, `BSIColumnData`; slot names are not stored in the PDF): the only slots filled on symbols and tags are slot 08 (the text `0`) and slot 13 (the text `0.00`), both on 3,344 symbols and nowhere else with another value; slot 00 holds one numeric value on 174 symbols (one file). **No slot holds a size or a varying quantity.** (Correction of the Phase 5t reading "looks like a quantity of 1 per symbol": the two numeric slots are constant zero defaults; a symbol means one piece by convention, not by data.)
 - **Layer entry**: on 1.4% of tags and 5.5% of non-count polygons, none elsewhere. **Author** is filled on 100%.
 - **Colour** (stroke and fill): count symbols use 4 to 16 distinct colour pairs per file (median 11).
