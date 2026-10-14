@@ -856,7 +856,7 @@ export const App: React.FC = () => {
     if (tool === "count") {
       // a click on a count symbol decides that suggestion (the symbol's own handler); elsewhere it counts
       const onSymbol = (e?.target as Element | undefined)?.closest?.(
-        '[data-testid="count-symbol"]',
+        '[data-testid="count-symbol"], [data-testid="unlinked-suggestion"]',
       );
       if (onSymbol) return false;
       if (!requireWho()) return false;
