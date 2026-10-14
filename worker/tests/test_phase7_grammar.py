@@ -484,3 +484,27 @@ def test_r1_main_spans_need_both_ends_and_a_medium_or_heavy_role():
     assert at(400)[0] not in pp.main_spans() and at(400)[0] in pp.main_spans(2, G.THIN)
     assert at(450)[0] not in pp.main_spans() and at(450)[0] in pp.main_spans(1, G.THIN)
     assert all(s in pp.spans for s in (at(400)[0], at(450)[0]))  # kept, only flagged
+
+
+def test_r3_side_by_side_main_spans_are_one_piece_the_other_is_flagged_not_deleted():
+    doc, page = _page()
+    for k in range(6):
+        _line(page, (50, 520 + 10 * k), (250, 520 + 10 * k), width=0.25)  # the thin bulk
+    _line(page, (100, 300), (500, 300), width=1.0)  # a beam drawn with two flange lines
+    _line(page, (100, 306), (500, 306), width=1.0)
+    _square(page, 88, 298, 12)
+    _square(page, 500, 298, 12)
+    _line(page, (100, 400), (500, 400), width=1.0)  # another beam far away stays its own piece
+    _square(page, 88, 394, 12)
+    _square(page, 500, 394, 12)
+    pp, _ = _run(page, doc)
+    near = [s for s in pp.spans if 295 < s["p0"][1] < 310 and 295 < s["p1"][1] < 310]
+    assert len(near) == 2
+    kept = [s for s in near if s["merged_into"] is None]
+    merged = [s for s in near if s["merged_into"] is not None]
+    assert len(kept) == 1 and len(merged) == 1
+    assert kept[0] in pp.main_spans() and merged[0] not in pp.main_spans()
+    assert merged[0] in pp.spans  # kept in the output, only flagged
+    far = [s for s in pp.spans if abs(s["p0"][1] - 400) < 1]
+    assert len(far) == 1 and far[0] in pp.main_spans()
+    G.check_evidence(pp)

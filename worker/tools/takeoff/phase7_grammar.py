@@ -57,6 +57,7 @@ ARROW_MAX = 10.0
 
 CHAIN_ANGLE_DEG, CHAIN_OFFSET, CHAIN_GAP, CHAIN_MIN = 1.0, 1.0, 8.0, 24.0
 MAIN_MIN_SUPPORTS, MAIN_MIN_ROLE, GLYPH_MIN_MEETS = 2, MEDIUM, 2  # revisions r1 and r2
+PAIR_ANGLE_DEG, PAIR_OFFSET_MAX, PAIR_OVERLAP_MIN = 2.0, 10.0, 0.7  # revision r3
 ANGLE_CUT_DEG = 22.5
 SPAN_MIN, SPLIT_END, GLYPH_SPLIT_PAD, PROJ_PAD = 12.0, 4.0, 4.0, 6.0
 SUPPORT_GLYPH_END, SUPPORT_CHAIN_END = 8.0, 4.0
@@ -109,7 +110,11 @@ class PagePieces:
         arguments give the sensitivities (min_supports=1, min_role=THIN is the v1 rule)."""
         ms = MAIN_MIN_SUPPORTS if min_supports is None else min_supports
         mr = MAIN_MIN_ROLE if min_role is None else min_role
-        return [s for s in self.spans if s["n_supports"] >= ms and s["role"] >= mr]
+        return [
+            s
+            for s in self.spans
+            if s["n_supports"] >= ms and s["role"] >= mr and s.get("merged_into") is None
+        ]
 
     def main_glyphs(self) -> list[dict]:
         return [g for g in self.glyphs if g["main"]]
@@ -922,6 +927,7 @@ def run_page(
     out.chains = chains
     out.spans = spans
     attach_labels(spans, labels or [])
+    merge_side_by_side(out)
     finalize_glyphs(out)
     return out
 
@@ -937,6 +943,61 @@ def words_of(page) -> list[Word]:
         r.normalize()
         out.append(Word(text, (r.x0, r.y0, r.x1, r.y1)))
     return out
+
+
+def merge_side_by_side(pp: PagePieces) -> None:
+    """r3: of main spans that run side by side keep the longest; flag the others `merged_into`
+    (the id of the kept span in `pp.spans`). Spans are compared only with each other."""
+    for s in pp.spans:
+        s["merged_into"] = None
+    cand = [
+        i
+        for i, s in enumerate(pp.spans)
+        if s["n_supports"] >= MAIN_MIN_SUPPORTS and s["role"] >= MAIN_MIN_ROLE
+    ]
+    cand.sort(key=lambda i: (-pp.spans[i]["length"], i))
+    cell = 60.0
+    grid: dict[tuple[int, int], list[int]] = defaultdict(list)
+    for i in cand:
+        s = pp.spans[i]
+        grid[
+            (int((s["p0"][0] + s["p1"][0]) / 2 // cell), int((s["p0"][1] + s["p1"][1]) / 2 // cell))
+        ].append(i)
+    done: set[int] = set()
+    for i in cand:
+        if i in done:
+            continue
+        a = pp.spans[i]
+        la = a["length"]
+        ux, uy = (a["p1"][0] - a["p0"][0]) / la, (a["p1"][1] - a["p0"][1]) / la
+        ang_a = seg_angle_deg((*a["p0"], *a["p1"]))
+        cx, cy = (
+            int((a["p0"][0] + a["p1"][0]) / 2 // cell),
+            int((a["p0"][1] + a["p1"][1]) / 2 // cell),
+        )
+        reach = int(math.ceil((la / 2 + PAIR_OFFSET_MAX) / cell)) + 1
+        for gx in range(cx - reach, cx + reach + 1):
+            for gy in range(cy - reach, cy + reach + 1):
+                for j in grid.get((gx, gy), ()):
+                    if j == i or j in done:
+                        continue
+                    if pp.spans[j]["length"] > la + 1e-9 or (pp.spans[j]["length"] == la and j < i):
+                        continue
+                    b = pp.spans[j]
+                    if angle_diff_deg(ang_a, seg_angle_deg((*b["p0"], *b["p1"]))) > PAIR_ANGLE_DEG:
+                        continue
+                    mx = (b["p0"][0] + b["p1"][0]) / 2 - a["p0"][0]
+                    my = (b["p0"][1] + b["p1"][1]) / 2 - a["p0"][1]
+                    if abs(-mx * uy + my * ux) > PAIR_OFFSET_MAX:
+                        continue
+                    s0 = (b["p0"][0] - a["p0"][0]) * ux + (b["p0"][1] - a["p0"][1]) * uy
+                    s1 = (b["p1"][0] - a["p0"][0]) * ux + (b["p1"][1] - a["p0"][1]) * uy
+                    lo, hi = sorted((s0, s1))
+                    if (min(hi, la) - max(lo, 0.0)) / min(la, b["length"]) < PAIR_OVERLAP_MIN:
+                        continue
+                    b["merged_into"] = i
+                    done.add(j)
+        done.add(i)
 
 
 def finalize_glyphs(pp: PagePieces) -> None:
