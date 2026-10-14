@@ -14,6 +14,7 @@ import { CountLayer, type MeasureDraft } from "./components/CountLayer";
 import { CountPanel } from "./components/CountPanel";
 import { PilotSwitch } from "./components/PilotSwitch";
 import { PrefixKinds } from "./components/PrefixKinds";
+import { PilotReport } from "./components/PilotReport";
 import { LabelsPanel } from "./components/LabelsPanel";
 import { MemberActions, type LegendRow } from "./components/MemberActions";
 import { NameGate } from "./components/NameGate";
@@ -85,7 +86,14 @@ export const App: React.FC = () => {
   const [who, setWhoState] = useState(getWho());
   const [message, setMessage] = useState<string | null>(null);
   const [tab, setTab] = useState<
-    "views" | "members" | "tables" | "labels" | "notes" | "takeoff" | "count"
+    | "views"
+    | "members"
+    | "tables"
+    | "labels"
+    | "notes"
+    | "takeoff"
+    | "count"
+    | "report"
   >("members");
   const [rowIds, setRowIds] = useState<ReadonlySet<string>>(new Set());
   const [rowKeys, setRowKeys] = useState<ReadonlySet<string>>(new Set());
@@ -537,7 +545,7 @@ export const App: React.FC = () => {
   // the pilot switch: the counting copilot is on or off per project (default off)
   const pilot = count.settings.count_mode;
   useEffect(() => {
-    if (tab === "count" && !pilot) setTab("members");
+    if ((tab === "count" || tab === "report") && !pilot) setTab("members");
   }, [tab, pilot]);
   const setPilot = (on: boolean) => {
     if (!requireWho()) return;
@@ -1224,7 +1232,7 @@ export const App: React.FC = () => {
                 "labels",
                 "notes",
                 "takeoff",
-                ...(pilot ? (["count"] as const) : []),
+                ...(pilot ? (["count", "report"] as const) : []),
               ] as const
             ).map((t) => (
               <button
@@ -1254,6 +1262,13 @@ export const App: React.FC = () => {
             />
           )}
           {tab === "notes" && <NotesPanel sheets={notes} />}
+          {tab === "report" && pilot && projectId && (
+            <PilotReport
+              projectId={projectId}
+              version={members}
+              onError={fail}
+            />
+          )}
           {tab === "count" && pilot && projectId && (
             <PrefixKinds
               projectId={projectId}

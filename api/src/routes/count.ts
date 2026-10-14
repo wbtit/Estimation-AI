@@ -8,6 +8,7 @@
 //   POST /api/projects/:projectId/count/click                        a click with a kind: a new confirmed piece
 //   POST /api/projects/:projectId/members/:memberId/count-decision   accept / reject / reset a suggestion
 //   POST /api/projects/:projectId/members/:memberId/typical          "x N typical" with a note, or null (Phase 10)
+//   GET  /api/projects/:projectId/pilot-report(.csv)                 time and actions per sheet and person (Phase 10)
 //   GET  /api/projects/:projectId/prefix-kinds                       estimator mark prefix -> kind (Phase 10)
 //   PUT  /api/projects/:projectId/prefix-kinds                       set or remove one (a log row)
 //   POST /api/projects/:projectId/prefix-kinds/import                the owner's file: preview, or apply
@@ -41,6 +42,7 @@ import { parseProfile } from '../review/profile.js';
 import { measureTwoClicks, scaleViewFor, DEFAULT_MEASURE_SNAP_PT } from '../review/measure.js';
 import { fillSize } from '../review/size-fill.js';
 import { snapCandidates, type LineRow } from '../review/snap.js';
+import { IDLE_SECONDS, pilotReport, reportCsv } from '../review/pilot-report.js';
 import type { MemberView } from '../review/members.js';
 import { loadMemberViews } from './members.js';
 import { HttpError } from './http-error.js';
@@ -757,6 +759,68 @@ export const countRoutes: FastifyPluginAsync<CountRouteOptions> = async (app, op
       }
       await applyPrefixChanges(db(), projectId, name, changes);
       return { applied: true, ...preview, current: await loadPrefixKinds(db(), projectId) };
+    },
+  );
+
+  // ---- the pilot timing report (Phase 10 Part E, read-only) -------------------------------------
+  async function report(projectId: string) {
+    await settings(projectId);
+    const actions = await db()
+      .selectFrom('count_actions')
+      .select(['sheet_id', 'member_id', 'who', 'action', 'created_at'])
+      .where('project_id', '=', projectId)
+      .orderBy('created_at')
+      .orderBy('id')
+      .execute();
+    const members = await loadMemberViews(db(), projectId);
+    const rows = pilotReport(
+      actions,
+      members.map((m) => ({
+        id: m.id,
+        live: !m.deleted && m.merged_into === null && m.not_member === null,
+        confirmed: m.count.state === 'confirmed',
+        typical: m.typical !== null,
+        has_length: m.length_mm !== null,
+      })),
+    );
+    const sheets = await db()
+      .selectFrom('sheets')
+      .select(['id', 'page_index', 'sheet_number'])
+      .where('project_id', '=', projectId)
+      .execute();
+    const info = new Map(sheets.map((x) => [x.id, x] as const));
+    const pageOf = (id: string | null) => {
+      const x = id ? info.get(id) : undefined;
+      return { page: x ? x.page_index + 1 : null, sheet_number: x?.sheet_number ?? null };
+    };
+    return { rows, pageOf };
+  }
+
+  app.get<{ Params: { projectId: string } }>(
+    '/api/projects/:projectId/pilot-report',
+    { schema: { params: projectParams } },
+    async (request) => {
+      const { rows, pageOf } = await report(request.params.projectId);
+      return {
+        idle_seconds: IDLE_SECONDS,
+        rows: rows.map((r) => ({
+          ...r,
+          page_number: pageOf(r.sheet_id).page,
+          sheet_number: pageOf(r.sheet_id).sheet_number,
+        })),
+      };
+    },
+  );
+
+  app.get<{ Params: { projectId: string } }>(
+    '/api/projects/:projectId/pilot-report.csv',
+    { schema: { params: projectParams } },
+    async (request, reply) => {
+      const { rows, pageOf } = await report(request.params.projectId);
+      return reply
+        .header('content-type', 'text/csv; charset=utf-8')
+        .header('content-disposition', 'attachment; filename="pilot-report.csv"')
+        .send(reportCsv(rows, pageOf));
     },
   );
 
