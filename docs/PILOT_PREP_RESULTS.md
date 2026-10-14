@@ -18,3 +18,6 @@ Tool: `worker/tools/copy_project.py` (logic in `worker/src/review/copy_project.p
 - **The original is untouched:** its row counts before and after are identical (1 file, 23 sheets, 23 views, 14,760 text items, 357 members, 0 edits, 0 actions, 0 measurements), and a content hash of its members, sheets and member edits is the same before and after.
 - **Checked through the app's own code** (a read-only API on port 3100, started and stopped by its PID): original and pilot both give 357 members (all suggested), 124 pieces in the takeoff and in the tables, 23 sheets, thumbnails served.
 - **Scale:** copied as stored: 21 of the 23 views have a GUESSED scale and none is confirmed (2 have none). The measure tool needs a confirmed scale, so the estimator confirms it on each page first (see the runbook).
+
+## Step 4: count mode on for pilot-01 only
+Switched through the app's own route (`PUT /api/projects/<pilot-01>/count`, who "pilot preparation"), so it is logged like any switch: pilot-01's action log now holds this one `mode` row (project-level; the report tab lists sheets only). Before: 0 projects in count mode; after: 1, and it is pilot-01 (tag numbering: per job). job-018 and every other project stay off.
