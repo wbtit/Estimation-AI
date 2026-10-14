@@ -184,3 +184,9 @@ Each item is an assumption I made so Phase 1 could proceed while you were away. 
 111. **Chance level.** About half of the 12 pt matches of every existing basis are what symbols moved 60 to 200 pt away also get. Should the pre-registered bars (worth building 0.6 / 0.6 at 12 pt) be restated against that chance level, or kept as they are and read together with the control?
 112. **Grid lines.** Bubbles were found (908 on the held-out pages) but only 62 dashed grid lines anchored (3 of 52 pages with a usable grid). Are the grid lines in these sets mostly solid, or drawn in a way I should look at? (Not diagnosed, since the stroke-text reader is out of scope.)
 
+### Added in Phase 8 (quantity evaluation; see docs/PHASE8_EVAL.md)
+113. **More ground truth.** Only one finished takeoff (one job) exists, so every quantity figure is one project. Can more finished takeoffs with their drawing sets (any kind of job) be provided, ideally 5 or more, before any quantity target is set?
+114. **Typical members.** The largest sizes in the workbook have 20 to 30 pieces per row (repeated members). Is the quantity there "per typical detail times a count written on the drawing", or counted from the plans? The answer decides whether a "typical x N" entry (a person types the multiplier on a piece) belongs in the copilot.
+115. **Unlinked labels in the draft.** The naive label count is closer to the estimator than the linked count. Should an unlinked label be a suggested piece (amber, one click to accept) in the draft total, instead of staying outside the total as a warning?
+116. **Sheet numbers.** Our extracted sheet numbers are wrong for this project (letter plus one digit on all 23 sheets), which blocks any mapping from the estimator's references. May the sheet-number reader be fixed in a later phase (title-block corner text equal to a line of the page), or should the estimator give the sheet list?
+
