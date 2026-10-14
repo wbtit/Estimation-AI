@@ -51,7 +51,15 @@ FROZEN_FILES = [
 LARGEST = {"dev": "job-012", "held-out": "job-015"}
 OVERLAY_SEED = 7301
 OVERLAY_MIN_SYMBOLS = 20
-SETS = ("linear", "linear_all", "linear_2", "columns", "columns_all", "combined", "combined_braces")
+SETS = (
+    "linear",
+    "linear_all",
+    "linear_v1",
+    "columns",
+    "columns_all",
+    "combined",
+    "combined_braces",
+)
 REASONS = (
     "matched",
     "1 outside the view box",
@@ -148,9 +156,9 @@ def brace_geom(b: dict) -> dict:
 
 
 def piece_sets(pp: G.PagePieces) -> dict[str, list[dict]]:
-    lin = [("span", span_geom(s)) for s in pp.main_spans(1)]
+    lin = [("span", span_geom(s)) for s in pp.main_spans()]
     lin_all = [("span", span_geom(s)) for s in pp.spans]
-    lin_2 = [("span", span_geom(s)) for s in pp.main_spans(2)]
+    lin_v1 = [("span", span_geom(s)) for s in pp.main_spans(1, G.THIN)]
     col = [("column", glyph_geom(g)) for g in pp.main_glyphs()]
     col_all = [("column", glyph_geom(g)) for g in pp.glyphs]
     br = [("brace", brace_geom(b)) for b in pp.braces]
@@ -158,7 +166,7 @@ def piece_sets(pp: G.PagePieces) -> dict[str, list[dict]]:
     return {
         "linear": pack(lin),
         "linear_all": pack(lin_all),
-        "linear_2": pack(lin_2),
+        "linear_v1": pack(lin_v1),
         "columns": pack(col),
         "columns_all": pack(col_all),
         "combined": pack(lin + col),
@@ -202,7 +210,8 @@ def reasons_for(
             near_shape.extend(np.nonzero(dm[k] <= 24.0)[0] for k in range(len(chunk)))
         else:
             near_shape.extend(np.zeros(0, dtype=int) for _ in range(len(chunk)))
-    cand_geoms = [span_geom(s) for s in pp.spans if s["n_supports"] == 0]
+    main_ids = {id(s) for s in pp.main_spans()}
+    cand_geoms = [span_geom(s) for s in pp.spans if id(s) not in main_ids]
     cand_geoms += [glyph_geom(g) for g in pp.glyphs if not g["main"]]
     d_cand = L.distance_matrix([tuple(p) for p in xy], cand_geoms) if cand_geoms else None
     shape_segs: dict[int, list[int]] = collections.defaultdict(list)
@@ -277,8 +286,8 @@ def run_page(ld: Loader, item: dict, idx: int) -> dict:
             "glyphs": len(pp.glyphs),
             "glyphs_main": len(pp.main_glyphs()),
             "spans": len(pp.spans),
-            "spans_supported": len(pp.main_spans(1)),
-            "spans_two_ends": len(pp.main_spans(2)),
+            "spans_main": len(pp.main_spans()),
+            "spans_v1_main": len(pp.main_spans(1, G.THIN)),
             "braces": len(pp.braces),
             "consumed": pp.consumed,
         },
@@ -389,8 +398,8 @@ def summarise(rows: list[dict], side: str) -> dict:
                     "glyphs",
                     "glyphs_main",
                     "spans",
-                    "spans_supported",
-                    "spans_two_ends",
+                    "spans_main",
+                    "spans_v1_main",
                     "braces",
                 )
             },

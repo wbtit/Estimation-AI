@@ -56,6 +56,7 @@ DIM_MIN_LEN, TICK_MAX, TICK_END_TOL, DIM_TEXT_RADIUS = 30.0, 8.0, 3.0, 12.0
 ARROW_MAX = 10.0
 
 CHAIN_ANGLE_DEG, CHAIN_OFFSET, CHAIN_GAP, CHAIN_MIN = 1.0, 1.0, 8.0, 24.0
+MAIN_MIN_SUPPORTS, MAIN_MIN_ROLE, GLYPH_MIN_MEETS = 2, MEDIUM, 2  # revisions r1 and r2
 ANGLE_CUT_DEG = 22.5
 SPAN_MIN, SPLIT_END, GLYPH_SPLIT_PAD, PROJ_PAD = 12.0, 4.0, 4.0, 6.0
 SUPPORT_GLYPH_END, SUPPORT_CHAIN_END = 8.0, 4.0
@@ -101,8 +102,14 @@ class PagePieces:
     braces: list[dict] = field(default_factory=list)
     chains: list[Chain] = field(default_factory=list)
 
-    def main_spans(self, min_supports: int = 1) -> list[dict]:
-        return [s for s in self.spans if s["n_supports"] >= min_supports]
+    def main_spans(
+        self, min_supports: int | None = None, min_role: int | None = None
+    ) -> list[dict]:
+        """The spans of the main total: supported at both ends and medium or heavy (r1). The
+        arguments give the sensitivities (min_supports=1, min_role=THIN is the v1 rule)."""
+        ms = MAIN_MIN_SUPPORTS if min_supports is None else min_supports
+        mr = MAIN_MIN_ROLE if min_role is None else min_role
+        return [s for s in self.spans if s["n_supports"] >= ms and s["role"] >= mr]
 
     def main_glyphs(self) -> list[dict]:
         return [g for g in self.glyphs if g["main"]]
@@ -557,7 +564,7 @@ def find_glyphs(
                 "signature": width_profile(sh.pts, sh.bbox),
                 "d_grid": d_grid,
                 "at_grid": at_grid,
-                "main": at_grid if has_grid else True,
+                "main": at_grid if has_grid else False,  # settled by finalize_glyphs (r2)
             }
         )
     out.sort(key=lambda g: (round(g["centre"][1], 1), round(g["centre"][0], 1)))
@@ -915,6 +922,7 @@ def run_page(
     out.chains = chains
     out.spans = spans
     attach_labels(spans, labels or [])
+    finalize_glyphs(out)
     return out
 
 
@@ -929,6 +937,19 @@ def words_of(page) -> list[Word]:
         r.normalize()
         out.append(Word(text, (r.x0, r.y0, r.x1, r.y1)))
     return out
+
+
+def finalize_glyphs(pp: PagePieces) -> None:
+    """r2: on a page without a usable grid a glyph is main only where at least GLYPH_MIN_MEETS main
+    span ends meet it; with a grid, the glyphs at its intersections are main. `meets` is stored."""
+    for g in pp.glyphs:
+        g["meets"] = 0
+    for s in pp.main_spans():
+        for sup in s["supports"]:
+            if sup is not None and sup["type"] == "column":
+                pp.glyphs[sup["id"]]["meets"] += 1
+    for g in pp.glyphs:
+        g["main"] = g["at_grid"] if pp.has_grid else g["meets"] >= GLYPH_MIN_MEETS
 
 
 def check_evidence(pp: PagePieces) -> None:

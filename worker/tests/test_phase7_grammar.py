@@ -182,13 +182,23 @@ def test_glyph_near_a_grid_intersection_is_main_and_one_elsewhere_is_flagged_off
     assert near in pp.main_glyphs() and far not in pp.main_glyphs()
 
 
-def test_on_a_page_without_a_grid_every_glyph_is_main():
+def test_on_a_page_without_a_grid_a_glyph_is_main_only_where_two_main_span_ends_meet():
     doc, page = _page()
-    _square(page, 100, 100)
-    _square(page, 300, 300, fill=False)
+    _line(page, (100, 105), (400, 105), width=2.0)  # a heavy beam from the first column ...
+    _line(page, (400, 105), (400, 300), width=2.0)  # ... to a second one, and a corner member
+    _line(page, (50, 500), (750, 500), width=0.25)  # thin lines so that 2.0 is the heavy role
+    _square(page, 95, 100)
+    _square(page, 395, 100)  # two heavy span ends meet here
+    _square(page, 395, 295)  # the corner member's other end
+    _square(page, 600, 300)  # a glyph nobody frames into
     pp, _ = _run(page, doc)
     assert not pp.has_grid
-    assert len(pp.glyphs) == 2 and all(g["main"] for g in pp.glyphs)
+    by_x = {round(g["centre"][0]): g for g in pp.glyphs}
+    tops = [g for g in pp.glyphs if abs(g["centre"][0] - 400) < 3 and g["centre"][1] < 200]
+    assert len(tops) == 1 and tops[0]["meets"] == 2 and tops[0]["main"]
+    assert by_x[100]["meets"] == 1 and not by_x[100]["main"]
+    assert by_x[605]["meets"] == 0 and not by_x[605]["main"]
+    assert len(pp.glyphs) == 4  # all kept
 
 
 def test_outline_and_fill_of_one_column_are_one_glyph_and_big_shapes_are_not_glyphs():
@@ -266,7 +276,9 @@ def test_a_beam_between_two_columns_is_one_supported_span():
     assert len(spans) == 1
     sp = spans[0]
     assert [s["type"] for s in sp["supports"]] == ["column", "column"] and sp["n_supports"] == 2
-    assert sp in pp.main_spans() and sp in pp.main_spans(min_supports=2)
+    # one width on the page: only the thin role, so the default main total (medium+) is empty
+    assert pp.main_spans() == []
+    assert sp in pp.main_spans(min_supports=2, min_role=G.THIN)
 
 
 def test_a_chain_is_split_at_a_column_in_the_middle():
@@ -305,7 +317,7 @@ def test_a_span_with_no_support_is_kept_flagged_and_left_out_of_the_main_total()
     pp, _ = _run(page, doc)
     assert len(pp.spans) == 1
     assert pp.spans[0]["n_supports"] == 0
-    assert pp.main_spans() == []
+    assert pp.main_spans() == [] and pp.main_spans(1, G.THIN) == []
     G.check_evidence(pp)
 
 
@@ -329,7 +341,7 @@ def test_the_label_is_evidence_only():
     without = G.run_page(parse, [], BOX, None)
     assert with_labels.spans[0]["label"] == "L1"
     assert without.spans[0]["label"] is None
-    assert len(with_labels.main_spans()) == len(without.main_spans())
+    assert len(with_labels.main_spans(1, G.THIN)) == len(without.main_spans(1, G.THIN)) == 1
 
 
 def test_hatch_is_not_chained_into_members():
@@ -452,3 +464,23 @@ def test_vectorised_hatch_mask_equals_the_reference_implementation():
         ref = _hatch_reference(seg, length, inside)
         assert np.array_equal(new, ref), seed
         assert new.sum() > 20  # the scene really has hatch
+
+
+def test_r1_main_spans_need_both_ends_and_a_medium_or_heavy_role():
+    doc, page = _page()
+    for k in range(6):
+        _line(page, (50, 520 + 10 * k), (250, 520 + 10 * k), width=0.25)  # the thin bulk
+    _line(page, (100, 300), (500, 300), width=1.0)  # medium, columns at both ends
+    _square(page, 90, 295)
+    _square(page, 495, 295)
+    _line(page, (100, 400), (500, 400), width=0.25)  # thin, columns at both ends
+    _square(page, 90, 395)
+    _square(page, 495, 395)
+    _line(page, (100, 450), (500, 450), width=1.0)  # medium, column at one end only
+    _square(page, 90, 445)
+    pp, _ = _run(page, doc)
+    at = lambda y: [s for s in pp.spans if abs(s["p0"][1] - y) < 1 and abs(s["p1"][1] - y) < 1]  # noqa: E731
+    assert at(300)[0] in pp.main_spans()
+    assert at(400)[0] not in pp.main_spans() and at(400)[0] in pp.main_spans(2, G.THIN)
+    assert at(450)[0] not in pp.main_spans() and at(450)[0] in pp.main_spans(1, G.THIN)
+    assert all(s in pp.spans for s in (at(400)[0], at(450)[0]))  # kept, only flagged
