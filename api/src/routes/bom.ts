@@ -51,6 +51,7 @@ async function compute(
     .selectFrom('members')
     .selectAll()
     .where('project_id', '=', projectId)
+    .where('build_run_id', 'is', null) // the line-first build has its own BOM (routes/build.ts)
     .execute();
   const members: Member[] = rows.map((row) => {
     try {

@@ -47,6 +47,9 @@ export async function loadMemberViews(
   filter: { sheetId?: string; viewId?: string; memberIds?: string[] } = {},
 ) {
   let q = db.selectFrom('members').selectAll().where('project_id', '=', projectId);
+  // Phase 11: pieces of the line-first build are not part of the label-first screens and totals;
+  // they are loaded only when asked for by id (an edit to a built piece goes through here too)
+  if (!filter.memberIds) q = q.where('build_run_id', 'is', null);
   if (filter.sheetId) q = q.where('sheet_id', '=', filter.sheetId);
   if (filter.viewId) q = q.where('view_id', '=', filter.viewId);
   if (filter.memberIds) q = q.where('id', 'in', filter.memberIds);
@@ -65,6 +68,7 @@ export async function loadMemberViews(
       .selectAll()
       .where('project_id', '=', projectId)
       .where('sheet_id', 'in', sheetOf)
+      .where('build_run_id', 'is', null)
       .where('id', 'not in', [...wanted])
       .execute();
     rows = [...requested, ...siblings].sort(

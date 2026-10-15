@@ -8,6 +8,8 @@ from typing import Any
 
 import psycopg
 
+from src.build.job import JOB_TYPE as BUILD_SHEET
+from src.build.job import run_build_sheet
 from src.config import WorkerConfig, load_config
 from src.db import connect
 from src.pdf_scan.job import JOB_TYPE as SCAN_PDF
@@ -35,6 +37,7 @@ HANDLERS: dict[str, Handler] = {
     CLASSES_VIEW: run_classes_view,
     AUTO_RUN: run_auto_run,
     SHEET_LINES: run_sheet_lines,
+    BUILD_SHEET: run_build_sheet,
 }
 
 
