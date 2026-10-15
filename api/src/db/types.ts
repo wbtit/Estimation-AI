@@ -80,7 +80,27 @@ export interface SheetsTable {
   guesses_confirmed_by: string | null;
   guesses_confirmed_at: Timestamp | null;
   scanned_at: Timestamp | null;
+  // Phase 11 (migration 016): per-page setup of the line-first build
+  crop_confirmed_by: string | null;
+  crop_confirmed_at: Timestamp | null;
+  build_scale_ratio: Numeric | null;
+  build_scale_text: string | null;
+  scale_confirmed_by: string | null;
+  scale_confirmed_at: Timestamp | null;
+  tos_mm: Numeric | null;
+  tos_raw: string | null;
+  tos_source: 'read' | 'typed' | null;
+  tos_confirmed_by: string | null;
+  tos_confirmed_at: Timestamp | null;
+  pen_class: string | null;
+  pen_class_source: 'suggested' | 'person' | null;
+  pen_class_confirmed_by: string | null;
+  pen_class_confirmed_at: Timestamp | null;
+  build_role: BuildRole | null;
+  registration: Json | null;
 }
+
+export type BuildRole = 'column_plan' | 'framing';
 
 export type PageType =
   | 'framing_plan'
@@ -314,9 +334,25 @@ export interface MembersTable {
   snapped_distance_pt: Numeric | null;
   size_source: SizeSource | null;
   size_evidence: Json | null;
+  // Phase 11 (migration 016): piece fields of a built member
+  build_run_id: string | null;
+  beam_line_id: string | null;
+  piece_index: number | null;
+  page_x0: Numeric | null;
+  page_y0: Numeric | null;
+  page_x1: Numeric | null;
+  page_y1: Numeric | null;
+  start_node_id: string | null;
+  end_node_id: string | null;
+  support_state: 'both' | 'one' | 'none' | null;
+  size_state: 'sized' | 'inferred' | 'undefined' | null;
+  build_state: BuildState | null;
+  label_evidence: Json | null;
   created_at: Timestamp;
   updated_at: Timestamp;
 }
+
+export type BuildState = 'found' | 'needs_review' | 'attention';
 
 export type CountState = 'suggested' | 'confirmed' | 'rejected';
 export type CountSource = 'human_click' | 'suggestion_accepted';
@@ -446,6 +482,77 @@ export interface ProjectPrefixKindsTable {
   set_at: Generated<Date>;
 }
 
+/** Phase 11 (migration 016): one row per Build press, with its inputs and outcome. */
+export type BuildRunStatus = 'pending' | 'running' | 'done' | 'failed' | 'refused';
+
+export interface BuildRunsTable {
+  id: Generated<string>;
+  project_id: string;
+  sheet_id: string;
+  requested_by: string;
+  status: ColumnType<BuildRunStatus, BuildRunStatus | undefined, BuildRunStatus>;
+  job_id: string | null;
+  started_at: Generated<Date>;
+  finished_at: Timestamp | null;
+  inputs: ColumnType<Record<string, unknown>, string | undefined, string>;
+  rules_version: string | null;
+  counts: ColumnType<Record<string, unknown>, string | undefined, string>;
+  notes: Generated<string[]>;
+  error: string | null;
+}
+
+export interface GridLinesTable {
+  id: Generated<string>;
+  sheet_id: string;
+  build_run_id: string | null;
+  label: string | null;
+  family: 'N' | 'A' | null;
+  x0: Numeric;
+  y0: Numeric;
+  x1: Numeric;
+  y1: Numeric;
+  bubble: Json | null;
+  source: 'found' | 'person';
+  confirmed_by: string | null;
+  confirmed_at: Timestamp | null;
+  created_at: Generated<Date>;
+}
+
+export type SupportSource = 'glyph' | 'projected' | 'beam_intersection' | 'person';
+
+export interface SupportNodesTable {
+  id: Generated<string>;
+  project_id: string;
+  sheet_id: string;
+  build_run_id: string | null;
+  x_pt: Numeric;
+  y_pt: Numeric;
+  plan_x_mm: Numeric | null;
+  plan_y_mm: Numeric | null;
+  grid_x: string | null;
+  grid_y: string | null;
+  source: SupportSource;
+  column_member_id: string | null;
+  evidence: Json | null;
+  created_at: Generated<Date>;
+}
+
+export interface BeamLinesTable {
+  id: Generated<string>;
+  sheet_id: string;
+  build_run_id: string | null;
+  x0: Numeric;
+  y0: Numeric;
+  x1: Numeric;
+  y1: Numeric;
+  source_segments: number;
+  gaps_bridged: Generated<number>;
+  gaps_pt: ColumnType<number[], string | undefined, string>;
+  pen_class: string;
+  role: 'girder' | 'beam';
+  created_at: Generated<Date>;
+}
+
 export interface Database {
   projects: ProjectsTable;
   sheets: SheetsTable;
@@ -465,4 +572,8 @@ export interface Database {
   count_actions: CountActionsTable;
   measurements: MeasurementsTable;
   project_prefix_kinds: ProjectPrefixKindsTable;
+  build_runs: BuildRunsTable;
+  grid_lines: GridLinesTable;
+  support_nodes: SupportNodesTable;
+  beam_lines: BeamLinesTable;
 }
