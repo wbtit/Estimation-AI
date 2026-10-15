@@ -518,3 +518,52 @@ def test_build_is_deterministic():
     ]
     assert a.counts() == b.counts()
     assert math.isclose(sum(p.length_pt for p in a.supports.pieces), 2500, rel_tol=1e-3)
+
+
+# ---- Phase 11 deviation: crossings by direction ------------------------------------------------
+def _letters_both_ways(page):
+    for lab, x in zip("ABC", XS.values(), strict=True):
+        bubble(page, (x, 80.0), lab)
+        pieces(page, (x, 92.0), (x, 720.0))
+    for lab, y in zip("DEF", YS.values(), strict=True):
+        bubble(page, (80.0, y), lab)
+        pieces(page, (92.0, y), (920.0, y))
+
+
+def test_letter_only_grids_cross_only_under_the_direction_rule():
+    doc, page = _page()
+    _letters_both_ways(page)
+    grid = _steps(page)[4]
+    assert len(grid) == 6 and {g.family for g in grid} == {"A"}
+    assert crossings(grid) == []  # the registered family rule
+    cross = crossings(grid, "direction")
+    assert len(cross) == 9
+    names = {(c.n_label, c.a_label): _hv(c.point) for c in cross}
+    assert names[("B", "E")] == (500, 400)  # (more vertical, more horizontal)
+    with pytest.raises(ValueError):
+        crossings(grid, "nearest")
+
+
+def test_direction_rule_ignores_lines_that_are_not_near_perpendicular():
+    doc, page = _page()
+    bubble(page, (300, 60), "A")
+    line(page, (300, 72), (300, 700), width=0.3, color=(0.5, 0.5, 0.5))
+    bubble(page, (60, 300), "B")
+    line(page, (72, 300), (700, 480), width=0.3, color=(0.5, 0.5, 0.5))  # about 16 degrees off
+    grid = _steps(page)[4]
+    assert len(grid) == 2 and crossings(grid, "direction") == []
+
+
+def test_the_build_uses_the_crossing_rule_of_its_setup():
+    doc = pymupdf.open()
+    page = doc.new_page(width=1000, height=800)
+    _letters_both_ways(page)
+    for x in XS.values():
+        for y in YS.values():
+            column(page, (x, y))
+    frozen = build_page(page, Setup((40, 40, 960, 760), 96.0, None, None, "column_plan"))
+    assert frozen.counts()["grid_crossings"] == 0 and frozen.column_rule == "repeated_glyph"
+    s = Setup((40, 40, 960, 760), 96.0, None, None, "column_plan", crossing_rule="direction")
+    dev = build_page(page, s)
+    assert dev.counts()["grid_crossings"] == 9 and dev.column_rule == "glyph_at_grid"
+    assert "crossing_rule_direction" in dev.notes and len(dev.columns) == 9

@@ -33,6 +33,7 @@ class Setup:
     tos_mm: float | None
     pen_class: str | None
     role: str  # column_plan or framing
+    crossing_rule: str = "family"  # "direction" only for the reported Phase 11 deviation
 
 
 @dataclass
@@ -104,7 +105,9 @@ def build_page(
     cleaned = clean(ps, text)
     bubbles = find_bubbles(ps, text, setup.crop)
     grid, _ = find_grid_lines(ps, cleaned.keep, bubbles)
-    cross = crossings(grid)
+    cross = crossings(grid, setup.crossing_rule)
+    if setup.crossing_rule != "family":
+        notes.append(f"crossing_rule_{setup.crossing_rule}")
     has_grid = len(cross) >= MIN_CROSSINGS
     if not grid:
         notes.append("no_grid")

@@ -28,7 +28,7 @@ from psycopg.types.json import Jsonb
 
 from src.build import RULES_VERSION
 from src.build.geom import Pt, angle_deg, angle_diff, project
-from src.build.grids import Bubble, GridLine
+from src.build.grids import CROSSING_RULES, Bubble, GridLine
 from src.build.labels import Attached
 from src.build.page import ColumnPlanRef, PageBuild, Setup, build_page
 from src.build.pieces import build_state, length_mm, plan_mm, stable_member_id
@@ -204,8 +204,12 @@ def build_sheet(conn: psycopg.Connection, config: WorkerConfig, run_id: str) -> 
         None if sheet["tos_mm"] is None else float(sheet["tos_mm"]),
         sheet["pen_class"],
         sheet["build_role"],
+        str(inputs.get("crossing_rule") or "family"),
     )
+    if setup.crossing_rule not in CROSSING_RULES:
+        return _refuse(conn, run_id, [f"unknown crossing rule {setup.crossing_rule!r}"])
     inputs.update(
+        crossing_rule=setup.crossing_rule,
         crop=crop,
         scale_ratio=setup.ratio,
         scale_text=sheet["build_scale_text"],

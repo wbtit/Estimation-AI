@@ -168,19 +168,34 @@ def _merge_same_axis(lines: list[GridLine]) -> tuple[list[GridLine], set[int]]:
     return out, used
 
 
-def crossings(lines: list[GridLine]) -> list[Crossing]:
+CROSSING_RULES = ("family", "direction")
+DIRECTION_TOL_DEG = 10.0  # rule "direction": two grid lines within this of 90 degrees cross
+
+
+def crossings(lines: list[GridLine], rule: str = "family") -> list[Crossing]:
+    """Grid crossings. Rule "family" (the registered rule): a line whose label starts with a
+    digit meets a line whose label does not. Rule "direction" (Phase 11 deviation, reported
+    apart): any two grid lines whose directions are within DIRECTION_TOL_DEG of perpendicular;
+    the crossing is named (more vertical line, more horizontal line)."""
+    if rule not in CROSSING_RULES:
+        raise ValueError(f"unknown crossing rule {rule!r}")
+    if rule == "family":
+        pairs = [(a, b) for a in lines if a.family == "N" for b in lines if b.family == "A"]
+    else:
+        pairs = []
+        for i, a in enumerate(lines):
+            for b in lines[i + 1 :]:
+                if angle_diff(a.angle, b.angle) < 90.0 - DIRECTION_TOL_DEG:
+                    continue
+                va = angle_diff(a.angle, 90.0) <= angle_diff(b.angle, 90.0)
+                pairs.append((a, b) if va else (b, a))
     out: list[Crossing] = []
-    for a in lines:
-        if a.family != "N":
+    for a, b in pairs:
+        hit = seg_intersection(a.p0, a.p1, b.p0, b.p1, GRID_EXTEND_PT, GRID_EXTEND_PT)
+        if hit is None:
             continue
-        for b in lines:
-            if b.family != "A":
-                continue
-            hit = seg_intersection(a.p0, a.p1, b.p0, b.p1, GRID_EXTEND_PT, GRID_EXTEND_PT)
-            if hit is None:
-                continue
-            length = math.dist(a.p0, a.p1)
-            t = hit[0] / length
-            p = (a.p0[0] + t * (a.p1[0] - a.p0[0]), a.p0[1] + t * (a.p1[1] - a.p0[1]))
-            out.append(Crossing(p, a.label, b.label))
+        length = math.dist(a.p0, a.p1)
+        t = hit[0] / length
+        p = (a.p0[0] + t * (a.p1[0] - a.p0[0]), a.p0[1] + t * (a.p1[1] - a.p0[1]))
+        out.append(Crossing(p, a.label, b.label))
     return out
