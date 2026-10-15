@@ -19,6 +19,8 @@ ocr = [
 dev = [
     "pytest>=8.3",
     "ruff>=0.7",
+    # overlay pictures of the study tools and their tests (tools/takeoff, tests/test_phase7_guard.py)
+    "pillow>=12.3,<13",
 ]
 
 [tool.pytest.ini_options]
