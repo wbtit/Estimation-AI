@@ -4,8 +4,12 @@ Payload: {"build_run_id": "<uuid>"} (the API writes the build_runs row and the j
 job refuses, with a clear reason stored on the run, when the page is not set up:
   - every page: a role (column plan or framing), a confirmed crop and a confirmed scale;
   - a framing page: also a confirmed T.O.S. and a confirmed beam pen class, and a built column plan
-    (the one named in the run inputs, or the only built one of the project) unless the run says
-    there is none ("no_column_plan": true).
+    (the one named in the run inputs or on the sheet, or the only built one of the project) unless
+    the run or the sheet says there is none.
+System values (Phase 11b): an auto run (mode 'auto') and a run whose inputs say
+"allow_system_values" need the values to be there, not confirmed by a person, and no T.O.S. (the
+ends then have no elevation; the length is the same plan length). They still refuse a page with no
+crop, no scale, or (framing) no beam pen class.
 A refusal is not a failure: the job completes with {"refused": [...]}.
 
 Storage: the run's grid lines, support nodes and beam lines replace those of earlier runs of the
@@ -51,12 +55,21 @@ def run_build_sheet(conn: psycopg.Connection, job: Job, config: WorkerConfig) ->
     return build_sheet(conn, config, str(job.payload.get("build_run_id", "")))
 
 
-def setup_reasons(sheet: dict[str, Any]) -> list[str]:
-    """Why the page cannot be built yet (empty when it can). Same rules as the API."""
+def setup_reasons(sheet: dict[str, Any], allow_system: bool = False) -> list[str]:
+    """Why the page cannot be built yet (empty when it can). Same rules as the API. With
+    `allow_system` a value only has to be there (auto mode and the review UI's build)."""
     out = []
     role = sheet.get("build_role")
     if role not in ("column_plan", "framing"):
         out.append("page role not set (column plan or framing)")
+    if allow_system:
+        if sheet.get("crop_region") is None:
+            out.append("no crop")
+        if sheet.get("build_scale_ratio") is None:
+            out.append("no scale")
+        if role == "framing" and not sheet.get("pen_class"):
+            out.append("no beam pen class")
+        return out
     if sheet.get("crop_region") is None or not sheet.get("crop_confirmed_by"):
         out.append("crop not confirmed")
     if sheet.get("build_scale_ratio") is None or not sheet.get("scale_confirmed_by"):
@@ -88,9 +101,19 @@ def _refuse(conn, run_id: str, reasons: list[str]) -> dict[str, Any]:
 def _column_plan(
     conn, project_id: str, sheet_id: str, inputs: dict[str, Any]
 ) -> tuple[ColumnPlanRef | None, str | None, list[str]]:
-    """(column plan, its sheet id, refusal reasons) for a framing page."""
+    """(column plan, its sheet id, refusal reasons) for a framing page. The run's inputs win; else
+    the sheet's own choice (column_plan_sheet_id, or "none" when a person chose none)."""
     if inputs.get("no_column_plan"):
         return None, None, []
+    if not inputs.get("column_plan_sheet_id"):
+        own = conn.execute(
+            "SELECT column_plan_sheet_id, column_plan_confirmed_by FROM sheets WHERE id = %s",
+            (sheet_id,),
+        ).fetchone()
+        if own and own["column_plan_sheet_id"]:
+            inputs = {**inputs, "column_plan_sheet_id": str(own["column_plan_sheet_id"])}
+        elif own and own["column_plan_confirmed_by"]:
+            return None, None, []
     rows = conn.execute(
         "SELECT id FROM sheets WHERE project_id = %s AND build_role = 'column_plan'"
         " AND build_status = 'built' AND id <> %s ORDER BY page_index",
@@ -184,11 +207,12 @@ def build_sheet(conn: psycopg.Connection, config: WorkerConfig, run_id: str) -> 
     ).fetchone()
     if sheet is None:
         raise BuildError("sheet not found")
-    reasons = setup_reasons(sheet)
+    inputs = dict(run["inputs"] or {})
+    allow_system = run["mode"] == "auto" or bool(inputs.get("allow_system_values"))
+    reasons = setup_reasons(sheet, allow_system)
     if reasons:
         return _refuse(conn, run_id, reasons)
     project_id, sheet_id = str(sheet["project_id"]), str(sheet["id"])
-    inputs = dict(run["inputs"] or {})
     plan_ref, plan_sheet = None, None
     if sheet["build_role"] == "framing":
         plan_ref, plan_sheet, reasons = _column_plan(conn, project_id, sheet_id, inputs)
@@ -523,13 +547,38 @@ def _json_safe(ev: dict) -> dict:
     return {k: (list(v) if isinstance(v, tuple) else v) for k, v in ev.items()}
 
 
-def assign_tags(conn, project_id: str, sheet_id: str) -> int:
-    """Tag (prefix + running number) for every built member of the sheet that has none, in
-    reading order. Numbers continue after the highest number in use for that prefix in the job
-    (tag scope 'job') or on the sheet (scope 'sheet'); a tag is never reused or changed."""
+def take_tag_numbers(
+    conn, project_id: str, sheet_id: str | None, prefix: str | None, n: int
+) -> int:
+    """Reserve n tag numbers for a prefix from the project's one tag counter (tag_counters; the
+    API's copilot and review UI use the same table and rule) and return the first. The counter
+    never goes below the highest number already in use for that prefix in the scope (the job, or
+    the sheet when the project numbers tags per sheet), so numbers are never reused."""
     scope = conn.execute("SELECT tag_scope FROM projects WHERE id = %s", (project_id,)).fetchone()[
         "tag_scope"
     ]
+    per_sheet = scope == "sheet" and sheet_id is not None
+    key = str(sheet_id) if per_sheet else ""
+    where = "sheet_id = %s" if per_sheet else "project_id = %s"
+    used = conn.execute(
+        f"SELECT COALESCE(MAX(tag_number), 0) AS n FROM members WHERE {where}"
+        " AND COALESCE(tag_prefix, '') = %s AND tag_number IS NOT NULL",
+        (sheet_id if per_sheet else project_id, prefix or ""),
+    ).fetchone()["n"]
+    last = conn.execute(
+        "INSERT INTO tag_counters (project_id, scope_key, prefix, last_number)"
+        " VALUES (%s, %s, %s, %s)"
+        " ON CONFLICT (project_id, scope_key, prefix) DO UPDATE SET last_number ="
+        " GREATEST(tag_counters.last_number, %s) + %s RETURNING last_number",
+        (project_id, key, prefix or "", int(used) + n, int(used), n),
+    ).fetchone()["last_number"]
+    return int(last) - n + 1
+
+
+def assign_tags(conn, project_id: str, sheet_id: str) -> int:
+    """Tag (prefix + running number) for every built member of the sheet that has none, in
+    reading order, with numbers from the project's tag counter (take_tag_numbers); a tag is never
+    reused or changed."""
     rows = conn.execute(
         "SELECT m.id, COALESCE(k.abbreviation, k.provisional_prefix) AS prefix FROM members m"
         " LEFT JOIN member_kinds k ON k.kind = m.kind WHERE m.sheet_id = %s"
@@ -537,21 +586,25 @@ def assign_tags(conn, project_id: str, sheet_id: str) -> int:
         " ORDER BY m.page_y0 NULLS LAST, m.page_x0 NULLS LAST, m.member_id",
         (sheet_id,),
     ).fetchall()
-    where = "project_id = %s" if scope == "job" else "sheet_id = %s"
-    used: dict[str | None, int] = {}
-    for r in conn.execute(
-        f"SELECT tag_prefix AS p, MAX(tag_number) AS n FROM members WHERE {where}"
-        " AND tag_number IS NOT NULL GROUP BY tag_prefix",
-        (project_id if scope == "job" else sheet_id,),
-    ):
-        used[r["p"]] = int(r["n"])
+    by_prefix: dict[str | None, list[Any]] = {}
     for r in rows:
-        used[r["prefix"]] = used.get(r["prefix"], 0) + 1
-        conn.execute(
-            "UPDATE members SET tag_prefix = %s, tag_number = %s WHERE id = %s",
-            (r["prefix"], used[r["prefix"]], r["id"]),
-        )
+        by_prefix.setdefault(r["prefix"], []).append(r["id"])
+    for prefix, ids in by_prefix.items():
+        first = take_tag_numbers(conn, project_id, sheet_id, prefix, len(ids))
+        for k, mid in enumerate(ids):
+            conn.execute(
+                "UPDATE members SET tag_prefix = %s, tag_number = %s WHERE id = %s",
+                (prefix, first + k, mid),
+            )
     return len(rows)
 
 
-__all__ = ["JOB_TYPE", "BuildError", "build_sheet", "run_build_sheet", "setup_reasons"]
+__all__ = [
+    "JOB_TYPE",
+    "BuildError",
+    "assign_tags",
+    "build_sheet",
+    "run_build_sheet",
+    "setup_reasons",
+    "take_tag_numbers",
+]

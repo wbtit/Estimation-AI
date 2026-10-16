@@ -8,6 +8,8 @@ from typing import Any
 
 import psycopg
 
+from src.build.auto import JOB_TYPE as AUTO_BUILD
+from src.build.auto import run_auto_build
 from src.build.job import JOB_TYPE as BUILD_SHEET
 from src.build.job import run_build_sheet
 from src.config import WorkerConfig, load_config
@@ -38,6 +40,7 @@ HANDLERS: dict[str, Handler] = {
     AUTO_RUN: run_auto_run,
     SHEET_LINES: run_sheet_lines,
     BUILD_SHEET: run_build_sheet,
+    AUTO_BUILD: run_auto_build,
 }
 
 

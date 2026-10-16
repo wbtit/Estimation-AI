@@ -8,7 +8,8 @@ Payload: {"project_id": "<uuid>", "document_id": "<uuid>"}. After the scan it
      needed"), suggests the line classes (left UNCONFIRMED) and runs the frozen linking rule.
 Everything a person did is kept: a view that exists is not replaced, a confirmed scale or class is
 not touched, and the link job never changes a member a person has touched. Every guess is a flag
-the screen derives from the unconfirmed state. Logs counts only, never page text.
+the screen derives from the unconfirmed state. Last it queues `auto_build` (Phase 11b auto mode)
+unless one is queued or already done. Logs counts only, never page text.
 """
 
 import logging
@@ -117,5 +118,19 @@ def auto_run(
             totals["members_created"] += int(result.get("created", 0))
             totals["members_updated"] += int(result.get("updated", 0))
             totals["members_kept"] += int(result.get("kept_reviewed", 0))
+    # Phase 11b: auto mode (the line-first build with system values) follows the pipeline
+    queued = conn.execute(
+        "SELECT 1 FROM jobs WHERE type = 'auto_build' AND status IN ('pending', 'processing')"
+        " AND payload->>'project_id' = %s UNION ALL SELECT 1 FROM auto_builds"
+        " WHERE project_id = %s AND status = 'done' LIMIT 1",
+        (project_id, project_id),
+    ).fetchone()
+    if queued is None:
+        conn.execute(
+            "INSERT INTO jobs (type, payload) VALUES ('auto_build', %s)",
+            (Jsonb({"project_id": project_id}),),
+        )
+        conn.commit()
+        totals["auto_build_queued"] += 1
     log.info("auto run: %s", dict(totals))
     return {k: int(v) for k, v in sorted(totals.items())}
