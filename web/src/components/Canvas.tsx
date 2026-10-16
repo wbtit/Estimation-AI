@@ -71,8 +71,8 @@ const TOOLS: { tool: Tool; Icon: LucideIcon; label: string }[] = [
 const ICON = { size: 20, strokeWidth: 2 } as const;
 
 const SNAP_PX = 10;
-/** The page's margins in the viewport (styles.css .page-wrap: 76 left for the toolbar, 16 else). */
-const PAGE_MARGIN = { x: 76 + 16, y: 16 + 16 };
+/** The page's margins in the viewport (styles.css .page-wrap: 72 left for the toolbar, 16 else). */
+const PAGE_MARGIN = { x: 72 + 16, y: 16 + 16 };
 
 export const Canvas: React.FC<CanvasProps> = (props) => {
   const { pdf, page, data, lines, layers, onLayers, selected } = props;
@@ -558,7 +558,7 @@ export const PieceMark: React.FC<{
   const mid: Pt2 = p.b ? [(p.a[0] + p.b[0]) / 2, (p.a[1] + p.b[1]) / 2] : p.a;
   const flag = flags ? flagOf(p) : null;
   const t = 6 * px;
-  // the label runs along the beam, upright, a little above it
+  // the label runs along the beam, upright, just under it
   let angle = p.b
     ? (Math.atan2(p.b[1] - p.a[1], p.b[0] - p.a[0]) * 180) / Math.PI
     : 0;
@@ -604,11 +604,10 @@ export const PieceMark: React.FC<{
           {labels && p.tag && (
             <text
               x={p.a[0] + t + 2 * px}
-              y={p.a[1] - t}
-              fontSize={9 * px}
-              fill={colour}
+              y={p.a[1] + t + 8 * px}
+              fontSize={8 * px}
+              fill="var(--column-id)"
               stroke="none"
-              fontWeight={600}
             >
               {p.tag}
             </text>
@@ -653,7 +652,7 @@ export const PieceMark: React.FC<{
           {labels && label && (
             <text
               transform={`translate(${mid[0]} ${mid[1]}) rotate(${angle})`}
-              y={-3 * px}
+              y={9 * px}
               fontSize={8 * px}
               textAnchor="middle"
               fill="var(--beam-label)"

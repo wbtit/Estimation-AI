@@ -319,3 +319,19 @@ Needs review (99, all beams): size from a nearby label 57, one end not supported
 6 framing plans, 6 details, 4 other); no text item matches "column schedule" (2 items on 1 page
 have the word "schedule" alone); 0 legend rows. All 14,760 text items of the set were read. The 225
 columns have no size because neither the page nor a schedule gives one.
+
+**Page 1 (sheet S0-01): is there a table of column marks and sizes? No.** Read-only counts on the
+copy's text items (1490 on the page, all read):
+- Column-mark-like items (`C`/`CO` + number, whole item or a token inside one): 0. W or HSS size
+  strings: 0 (one item matches a size shape and is not in a table row). Marks with a size on the
+  same row: 0, so no rows.
+- The words "column" (4 items) and "schedule" (2 items) do appear, but the 13 to 76 items under
+  them hold no column marks and almost no digits (2 at most): a legend or notes block, not a
+  schedule of marks and sizes.
+- **The marks match nothing.** No column plan page (5, 6, 9, 11, 14, 15, 18) has a single
+  column-mark text item either. The `CO1`... `CO27` seen on page 5 are our own piecemarks from the
+  tag counter (prefix `CO`, 27 on page 5), not drawing text. So there is nothing to match.
+- **Why "Detail":** the sheet title matched no keyword rule. Among the view titles, one matched the
+  `SECTION` rule (type detail) and one matched `NOTES` (type general notes). `detail` comes before
+  `general_notes` in the rule preference, so it wins (stored reason: "view titles match section;
+  also general_notes").

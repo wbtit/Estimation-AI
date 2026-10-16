@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Download, House, Save } from "lucide-react";
+import { Download, House, PanelLeft, Save } from "lucide-react";
 import { api, ApiError, send } from "../lib/api";
 import { formatFtIn } from "../lib/ftin";
 import {
@@ -24,6 +24,15 @@ import { PropertiesPanel, type Kind, type PieceEdit } from "./PropertiesPanel";
 import { ReportTab } from "./ReportTab";
 
 type WsRoute = Extract<Route, { view: "workspace" }>;
+
+/** "Jane Doe" -> "JD" (the avatar in the top bar). */
+export const initials = (who: string): string =>
+  who
+    .split(/[\s._-]+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0]!.toUpperCase())
+    .join("");
 
 export const Workspace: React.FC<{
   who: string;
@@ -226,7 +235,10 @@ export const Workspace: React.FC<{
           >
             <House size={18} />
           </button>
-          <span className="brand">{project?.name ?? ""}</span>
+          <span className="project">
+            <small>Project</small>
+            <span className="brand">{project?.name ?? ""}</span>
+          </span>
         </div>
         <div className="tabs">
           {(["plans", "bom", "report"] as const).map((t) => (
@@ -284,7 +296,9 @@ export const Workspace: React.FC<{
               </div>
             )}
           </span>
-          <span className="who">{who}</span>
+          <span className="avatar" title={who}>
+            {initials(who)}
+          </span>
         </div>
       </div>
       {tab === "bom" && <BomTab bom={bom} projectId={projectId} />}
@@ -292,7 +306,9 @@ export const Workspace: React.FC<{
       {tab === "plans" && (
         <div className="ws-body">
           <div className="left dark">
-            <div className="panel-head">Navigation</div>
+            <div className="panel-head">
+              <PanelLeft size={16} /> Navigation
+            </div>
             <div className="seg">
               <button
                 className={left === "pages" ? "on" : ""}

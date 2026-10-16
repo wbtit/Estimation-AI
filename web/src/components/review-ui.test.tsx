@@ -288,7 +288,7 @@ describe("page card", () => {
       />,
     );
     expect(screen.getByText("Page 5 | Framing")).toBeTruthy();
-    expect(screen.getByText("S-201")).toBeTruthy();
+    expect(screen.getByText("Sheet S-201")).toBeTruthy();
     expect(screen.getByText("Not confirmed")).toBeTruthy();
     expect(screen.getByText("Estimating")).toBeTruthy();
     fireEvent.click(screen.getByLabelText("build page"));
@@ -460,10 +460,13 @@ describe("properties", () => {
       screen.getAllByTitle("Top of Steel of the page (locked)")[0]!.textContent,
     ).toContain(`13'-3 1/2"`);
     expect(screen.getByText("2 selected")).toBeTruthy();
-    expect(screen.getByTestId("summary").textContent).toContain("2.00tons");
+    fireEvent.click(screen.getByText("Summary"));
+    expect(screen.getByTestId("summary").textContent).toContain(
+      "Total Weight (tons):2.00",
+    );
   });
 
-  it("sections open and close; Delete is in the Member section", () => {
+  it("a selection opens the Member tab; sections open and close; Delete is there", () => {
     const onDelete = vi.fn();
     render(
       <PropertiesPanel
@@ -479,10 +482,12 @@ describe("properties", () => {
     );
     fireEvent.click(screen.getByText("Delete"));
     expect(onDelete).toHaveBeenCalled();
+    fireEvent.click(screen.getByText("Member Properties"));
+    expect(screen.queryByText("Delete")).toBeNull();
+    fireEvent.click(screen.getByText("Member Properties"));
+    expect(screen.getByText("Delete")).toBeTruthy();
     fireEvent.click(screen.getByText("Summary"));
-    expect(screen.queryByTestId("summary")).toBeNull();
-    fireEvent.click(screen.getByText("Summary"));
-    expect(screen.getByTestId("summary")).toBeTruthy();
+    expect(screen.getByTestId("summary").textContent).toContain("Column:0");
   });
 
   it("edits studs and Ignore for the selection", () => {

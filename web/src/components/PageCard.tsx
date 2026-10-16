@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { EllipsisVertical, Play } from "lucide-react";
+import { Bell, Check, EllipsisVertical, Play } from "lucide-react";
 import { formatFtIn, parseFtIn } from "../lib/ftin";
 import { PAGE_TYPE_SHORT, ROLE_LABEL, type Page, type Role } from "../lib/lf";
 
@@ -91,7 +91,7 @@ export const PageCard: React.FC<{
           ? `Not confirmed: ${page.system_values.map((v) => VALUE_WORDS[v] ?? v).join(", ")}`
           : `${page.counts.pieces} pieces`;
 
-  const second = page.badge === "Skip" ? null : role ? "Estimating" : "Skip";
+  const second = role ? "Estimating" : "Skip";
   return (
     <div
       ref={ref}
@@ -108,7 +108,7 @@ export const PageCard: React.FC<{
         </span>
         <span className="grow" />
         <button
-          className="icon"
+          className={`play${page.badge === "Requesting Build" ? " ask" : ""}`}
           title="Build"
           aria-label="build page"
           disabled={!role || page.badge === "Building"}
@@ -117,11 +117,11 @@ export const PageCard: React.FC<{
             actions.build(page);
           }}
         >
-          <Play size={15} />
+          <Play size={11} fill="currentColor" />
         </button>
         <span style={{ position: "relative" }}>
           <button
-            className="icon"
+            className="more"
             aria-label="page menu"
             title="Page menu"
             onClick={(e) => {
@@ -129,7 +129,7 @@ export const PageCard: React.FC<{
               setMenu(!menu);
             }}
           >
-            <EllipsisVertical size={15} />
+            <EllipsisVertical size={14} />
           </button>
           {menu && (
             <div className="menu" onClick={(e) => e.stopPropagation()}>
@@ -191,20 +191,24 @@ export const PageCard: React.FC<{
           )}
         </span>
       </div>
-      <div className="sheet-no">{page.sheet_number ?? "—"}</div>
+      <div className="sheet-no">Sheet {page.sheet_number ?? "—"}</div>
       <div className="thumb">
         {page.thumbnail_url ? (
           <img src={page.thumbnail_url} alt="" loading="lazy" />
         ) : null}
-        <div className="badges">
+        {page.badge !== "Skip" && (
           <span
-            className={`badge ${badgeClass(page.badge)}`}
+            className={`tag top ${badgeClass(page.badge)}`}
             title={page.reasons.join("; ")}
           >
+            {page.badge === "Requesting Build" && <Bell size={11} />}
+            {(page.badge === "Built" || page.badge === "Reviewed") && (
+              <Check size={11} />
+            )}
             {page.badge}
           </span>
-          {second && <span className={`badge ${second}`}>{second}</span>}
-        </div>
+        )}
+        <span className={`tag bottom ${second}`}>{second}</span>
       </div>
       {selected && role && (
         <>

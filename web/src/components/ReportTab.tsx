@@ -64,7 +64,7 @@ export const ReportTab: React.FC<{ projectId: string }> = ({ projectId }) => {
   if (error) return <div className="empty">{error}</div>;
   if (!r) return <div className="empty">Loading…</div>;
   return (
-    <div className="table-wrap">
+    <div className="report-wrap">
       <div className="row" style={{ marginBottom: 10 }}>
         <h3>System vs final</h3>
         <span className="grow" />
