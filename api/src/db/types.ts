@@ -23,9 +23,13 @@ export interface ProjectsTable {
   tag_scope: Generated<'job' | 'sheet'>;
   snap_radius_pt: Generated<Numeric>;
   label_radius_pt: Generated<Numeric>;
+  // Phase 11b (migration 017)
+  stage: Generated<ProjectStage>;
   created_at: Timestamp;
   updated_at: Timestamp;
 }
+
+export type ProjectStage = 'Estimating' | 'Submitted' | 'Won' | 'Lost';
 
 export type SheetKind = 'plan' | 'schedule' | 'detail' | 'notes' | 'other';
 export type BuildStatus = 'not_built' | 'building' | 'built' | 'failed';
@@ -98,6 +102,15 @@ export interface SheetsTable {
   pen_class_confirmed_at: Timestamp | null;
   build_role: BuildRole | null;
   registration: Json | null;
+  // Phase 11b (migration 017): a value is a system value while its *_confirmed_by is null
+  role_confirmed_by: string | null;
+  role_confirmed_at: Timestamp | null;
+  column_plan_sheet_id: string | null;
+  column_plan_confirmed_by: string | null;
+  column_plan_confirmed_at: Timestamp | null;
+  setup_changed_at: Timestamp | null;
+  reviewed_by: string | null;
+  reviewed_at: Timestamp | null;
 }
 
 export type BuildRole = 'column_plan' | 'framing';
@@ -348,6 +361,10 @@ export interface MembersTable {
   size_state: 'sized' | 'inferred' | 'undefined' | null;
   build_state: BuildState | null;
   label_evidence: Json | null;
+  // Phase 11b (migration 017)
+  ignored: Generated<boolean>;
+  added_by: string | null;
+  added_at: Timestamp | null;
   created_at: Timestamp;
   updated_at: Timestamp;
 }
@@ -369,7 +386,14 @@ export type CountActionName =
   | 'attach_length'
   | 'mode'
   | 'typical'
-  | 'prefix_map';
+  | 'prefix_map'
+  | 'setup'
+  | 'pick_pen'
+  | 'rebuild'
+  | 'add'
+  | 'ignore'
+  | 'save'
+  | 'view';
 
 export interface SheetLinesTable {
   sheet_id: string;
@@ -499,6 +523,60 @@ export interface BuildRunsTable {
   counts: ColumnType<Record<string, unknown>, string | undefined, string>;
   notes: Generated<string[]>;
   error: string | null;
+  // Phase 11b (migration 017)
+  mode: ColumnType<'auto' | 'person', 'auto' | 'person' | undefined, 'auto' | 'person'>;
+  auto_build_id: string | null;
+}
+
+export interface AutoBuildsTable {
+  id: Generated<string>;
+  project_id: string;
+  job_id: string | null;
+  status: ColumnType<BuildRunStatus, BuildRunStatus | undefined, BuildRunStatus>;
+  started_at: Generated<Date>;
+  finished_at: Timestamp | null;
+  pages_total: Generated<number>;
+  pages_done: Generated<number>;
+  rules_version: string | null;
+  counts: ColumnType<Record<string, unknown>, string | undefined, string>;
+  error: string | null;
+}
+
+/** The SYSTEM VERSION of a page: written once by an auto run, never changed (a trigger refuses). */
+export interface BuildSnapshotsTable {
+  id: Generated<string>;
+  project_id: string;
+  auto_build_id: string;
+  sheet_id: string;
+  build_run_id: string | null;
+  setup: ColumnType<Record<string, unknown>, string, never>;
+  pieces: ColumnType<SnapshotPiece[], string, never>;
+  counts: ColumnType<Record<string, unknown>, string | undefined, never>;
+  created_at: Generated<Date>;
+}
+
+export interface SnapshotPiece {
+  member_id: string;
+  kind: string | null;
+  type: string;
+  tag: string | null;
+  profile: string | null;
+  profile_raw: string | null;
+  page: [number, number, number, number] | null;
+  start: [number, number, number] | null;
+  end: [number, number, number] | null;
+  length_mm: number | null;
+  build_state: string | null;
+  size_state: string | null;
+  support_state: string | null;
+  piece_index: number | null;
+}
+
+export interface TagCountersTable {
+  project_id: string;
+  scope_key: string;
+  prefix: string;
+  last_number: number;
 }
 
 export interface GridLinesTable {
@@ -576,4 +654,7 @@ export interface Database {
   grid_lines: GridLinesTable;
   support_nodes: SupportNodesTable;
   beam_lines: BeamLinesTable;
+  auto_builds: AutoBuildsTable;
+  build_snapshots: BuildSnapshotsTable;
+  tag_counters: TagCountersTable;
 }

@@ -8,14 +8,16 @@ and `docs/PHASE11_RESULTS.md` repeats it. Branch `phase-11b-ui` (from `phase-11-
 
 ## 1. Data (migration 017, additive; database backed up first, applied to `_test` first)
 
-- `sheets`:
-  - a source per setup value, `role_source`, `crop_source` and `scale_source`, each one of
-    `system` | `person`;
-  - `pen_class_source` and `tos_source` also allow `system`;
+- `sheets` (as built; simpler than the first draft, same meaning):
+  - a setup value is a **system value while its `*_confirmed_by` is NULL** and a person's value once
+    set. 016 already has `*_confirmed_by` for crop, scale, T.O.S. and pen class, so no source
+    columns are added; `pen_class_source` stays `suggested` | `person` and `tos_source` stays
+    `read` | `typed`;
+  - 017 adds `role_confirmed_by/at`, and `column_plan_sheet_id` with `column_plan_confirmed_by/at`;
   - `setup_changed_at`, the time of the last setup change, which drives "Requesting Build";
-  - `column_plan_sheet_id` and its source;
   - `reviewed_by` and `reviewed_at`, set by "Save page".
-- `build_runs.mode`: `auto` | `person`.
+- `auto_builds`: one row per auto run (status, pages total and done, for the processing panel).
+- `build_runs.mode`: `auto` | `person`, and `auto_build_id`.
 - `build_snapshots`, the SYSTEM VERSION:
   - one row per page per auto run, holding `project_id`, `sheet_id`, `build_run_id`, `auto_run_id`,
     `created_at`, `setup` and `pieces`;
@@ -28,7 +30,9 @@ and `docs/PHASE11_RESULTS.md` repeats it. Branch `phase-11b-ui` (from `phase-11-
 - `members.ignored`, a boolean: an ignored piece stays on the page, shown grey, and is out of the
   BOM. A deleted piece is `count_state = 'rejected'`. Either way the piece counts as "touched", so a
   rebuild never brings it back.
-- `tag_counters (project_id, prefix, last_number)`: one counter per project (the Decision Log item):
+- `tag_counters (project_id, scope_key, prefix, last_number)`: one counter per project (the Decision
+  Log item); `scope_key` is `''` for job-wide tags and the sheet id when the project numbers tags per
+  sheet (the existing `tag_scope` setting):
   - the build, the new UI's "add" and the copilot all take numbers from it;
   - it is seeded from the highest existing tag per prefix in the whole project, built pieces
     included;
@@ -60,9 +64,12 @@ and `docs/PHASE11_RESULTS.md` repeats it. Branch `phase-11b-ui` (from `phase-11-
   - it still refuses, with a clear reason on the page, when there is no scale, or no pen class on a
     framing page;
   - mode `person` keeps today's rules unchanged.
-- **T.O.S. in auto mode (decision 1, below):** no T.O.S. is proposed. Without one the ends have no
-  elevation; the length is the plan length, which is the same number a confirmed T.O.S. gives. The
-  page card shows "Top of Steel: —" until a person types it.
+- **T.O.S. in auto mode (owner decision 1):** proposed (source system: `tos_source = 'read'`,
+  `tos_confirmed_by` NULL) when a T.O.S. note is parsed inside the crop: text lines inside the crop,
+  read with the existing elevation parser (`find_elevations`), reference `top_of_steel`, not a signed
+  offset, with a value. One distinct value: it is proposed. Several: the most frequent; a tie leaves
+  it empty. None: empty, the page card shows "Top of Steel: —", the ends have no elevation, and the
+  length is still the plan length (the same number a confirmed T.O.S. gives).
 - After all pages, one snapshot row per page is written in the same transaction as the run's end.
   A second auto run on a project is refused once any person action exists.
 - `build_sheet` and `assign_tags` take tag numbers from `tag_counters`.
@@ -225,7 +232,9 @@ page:
 
 ## 8. Order of work and stop points
 
-1. Migration 017: backup, then `_test`, then the real database.
+1. Migration 017: backup, then `_test`, then the real database. Done 2026-10-16. 017 left out two
+   actions of 015 (`typical`, `prefix_map`) when it widened `count_actions.action`; migration 018
+   puts the full list back (backup, `_test`, real database). No row was affected.
 2. Worker:
    - `propose.py`, `auto_build`, the unconfirmed path, snapshots, the tag counter;
    - tests, then ruff and pytest.
@@ -235,13 +244,31 @@ page:
 4. Web:
    - the new UI;
    - tests, then tsc and vitest.
-5. Run auto mode on `phase11-job-018`, then **STOP**, then the start instructions.
+5. Run auto mode on `phase11-job-018`. Start the app on non-default ports (or ask first for 3000),
+   take headless screenshots into `fixtures/private/shots/phase11b/` (projects screen, the workspace
+   of two framing pages with overlays, one column plan page, the BOM tab), then **STOP** with the
+   paths and the start instructions; the owner checks them before the estimator reviews.
 6. After your save: the results, the commit, and the 10-line summary with the bar verdicts.
 
-## 9. Decisions for the owner
+## 9. Owner decisions (2026-10-16, plan approved)
 
-1. T.O.S. in auto mode: not proposed; the ends have no elevation until typed; lengths are not
-   affected.
-2. The old label-first web screens are removed from the app; the API for them stays.
-3. Total weight unit: metric tonnes (kg / 1000), labelled "t". US short tons is the alternative.
+1. T.O.S.: proposed in auto mode when a T.O.S. note is parsed inside the crop (source system), else
+   empty (rule in section 2).
+2. The old label-first web screens are removed; their API stays.
+3. Units on screen: the Summary total in US short tons (2000 lb), labelled "tons"; BOM row weights in
+   lb (also in the Excel export); lengths in ft-in to 1/16".
 4. Project Status values: Estimating, Submitted, Won, Lost.
+
+## 10. Owner additions (2026-10-16)
+
+- **A. Imperial input and display everywhere on screen.** T.O.S. and end elevations are typed and
+  shown in ft-in. Accepted forms include `13'-3 1/2"`, `13'-3.5"`, `13' 3"`, `13'`, `13.29'`, `3 1/2"`,
+  and a leading minus sign; a bare number without a foot or inch mark is refused (unclear unit).
+  Stored in mm. Lengths shown in ft-in to 1/16". `web/src/lib/ftin.ts` with tests for the parser and
+  the formatter.
+- **B. Screenshots before the review** (section 8 step 5).
+- **C. `docs/REVIEW_GUIDE.md`**: one page in simple words for the estimator: what to check on each
+  page (role, crop, beam pen, scale, T.O.S.) and how to fix each (Crop tool, Pick beam, scale
+  dropdown, typing T.O.S., ▶ rebuild); how to fix members (click, Section Size, delete, Ignore, draw
+  a missing beam or column, multi-select); "Save page"; check against the drawing, do not just
+  accept what is shown.
