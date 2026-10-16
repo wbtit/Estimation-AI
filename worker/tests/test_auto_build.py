@@ -216,7 +216,14 @@ def test_auto_mode_runs_once_and_never_after_a_person_acted(dbp: DbProject) -> N
     assert _sheet(dbp, plan_id)["build_role"] is None  # nothing proposed
 
     dbp.conn.execute("UPDATE sheets SET crop_confirmed_by = NULL WHERE id = %s", (plan_id,))
+    # a label-first page edit is not build setup: auto mode still runs
+    dbp.conn.execute(
+        "INSERT INTO sheet_edits (sheet_id, field_name, corrected_value, editor)"
+        " VALUES (%s, 'page_type', '\"framing_plan\"', 'tester')",
+        (plan_id,),
+    )
     dbp.conn.commit()
+    assert person_actions(dbp.conn, dbp.project_id) == []
     assert auto_build(dbp.conn, dbp.config, dbp.project_id)["built"] == 2
     again = auto_build(dbp.conn, dbp.config, dbp.project_id)
     assert again == {"refused": ["auto mode already ran on this project"]}

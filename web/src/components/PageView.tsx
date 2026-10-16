@@ -16,6 +16,8 @@ export interface PageViewProps {
   onPointerMove?: (p: Pt, e: React.PointerEvent) => void;
   onPointerUp?: (p: Pt, e: React.PointerEvent) => void;
   cursor?: string;
+  /** Show the drawing faint (the "Plan" layer off). */
+  dimPlan?: boolean;
 }
 
 /** One PDF page on a canvas with an SVG overlay in displayed page points. */
@@ -30,6 +32,7 @@ export const PageView: React.FC<PageViewProps> = ({
   onPointerMove,
   onPointerUp,
   cursor,
+  dimPlan,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -75,7 +78,7 @@ export const PageView: React.FC<PageViewProps> = ({
     >
       <canvas
         ref={canvasRef}
-        className="page-canvas"
+        className={dimPlan ? "page-canvas dim" : "page-canvas"}
         style={{ width: cssW, height: cssH }}
       />
       <svg

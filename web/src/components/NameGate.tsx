@@ -19,10 +19,6 @@ export const NameGate: React.FC<{ onSubmit: (name: string) => void }> = ({
         }}
       >
         <h3>Who is reviewing?</h3>
-        <p className="hint">
-          Your name is saved with every change you make (before and after, who,
-          when). There is no password yet.
-        </p>
         <input
           autoFocus
           value={text}

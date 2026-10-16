@@ -69,9 +69,12 @@ def person_actions(conn, project_id: str) -> list[str]:
             " OR pen_class_confirmed_by IS NOT NULL OR role_confirmed_by IS NOT NULL"
             " OR column_plan_confirmed_by IS NOT NULL OR reviewed_by IS NOT NULL) LIMIT 1"
         ),
-        "a page edit": (
+        # label-first page edits (page type, takeoff decision, ...) are not build setup and auto
+        # mode never touches them
+        "a page setup edit": (
             "SELECT 1 FROM sheet_edits e JOIN sheets s ON s.id = e.sheet_id"
-            " WHERE s.project_id = %s LIMIT 1"
+            " WHERE s.project_id = %s AND e.field_name IN ('build_role', 'crop_region',"
+            " 'build_scale', 'tos', 'pen_class', 'column_plan_sheet_id', 'save_page') LIMIT 1"
         ),
         "a built piece edit": (
             "SELECT 1 FROM member_edits e JOIN members m ON m.id = e.member_id"
