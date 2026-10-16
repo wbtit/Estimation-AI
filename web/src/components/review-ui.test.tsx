@@ -56,6 +56,7 @@ const project = (over: Partial<Project>): Project => ({
   number: "100",
   status: "scanned",
   stage: "Estimating",
+  archived: false,
   created_at: "2026-01-02T00:00:00Z",
   thumbnail_url: null,
   document: {
@@ -184,13 +185,30 @@ describe("projects screen", () => {
     render(<ProjectsScreen onOpen={onOpen} />);
     await screen.findByText("Beta");
     expect(screen.getByText("Won")).toBeTruthy();
-    expect(screen.getByText("+ Add new project")).toBeTruthy();
+    expect(screen.getByText("Add new project")).toBeTruthy();
     fireEvent.change(screen.getByLabelText("search projects"), {
       target: { value: "bet" },
     });
     expect(screen.queryByText("Alpha")).toBeNull();
     fireEvent.click(screen.getByText("Beta"));
     expect(onOpen).toHaveBeenCalledWith("p2");
+  });
+
+  it("hides archived projects unless Show archived is on", async () => {
+    stubFetch({
+      "/api/projects": {
+        projects: [
+          project({}),
+          project({ id: "p2", name: "Old test", archived: true }),
+        ],
+      },
+    });
+    render(<ProjectsScreen onOpen={() => undefined} />);
+    await screen.findByText("Alpha");
+    expect(screen.queryByText("Old test")).toBeNull();
+    fireEvent.click(screen.getByLabelText("show archived"));
+    expect(screen.getByText("Old test")).toBeTruthy();
+    expect(screen.getByText("Archived")).toBeTruthy();
   });
 
   it("create dialog: the name comes from the file; Create sends name, number and status", async () => {
@@ -253,11 +271,12 @@ function actions(): PageActions & Record<string, ReturnType<typeof vi.fn>> {
     setColumnPlan: vi.fn(),
     setTos: vi.fn(),
     setScale: vi.fn(),
+    noBeams: vi.fn(),
   };
 }
 
 describe("page card", () => {
-  it("shows Page N | type, the sheet number and the badge; ▶ builds", () => {
+  it("shows Page N | type, the sheet number and the badges on the thumbnail; ▶ builds", () => {
     const a = actions();
     render(
       <PageCard
@@ -271,8 +290,65 @@ describe("page card", () => {
     expect(screen.getByText("Page 5 | Framing")).toBeTruthy();
     expect(screen.getByText("S-201")).toBeTruthy();
     expect(screen.getByText("Not confirmed")).toBeTruthy();
+    expect(screen.getByText("Estimating")).toBeTruthy();
     fireEvent.click(screen.getByLabelText("build page"));
     expect(a.build).toHaveBeenCalled();
+  });
+
+  it("shows Top of Steel, Scale and Status only on the selected card", () => {
+    const { rerender } = render(
+      <PageCard
+        page={page()}
+        columnPlans={[]}
+        selected={false}
+        onSelect={() => undefined}
+        actions={actions()}
+      />,
+    );
+    expect(screen.queryByLabelText("top of steel")).toBeNull();
+    expect(screen.queryByLabelText("scale")).toBeNull();
+    rerender(
+      <PageCard
+        page={page()}
+        columnPlans={[]}
+        selected
+        onSelect={() => undefined}
+        actions={actions()}
+      />,
+    );
+    expect(screen.getByLabelText("top of steel")).toBeTruthy();
+    expect(screen.getByText("Status")).toBeTruthy();
+  });
+
+  it("a skipped page shows Skip once", () => {
+    render(
+      <PageCard
+        page={page({ badge: "Skip", setup: { ...page().setup, role: null } })}
+        columnPlans={[]}
+        selected={false}
+        onSelect={() => undefined}
+        actions={actions()}
+      />,
+    );
+    expect(screen.getAllByText("Skip")).toHaveLength(1);
+  });
+
+  it("⋮ No beams sets the beam pen to none", () => {
+    const a = actions();
+    render(
+      <PageCard
+        page={page({ setup: { ...page().setup, role: "column_plan" } })}
+        columnPlans={[]}
+        selected={false}
+        onSelect={() => undefined}
+        actions={a}
+      />,
+    );
+    fireEvent.click(screen.getByLabelText("page menu"));
+    fireEvent.click(screen.getByText("No beams"));
+    expect(a.noBeams).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "s1" }),
+    );
   });
 
   it("⋮ sets the role and the column plan", () => {
@@ -311,7 +387,7 @@ describe("page card", () => {
       <PageCard
         page={page()}
         columnPlans={[]}
-        selected={false}
+        selected
         onSelect={() => undefined}
         actions={a}
       />,
@@ -335,7 +411,7 @@ describe("page card", () => {
       <PageCard
         page={page({ setup: { ...page().setup, tos_mm: 4051.3 } })}
         columnPlans={[]}
-        selected={false}
+        selected
         onSelect={() => undefined}
         actions={actions()}
       />,
@@ -377,9 +453,36 @@ describe("properties", () => {
       (screen.getByLabelText("section size") as HTMLInputElement).value,
     ).toBe("Mixed");
     expect(screen.getAllByText("Mixed").length).toBeGreaterThan(0); // piecemark
-    expect(screen.getAllByText(`🔒 13'-3 1/2"`)).toHaveLength(2);
+    expect(
+      screen.getAllByTitle("Top of Steel of the page (locked)"),
+    ).toHaveLength(2);
+    expect(
+      screen.getAllByTitle("Top of Steel of the page (locked)")[0]!.textContent,
+    ).toContain(`13'-3 1/2"`);
     expect(screen.getByText("2 selected")).toBeTruthy();
     expect(screen.getByTestId("summary").textContent).toContain("2.00tons");
+  });
+
+  it("sections open and close; Delete is in the Member section", () => {
+    const onDelete = vi.fn();
+    render(
+      <PropertiesPanel
+        bomRows={[]}
+        sheetId="s1"
+        selected={[piece({})]}
+        kinds={kinds}
+        crop={null}
+        onEdit={() => undefined}
+        onDelete={onDelete}
+        onCropTool={() => undefined}
+      />,
+    );
+    fireEvent.click(screen.getByText("Delete"));
+    expect(onDelete).toHaveBeenCalled();
+    fireEvent.click(screen.getByText("Summary"));
+    expect(screen.queryByTestId("summary")).toBeNull();
+    fireEvent.click(screen.getByText("Summary"));
+    expect(screen.getByTestId("summary")).toBeTruthy();
   });
 
   it("edits studs and Ignore for the selection", () => {
@@ -438,6 +541,36 @@ describe("BOM tab", () => {
     expect(table.querySelectorAll("tbody tr")).toHaveLength(2);
     expect(table.textContent).toContain("700");
     expect(table.textContent).toContain(`20'-0"`);
+  });
+
+  it("sorts by category, section, piecemark and shows a status dot", () => {
+    const bom = {
+      rows: [
+        row({
+          member: "c",
+          category: "Column",
+          section: null,
+          piecemark: "C1",
+          build_state: "attention",
+          in_main_total: false,
+        }),
+        row({ member: "b10", piecemark: "B10" }),
+        row({ member: "b2", piecemark: "B2", build_state: "needs_review" }),
+      ],
+      totals: { pieces: 2, length_mm: 0, weight_lb: 1040 },
+      attention: { pieces: 1, length_mm: 0, weight_lb: 0 },
+    };
+    render(<BomTab bom={bom} projectId="p1" />);
+    const rows = [...screen.getByTestId("bom").querySelectorAll("tbody tr")];
+    expect(rows.slice(0, 3).map((r) => r.children[3]!.textContent)).toEqual([
+      "B2",
+      "B10",
+      "C1",
+    ]);
+    expect(screen.getAllByTestId("status-dot").map((d) => d.className)).toEqual(
+      ["dot needs_review", "dot found", "dot attention"],
+    );
+    expect(rows[2]!.className).toBe("");
   });
 });
 
@@ -499,7 +632,7 @@ describe("report tab", () => {
 });
 
 describe("canvas", () => {
-  it("draws a beam with its size, and a mark and tooltip for one that needs review", () => {
+  it("draws a beam with its size, and one amber flag and a tooltip for one that needs review", () => {
     const { container } = render(
       <svg>
         <PieceMark
@@ -516,10 +649,27 @@ describe("canvas", () => {
     expect(container.querySelector("title")!.textContent).toContain(
       "one end not supported",
     );
+    expect(container.querySelectorAll("[data-testid=flag]")).toHaveLength(1);
     expect(container.querySelector("path")!.getAttribute("fill")).toBe(
       "var(--amber)",
     );
-    expect(container.textContent).toContain("W16X26");
+    expect(container.textContent).toContain("w16x26 <12>");
+  });
+
+  it("no flag on a found member, nor with Show flags off", () => {
+    const { container } = render(
+      <svg>
+        <PieceMark p={piece({})} px={1} on={false} labels />
+        <PieceMark
+          p={piece({ id: "z", build_state: "attention" })}
+          px={1}
+          on={false}
+          labels
+          flags={false}
+        />
+      </svg>,
+    );
+    expect(container.querySelectorAll("[data-testid=flag]")).toHaveLength(0);
   });
 
   it("the toolbar shows the pending edit count on Undo and has the tools", () => {
@@ -541,27 +691,33 @@ describe("canvas", () => {
         onDraw={noop}
         onEnds={noop}
         onUndo={onUndo}
-        onSave={noop}
         onDeleteSelected={noop}
       />,
     );
-    for (const t of [
+    const order = [
+      ...screen.getByTestId("toolbar").querySelectorAll("button"),
+    ].map((b) => b.getAttribute("aria-label"));
+    expect(order).toEqual([
+      "Select",
+      "Layers",
+      "Fit",
       "Crop",
       "Pick beam",
       "Draw beam",
       "Draw column",
       "Measure",
-      "Fit",
-      "layers",
-    ])
-      expect(screen.getByLabelText(t)).toBeTruthy();
+      "Undo",
+    ]);
+    expect(screen.getByLabelText("Crop").getAttribute("data-tip")).toBe("Crop");
+    expect(screen.getByLabelText("Select").className).toBe("on");
     const undo = screen.getByLabelText("Undo");
     expect(undo.textContent).toContain("3");
     fireEvent.click(undo);
     expect(onUndo).toHaveBeenCalled();
-    fireEvent.click(screen.getByLabelText("layers"));
+    fireEvent.click(screen.getByLabelText("Layers"));
     expect(screen.getByTestId("layers").textContent).toContain(
       "Undefined Beams",
     );
+    expect(screen.getByTestId("layers").textContent).toContain("Show flags");
   });
 });

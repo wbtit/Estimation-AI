@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { Download, House, Save } from "lucide-react";
 import { api, ApiError, send } from "../lib/api";
 import { formatFtIn } from "../lib/ftin";
 import {
@@ -152,6 +153,11 @@ export const Workspace: React.FC<{
           who,
         }),
       ),
+    noBeams: (p) =>
+      act(
+        send("POST", sheetUrl(p, "build-setup/no-beams"), { who }),
+        "No beams: press ▶ to rebuild",
+      ),
     setScale: (p, v) =>
       act(
         send("POST", sheetUrl(p, "build-setup/scale"), { ...v, who }).catch(
@@ -210,11 +216,18 @@ export const Workspace: React.FC<{
 
   return (
     <div className="workspace">
-      <div className="topbar">
-        <button onClick={() => go({ view: "projects" })} aria-label="home">
-          ⌂ Home
-        </button>
-        <span className="brand">{project?.name ?? ""}</span>
+      <div className="topbar dark">
+        <div className="side">
+          <button
+            className="icon"
+            onClick={() => go({ view: "projects" })}
+            aria-label="home"
+            title="Projects"
+          >
+            <House size={18} />
+          </button>
+          <span className="brand">{project?.name ?? ""}</span>
+        </div>
         <div className="tabs">
           {(["plans", "bom", "report"] as const).map((t) => (
             <button
@@ -233,39 +246,54 @@ export const Workspace: React.FC<{
             </button>
           ))}
         </div>
-        <span className="grow" />
-        <span style={{ position: "relative" }}>
-          <button
-            aria-label="export"
-            title="Export"
-            onClick={() => setExportOpen(!exportOpen)}
-          >
-            ⇩
-          </button>
-          {exportOpen && (
-            <div className="menu" onClick={() => setExportOpen(false)}>
-              <a href={`/api/projects/${projectId}/line-first/bom.xlsx`}>
-                <button>BOM (Excel)</button>
-              </a>
-              <a href={`/api/projects/${projectId}/report.xlsx`}>
-                <button>Report (Excel)</button>
-              </a>
-              <a href={`/api/projects/${projectId}/answer-key.json`}>
-                <button>Answer key</button>
-              </a>
-            </div>
+        <div className="side right">
+          {tab === "plans" && page && (
+            <button
+              className="primary row"
+              style={{ gap: 6 }}
+              onClick={() =>
+                void act(
+                  send("POST", sheetUrl(page, "save-page"), { who }),
+                  "Page saved",
+                )
+              }
+            >
+              <Save size={16} /> Save page
+            </button>
           )}
-        </span>
-        <span className="muted" style={{ color: "#b8c0d6" }}>
-          {who}
-        </span>
+          <span style={{ position: "relative" }}>
+            <button
+              className="icon"
+              aria-label="export"
+              title="Export"
+              onClick={() => setExportOpen(!exportOpen)}
+            >
+              <Download size={18} />
+            </button>
+            {exportOpen && (
+              <div className="menu" onClick={() => setExportOpen(false)}>
+                <a href={`/api/projects/${projectId}/line-first/bom.xlsx`}>
+                  <button>BOM (Excel)</button>
+                </a>
+                <a href={`/api/projects/${projectId}/report.xlsx`}>
+                  <button>Report (Excel)</button>
+                </a>
+                <a href={`/api/projects/${projectId}/answer-key.json`}>
+                  <button>Answer key</button>
+                </a>
+              </div>
+            )}
+          </span>
+          <span className="who">{who}</span>
+        </div>
       </div>
       {tab === "bom" && <BomTab bom={bom} projectId={projectId} />}
       {tab === "report" && <ReportTab projectId={projectId} />}
       {tab === "plans" && (
         <div className="ws-body">
-          <div className="left">
-            <div className="switch">
+          <div className="left dark">
+            <div className="panel-head">Navigation</div>
+            <div className="seg">
               <button
                 className={left === "pages" ? "on" : ""}
                 onClick={() => setLeft("pages")}
@@ -280,22 +308,25 @@ export const Workspace: React.FC<{
               </button>
             </div>
             <div className="scroll">
-              {left === "pages" &&
-                pages.map((p) => (
-                  <PageCard
-                    key={p.id}
-                    page={p}
-                    columnPlans={pages.filter(
-                      (c) => c.setup.role === "column_plan",
-                    )}
-                    selected={p.id === sheetId}
-                    onSelect={() => selectSheet(p.id)}
-                    actions={actions}
-                  />
-                ))}
+              {left === "pages" && (
+                <div className="page-list">
+                  {pages.map((p) => (
+                    <PageCard
+                      key={p.id}
+                      page={p}
+                      columnPlans={pages.filter(
+                        (c) => c.setup.role === "column_plan",
+                      )}
+                      selected={p.id === sheetId}
+                      onSelect={() => selectSheet(p.id)}
+                      actions={actions}
+                    />
+                  ))}
+                </div>
+              )}
               {left === "members" && (
                 <>
-                  <div style={{ padding: 8 }}>
+                  <div style={{ padding: "4px 12px 8px" }}>
                     <input
                       aria-label="filter members"
                       placeholder="Filter"
@@ -396,12 +427,6 @@ export const Workspace: React.FC<{
                 void act(
                   send("POST", `/api/projects/${projectId}/undo`, { who }),
                   "Undone",
-                )
-              }
-              onSave={() =>
-                void act(
-                  send("POST", sheetUrl(page, "save-page"), { who }),
-                  "Page saved",
                 )
               }
               onDeleteSelected={deleteSelected}

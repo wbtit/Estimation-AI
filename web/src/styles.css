@@ -1,19 +1,47 @@
+/* All colours of the app, in one place. The shell and the side panels are dark navy; the canvas
+   area is light grey with the white page on it; the toolbar is a white floating card. */
 :root {
-  --bg: #f3f4f7;
-  --panel: #ffffff;
-  --line: #dfe2ea;
-  --text: #1d2433;
-  --muted: #6b7385;
-  --top: #16213a;
-  --accent: #3b5bdb;
-  --beam: #8b3dff;
-  --beam-undef: #c49bff;
-  --column: #1c7ed6;
-  --amber: #f59f00;
+  /* shell (top bar, Navigation, Properties) */
+  --shell: #0f1a2e;
+  --shell-2: #16233d;
+  --shell-3: #1e2e4f;
+  --shell-line: rgba(255, 255, 255, 0.09);
+  --shell-text: #e7ecf6;
+  --shell-muted: #95a3bf;
+  --shell-input: #0b1424;
+  /* canvas and light surfaces */
+  --canvas: #e6e9ef;
+  --page: #ffffff;
+  --card: #ffffff;
+  --line: #dde1ea;
+  --text: #1b2333;
+  --muted: #687389;
+  --icon: #1f2937;
+  /* accents */
+  --accent: #3d6bf5;
+  --accent-soft: #e8eeff;
+  --active: #dfe7ff;
+  /* overlays */
+  --beam: #4b1f8f;
+  --beam-label: #5a24a8;
+  --beam-undef: #7a4fc4;
+  --beam-ignored: #9aa1b2;
+  --column: #173c8c;
+  --pick: #ff7a00;
+  --crop: #3d6bf5;
+  --grid: #2b8a3e;
+  --select: #ffcf33;
+  /* states */
+  --amber: #f08c00;
   --red: #e03131;
   --green: #2f9e44;
-  --grid: #2b8a3e;
-  font-family: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --found: #2f9e44;
+  font-family:
+    "Inter",
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    sans-serif;
   font-size: 13px;
   color: var(--text);
 }
@@ -24,15 +52,15 @@
 
 body {
   margin: 0;
-  background: var(--bg);
+  background: var(--canvas);
 }
 
 button {
   font: inherit;
   cursor: pointer;
   border: 1px solid var(--line);
-  background: #fff;
-  border-radius: 6px;
+  background: var(--card);
+  border-radius: 8px;
   padding: 5px 10px;
   color: var(--text);
 }
@@ -57,8 +85,10 @@ button.danger {
 }
 
 button.icon {
-  padding: 4px 7px;
-  line-height: 1;
+  padding: 4px;
+  line-height: 0;
+  display: inline-grid;
+  place-items: center;
 }
 
 input,
@@ -73,7 +103,7 @@ select {
 }
 
 input.bad {
-  border-color: var(--red);
+  border-color: var(--red) !important;
 }
 
 h2,
@@ -96,64 +126,129 @@ h4 {
   flex: 1;
 }
 
-/* name gate ------------------------------------------------------------------------------------ */
+/* dark surfaces: inputs, buttons and text on navy -------------------------------------------- */
+.dark {
+  color: var(--shell-text);
+}
+
+.dark .muted {
+  color: var(--shell-muted);
+}
+
+.dark input,
+.dark select {
+  background: var(--shell-input);
+  border-color: var(--shell-line);
+  color: var(--shell-text);
+}
+
+.dark input:focus,
+.dark select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.dark button {
+  background: transparent;
+  border-color: var(--shell-line);
+  color: var(--shell-text);
+}
+
+.dark button:hover:not(:disabled) {
+  border-color: rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.dark button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.dark button.danger {
+  color: #ff8787;
+  border-color: rgba(255, 135, 135, 0.35);
+}
+
+/* name gate -------------------------------------------------------------------------------------- */
 .name-gate {
   position: fixed;
   inset: 0;
   display: grid;
   place-items: center;
-  background: var(--bg);
+  background: var(--shell);
 }
 
 .name-gate .panel {
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 10px;
+  background: var(--shell-2);
+  color: var(--shell-text);
+  border: 1px solid var(--shell-line);
+  border-radius: 12px;
   padding: 24px;
   display: grid;
   gap: 12px;
 }
 
-/* projects screen ------------------------------------------------------------------------------ */
+/* top bar ---------------------------------------------------------------------------------------- */
 .topbar {
-  height: 48px;
-  background: var(--top);
-  color: #fff;
-  display: flex;
+  height: 52px;
+  background: var(--shell);
+  color: var(--shell-text);
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  gap: 12px;
   padding: 0 14px;
+  border-bottom: 1px solid var(--shell-line);
 }
 
-.topbar button {
-  background: transparent;
-  color: #fff;
-  border-color: rgba(255, 255, 255, 0.25);
+.topbar .side {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.topbar .side.right {
+  justify-content: flex-end;
 }
 
 .topbar .brand {
   font-weight: 700;
   letter-spacing: 0.2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .topbar .tabs {
   display: flex;
   gap: 4px;
-  margin-left: 18px;
+  background: var(--shell-3);
+  padding: 4px;
+  border-radius: 999px;
 }
 
 .topbar .tabs button {
   border: none;
-  border-radius: 0;
-  border-bottom: 2px solid transparent;
-  padding: 13px 12px;
+  border-radius: 999px;
+  padding: 6px 18px;
+  background: transparent;
+  color: var(--shell-text);
+  font-weight: 500;
 }
 
 .topbar .tabs button.on {
-  border-bottom-color: #fff;
+  background: #fff;
+  color: var(--text);
   font-weight: 600;
 }
 
+.topbar .who {
+  color: var(--shell-muted);
+  white-space: nowrap;
+}
+
+/* projects screen -------------------------------------------------------------------------------- */
 .projects {
   padding: 22px 28px;
 }
@@ -161,36 +256,47 @@ h4 {
 .projects .head {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
   margin-bottom: 18px;
+}
+
+.projects .head label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  white-space: nowrap;
 }
 
 .cards {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 18px;
 }
 
 .card {
-  background: var(--panel);
+  background: var(--card);
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: 12px;
   overflow: hidden;
   cursor: pointer;
   display: flex;
   flex-direction: column;
+  box-shadow: 0 1px 2px rgba(15, 26, 46, 0.06);
 }
 
 .card:hover {
   border-color: #b9bfd0;
+  box-shadow: 0 4px 14px rgba(15, 26, 46, 0.1);
 }
 
 .card .thumb {
-  height: 140px;
-  background: #e9ecf3;
+  height: 150px;
+  background: #f2f4f8;
   display: grid;
   place-items: center;
   overflow: hidden;
+  border-bottom: 1px solid var(--line);
 }
 
 .card .thumb img {
@@ -201,18 +307,31 @@ h4 {
 }
 
 .card .body {
-  padding: 10px 12px;
+  padding: 10px 12px 12px;
   display: grid;
   gap: 4px;
 }
 
+.card .name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.card.archived {
+  opacity: 0.7;
+}
+
 .card.add {
   border-style: dashed;
-  min-height: 210px;
+  min-height: 220px;
   display: grid;
   place-items: center;
   color: var(--accent);
   font-weight: 600;
+  background: transparent;
+  box-shadow: none;
 }
 
 .badge {
@@ -260,7 +379,8 @@ h4 {
   color: #6a2fc9;
 }
 
-.badge.Skip {
+.badge.Skip,
+.badge.Archived {
   background: #eef0f4;
   color: var(--muted);
 }
@@ -268,14 +388,14 @@ h4 {
 .modal-back {
   position: fixed;
   inset: 0;
-  background: rgba(15, 20, 35, 0.35);
+  background: rgba(15, 20, 35, 0.45);
   display: grid;
   place-items: center;
   z-index: 50;
 }
 
 .modal {
-  background: var(--panel);
+  background: var(--card);
   border-radius: 12px;
   padding: 20px;
   width: 420px;
@@ -321,7 +441,7 @@ h4 {
   transition: width 0.3s;
 }
 
-/* workspace ------------------------------------------------------------------------------------ */
+/* workspace -------------------------------------------------------------------------------------- */
 .workspace {
   height: 100vh;
   display: flex;
@@ -334,31 +454,48 @@ h4 {
   min-height: 0;
 }
 
+.panel-head {
+  padding: 12px 14px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--shell-muted);
+}
+
 .left {
-  width: 290px;
-  background: var(--panel);
-  border-right: 1px solid var(--line);
+  width: 272px;
+  flex: none;
+  background: var(--shell-2);
+  border-right: 1px solid var(--shell-line);
   display: flex;
   flex-direction: column;
   min-height: 0;
 }
 
-.left .switch,
-.props .switch {
+.seg {
   display: flex;
-  border-bottom: 1px solid var(--line);
+  gap: 2px;
+  background: var(--shell-input);
+  padding: 3px;
+  border-radius: 8px;
+  margin: 0 12px 8px;
 }
 
-.switch button {
+.dark .seg button,
+.seg button {
   flex: 1;
   border: none;
-  border-radius: 0;
-  border-bottom: 2px solid transparent;
-  padding: 9px;
+  border-radius: 6px;
+  padding: 5px 8px;
+  background: transparent;
+  color: var(--shell-muted);
 }
 
-.switch button.on {
-  border-bottom-color: var(--accent);
+.dark .seg button.on,
+.seg button.on {
+  background: var(--shell-3);
+  color: var(--shell-text);
   font-weight: 600;
 }
 
@@ -368,34 +505,101 @@ h4 {
   min-height: 0;
 }
 
+.page-list {
+  display: grid;
+  gap: 8px;
+  padding: 2px 10px 12px;
+}
+
 .page-card {
-  border-bottom: 1px solid var(--line);
-  padding: 10px 12px;
+  border: 1px solid var(--shell-line);
+  background: var(--shell-3);
+  border-radius: 10px;
+  padding: 8px;
   display: grid;
   gap: 6px;
   cursor: pointer;
 }
 
+.page-card:hover {
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
 .page-card.on {
-  background: #f1f4ff;
-  box-shadow: inset 3px 0 0 var(--accent);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.page-card .head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .page-card .title {
   font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.page-card .sheet-no {
+  font-size: 12px;
+  color: var(--shell-muted);
+  margin-top: -4px;
+}
+
+.dark .page-card button.icon {
+  border: none;
+  color: var(--shell-text);
+  padding: 4px;
+}
+
+.page-card .thumb {
+  position: relative;
+  height: 112px;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.page-card .thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.page-card .thumb .badges {
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  bottom: 6px;
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.page-card .thumb .badge {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
 }
 
 .page-card .field {
   display: grid;
-  grid-template-columns: 92px 1fr;
+  grid-template-columns: 84px 1fr;
   gap: 6px;
   align-items: center;
   font-size: 12px;
 }
 
+.page-card .field > span:first-child {
+  color: var(--shell-muted);
+}
+
 .page-card .status {
-  font-size: 11px;
-  color: var(--muted);
+  font-size: 12px;
+  color: var(--shell-text);
+  overflow-wrap: anywhere;
 }
 
 .menu {
@@ -403,21 +607,47 @@ h4 {
   right: 0;
   top: 100%;
   background: #fff;
+  color: var(--text);
   border: 1px solid var(--line);
   border-radius: 8px;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
   padding: 6px;
   display: grid;
   gap: 2px;
-  z-index: 20;
-  min-width: 190px;
+  z-index: 40;
+  min-width: 200px;
 }
 
+.menu .label {
+  padding: 6px 10px 2px;
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.menu hr {
+  border: none;
+  border-top: 1px solid var(--line);
+  margin: 4px 0;
+  width: 100%;
+}
+
+.dark .menu button,
 .menu button {
   border: none;
   text-align: left;
+  background: transparent;
+  color: var(--text);
+  border-radius: 6px;
 }
 
+.dark .menu button:hover,
+.menu button:hover {
+  background: var(--accent-soft);
+}
+
+.dark .menu button.on,
 .menu button.on {
   font-weight: 700;
   color: var(--accent);
@@ -425,113 +655,195 @@ h4 {
 
 .member-row {
   display: grid;
-  grid-template-columns: 56px 1fr 80px;
+  grid-template-columns: 56px 1fr 74px;
   gap: 6px;
-  padding: 6px 12px;
-  border-bottom: 1px solid #f0f1f5;
+  padding: 6px 14px;
+  border-bottom: 1px solid var(--shell-line);
   cursor: pointer;
   font-size: 12px;
 }
 
 .member-row.on {
-  background: #f1e9ff;
+  background: var(--shell-3);
 }
 
+/* canvas ----------------------------------------------------------------------------------------- */
 .center {
   flex: 1;
   display: flex;
   flex-direction: column;
   min-width: 0;
   position: relative;
-}
-
-.canvas-head {
-  height: 40px;
-  border-bottom: 1px solid var(--line);
-  background: var(--panel);
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 0 10px;
-}
-
-.canvas-area {
-  flex: 1;
-  display: flex;
-  min-height: 0;
-}
-
-.toolbar {
-  width: 46px;
-  background: var(--panel);
-  border-right: 1px solid var(--line);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  padding: 8px 0;
-  position: relative;
-}
-
-.toolbar button {
-  width: 34px;
-  height: 34px;
-  padding: 0;
-  display: grid;
-  place-items: center;
-  font-size: 15px;
-  position: relative;
-}
-
-.toolbar button.on {
-  background: #e7ecff;
-  border-color: var(--accent);
-}
-
-.toolbar .count {
-  position: absolute;
-  top: -5px;
-  right: -6px;
-  background: var(--accent);
-  color: #fff;
-  border-radius: 99px;
-  font-size: 10px;
-  padding: 0 4px;
-}
-
-.layers {
-  position: absolute;
-  left: 50px;
-  top: 6px;
-  background: #fff;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
-  padding: 10px;
-  display: grid;
-  gap: 6px;
-  z-index: 30;
-  width: 210px;
-}
-
-.layers label {
-  display: flex;
-  gap: 6px;
-  align-items: center;
+  background: var(--canvas);
 }
 
 .viewport {
   flex: 1;
   overflow: auto;
-  background: #e4e7ee;
+  background: var(--canvas);
   position: relative;
+}
+
+.canvas-chip {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 15;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 5px 14px;
+  box-shadow: 0 2px 10px rgba(15, 26, 46, 0.12);
+  white-space: nowrap;
+  max-width: calc(100% - 140px);
+  overflow: hidden;
+}
+
+.zoom-card {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  z-index: 15;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 4px;
+  box-shadow: 0 2px 10px rgba(15, 26, 46, 0.12);
+}
+
+.zoom-card button {
+  border: none;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  color: var(--icon);
+}
+
+.zoom-card span {
+  min-width: 44px;
+  text-align: center;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.toolbar {
+  position: absolute;
+  left: 14px;
+  top: 14px;
+  z-index: 20;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(15, 26, 46, 0.16);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+}
+
+.toolbar .sep {
+  height: 1px;
+  background: var(--line);
+  margin: 3px 4px;
+}
+
+.toolbar button {
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--icon);
+  position: relative;
+}
+
+.toolbar button:hover:not(:disabled) {
+  background: #f1f3f8;
+}
+
+.toolbar button.on {
+  background: var(--active);
+  color: var(--accent);
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+
+/* the tool name on hover, to the right of the button */
+.toolbar button[data-tip]:hover::after {
+  content: attr(data-tip);
+  position: absolute;
+  left: calc(100% + 10px);
+  top: 50%;
+  transform: translateY(-50%);
+  background: var(--shell);
+  color: #fff;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 30;
+}
+
+.toolbar .count {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  background: var(--accent);
+  color: #fff;
+  border-radius: 99px;
+  font-size: 10px;
+  line-height: 15px;
+  min-width: 15px;
+  padding: 0 4px;
+  font-weight: 700;
+}
+
+.layers {
+  position: absolute;
+  left: calc(100% + 10px);
+  top: 0;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(15, 26, 46, 0.18);
+  padding: 10px 12px;
+  display: grid;
+  gap: 7px;
+  z-index: 30;
+  width: 220px;
+}
+
+.layers .label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.layers label {
+  display: flex;
+  gap: 8px;
+  align-items: center;
 }
 
 .page-wrap {
   position: relative;
-  margin: 8px;
-  background: #fff;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+  margin: 16px 16px 16px 76px;
+  background: var(--page);
+  box-shadow: 0 2px 10px rgba(15, 26, 46, 0.18);
 }
 
 .page-canvas {
@@ -563,56 +875,84 @@ h4 {
   text-align: center;
 }
 
+/* properties ------------------------------------------------------------------------------------- */
 .props {
-  width: 300px;
-  background: var(--panel);
-  border-left: 1px solid var(--line);
+  width: 308px;
+  flex: none;
+  background: var(--shell-2);
+  border-left: 1px solid var(--shell-line);
   display: flex;
   flex-direction: column;
   min-height: 0;
 }
 
 .section {
-  padding: 12px;
-  border-bottom: 1px solid var(--line);
-  display: grid;
-  gap: 8px;
+  border-bottom: 1px solid var(--shell-line);
 }
 
-.section h4 {
+.dark .section .sec-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  padding: 11px 14px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--shell-text);
+  font-weight: 700;
   font-size: 12px;
+  letter-spacing: 0.5px;
   text-transform: uppercase;
-  color: var(--muted);
-  letter-spacing: 0.4px;
+  text-align: left;
+}
+
+.dark .section .sec-head:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.section .sec-body {
+  padding: 0 14px 14px;
+  display: grid;
+  gap: 10px;
 }
 
 .kv {
   display: grid;
-  grid-template-columns: 112px 1fr;
-  gap: 6px;
+  grid-template-columns: 104px minmax(0, 1fr);
+  gap: 7px 8px;
   align-items: center;
 }
 
-.kv > span:first-child {
-  color: var(--muted);
+.kv > span:nth-child(odd) {
+  color: var(--shell-muted);
+  font-size: 12px;
+}
+
+.kv input,
+.kv select {
+  width: 100%;
 }
 
 .stats {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 6px;
   text-align: center;
 }
 
 .stats div {
-  background: #f5f6fa;
+  background: var(--shell-3);
   border-radius: 8px;
-  padding: 8px 4px;
+  padding: 8px 2px;
+  font-size: 11px;
+  color: var(--shell-muted);
 }
 
 .stats b {
   display: block;
-  font-size: 16px;
+  font-size: 17px;
+  color: var(--shell-text);
 }
 
 .search-box {
@@ -632,42 +972,55 @@ h4 {
   z-index: 25;
 }
 
+.dark .search-box .options button,
 .search-box .options button {
   display: block;
   width: 100%;
   border: none;
   border-radius: 0;
   text-align: left;
+  background: #fff;
+  color: var(--text);
+}
+
+.dark .search-box .options button:hover {
+  background: var(--accent-soft);
 }
 
 .toast {
-  position: absolute;
-  bottom: 14px;
+  position: fixed;
+  bottom: 18px;
   left: 50%;
   transform: translateX(-50%);
-  background: var(--top);
+  background: var(--shell);
   color: #fff;
-  padding: 7px 14px;
+  padding: 8px 16px;
   border-radius: 8px;
-  z-index: 40;
+  z-index: 60;
 }
 
+/* tables (BOM, report) --------------------------------------------------------------------------- */
 .table-wrap {
   flex: 1;
   overflow: auto;
-  padding: 14px 18px;
+  padding: 16px 20px;
+  background: var(--canvas);
 }
 
 table.grid {
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
   width: 100%;
   background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--text);
 }
 
 table.grid th,
 table.grid td {
   border-bottom: 1px solid var(--line);
-  padding: 6px 8px;
+  padding: 7px 10px;
   text-align: left;
   white-space: nowrap;
 }
@@ -677,17 +1030,40 @@ table.grid th {
   top: 0;
   background: #f5f6fa;
   font-weight: 600;
+  z-index: 1;
 }
 
 table.grid td.num,
 table.grid th.num {
   text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 table.grid tr.total td {
   font-weight: 700;
+  background: #f8f9fc;
 }
 
-table.grid tr.att td {
-  color: var(--red);
+.dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  vertical-align: middle;
+}
+
+.dot.found {
+  background: var(--found);
+}
+
+.dot.needs_review {
+  background: var(--amber);
+}
+
+.dot.attention {
+  background: var(--red);
+}
+
+.dot.none {
+  background: #c5cad6;
 }

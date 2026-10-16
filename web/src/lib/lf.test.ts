@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   ALL_LAYERS,
+  beamLabel,
+  bomOrder,
   common,
+  flagOf,
   linesOfClass,
   MIXED,
   nameFromFile,
@@ -92,6 +95,25 @@ describe("layers", () => {
   });
 });
 
+describe("overlay marks", () => {
+  it("flags only needs review (amber) and attention (red)", () => {
+    expect(flagOf(piece({ build_state: "found" }))).toBeNull();
+    expect(flagOf(piece({ build_state: "needs_review" }))).toBe("amber");
+    expect(flagOf(piece({ build_state: "attention" }))).toBe("red");
+    expect(
+      flagOf(piece({ build_state: "attention", ignored: true })),
+    ).toBeNull();
+  });
+
+  it("writes the size in small letters with the studs", () => {
+    expect(beamLabel(piece({ profile: "W18X35", studs: 10 }))).toBe(
+      "w18x35 <10>",
+    );
+    expect(beamLabel(piece({ profile: "W16X26" }))).toBe("w16x26");
+    expect(beamLabel(piece({ profile: null }))).toBe("");
+  });
+});
+
 describe("hit tests", () => {
   it("finds the nearest visible piece; a column wins a tie", () => {
     const beam = piece({ id: "beam" });
@@ -137,7 +159,7 @@ describe("properties and summary", () => {
     expect(common([null, null])).toBeNull();
   });
 
-  it("counts columns, beams and braces and sums US short tons of the main total", () => {
+  it("counts every piece, attention included, and sums US short tons of the main total", () => {
     const rows = [
       row({ qty: 2, weight_lb: 3000 }),
       row({ category: "Column", weight_lb: 1000 }),
@@ -147,15 +169,34 @@ describe("properties and summary", () => {
     ];
     expect(summary(rows)).toEqual({
       columns: 1,
-      beams: 3,
+      beams: 4,
       braces: 1,
       tons: 2.25,
     });
     expect(summary(rows, "S")).toEqual({
       columns: 1,
-      beams: 2,
+      beams: 3,
       braces: 1,
       tons: 2,
+    });
+  });
+
+  it("counts columns that all need attention (a column plan with no sizes read)", () => {
+    const cols = Array.from({ length: 27 }, (_, i) =>
+      row({
+        category: "Column",
+        piecemark: `C${i + 1}`,
+        section: null,
+        weight_lb: null,
+        build_state: "attention",
+        in_main_total: false,
+      }),
+    );
+    expect(summary([...cols, row({ sheet_id: "T" })], "S")).toEqual({
+      columns: 27,
+      beams: 0,
+      braces: 0,
+      tons: 0,
     });
   });
 
@@ -166,6 +207,27 @@ describe("properties and summary", () => {
     expect(stateReason(piece({ profile: null, size_state: "undefined" }))).toBe(
       "no size read",
     );
+  });
+});
+
+describe("BOM", () => {
+  it("sorts by category, then section, then piecemark", () => {
+    const rows = [
+      row({ category: "Column", section: null, piecemark: "C1" }),
+      row({ section: "W16X26", piecemark: "B10" }),
+      row({ section: "W16X26", piecemark: "B2" }),
+      row({ section: "W12X14", piecemark: "B7" }),
+    ];
+    expect(
+      rows
+        .sort(bomOrder)
+        .map((r) => `${r.category} ${r.section} ${r.piecemark}`),
+    ).toEqual([
+      "Beams W12X14 B7",
+      "Beams W16X26 B2",
+      "Beams W16X26 B10",
+      "Column null C1",
+    ]);
   });
 });
 

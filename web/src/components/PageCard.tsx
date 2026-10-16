@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
+import { EllipsisVertical, Play } from "lucide-react";
 import { formatFtIn, parseFtIn } from "../lib/ftin";
 import { PAGE_TYPE_SHORT, ROLE_LABEL, type Page, type Role } from "../lib/lf";
 
@@ -8,16 +9,33 @@ export interface PageActions {
   setColumnPlan: (p: Page, sheetId: string | null) => void;
   setTos: (p: Page, mm: number, raw: string) => void;
   setScale: (p: Page, v: { ratio?: number; scale_text?: string }) => void;
+  /** "No beams": beam pen = none (a person's choice); the next build makes no beams. */
+  noBeams: (p: Page) => void;
 }
 
+/** "No beams" is set: no pen class, chosen by a person. */
+export const hasNoBeams = (p: Page): boolean =>
+  p.setup.pen_class === null && p.setup.pen_class_source === "person";
+
 const badgeClass = (b: string) => b.replace(/\s+/g, "-");
+
+/** Setup values in the estimator's words. */
+const VALUE_WORDS: Record<string, string> = {
+  role: "page type",
+  crop: "crop",
+  scale: "scale",
+  pen_class: "beam pen",
+  tos: "Top of Steel",
+  column_plan: "column plan",
+};
 
 function scaleLabel(text: string | null, ratio: number | null): string {
   if (ratio === null) return "—";
   return text ? `${text} (${ratio})` : `1:${ratio}`;
 }
 
-/** One page in the left panel: "Page N | Type", sheet number, ▶, ⋮, badge, T.O.S., scale, status. */
+/** One page in Navigation: "Page N | Type", the sheet number, ▶ and ⋮, a thumbnail with the build
+ * badge and Estimating/Skip on it; Top of Steel, Scale and Status only on the selected card. */
 export const PageCard: React.FC<{
   page: Page;
   columnPlans: Page[];
@@ -26,6 +44,10 @@ export const PageCard: React.FC<{
   actions: PageActions;
 }> = ({ page, columnPlans, selected, onSelect, actions }) => {
   const [menu, setMenu] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (selected) ref.current?.scrollIntoView?.({ block: "nearest" });
+  }, [selected]);
   const [tos, setTos] = useState(
     page.setup.tos_mm === null ? "" : formatFtIn(page.setup.tos_mm),
   );
@@ -66,16 +88,18 @@ export const PageCard: React.FC<{
       : page.reviewed_by && page.badge === "Reviewed"
         ? `Saved by ${page.reviewed_by}, ${new Date(page.reviewed_at as string).toLocaleString()}`
         : page.system_values.length && role
-          ? `System: ${page.system_values.join(", ")}`
+          ? `Not confirmed: ${page.system_values.map((v) => VALUE_WORDS[v] ?? v).join(", ")}`
           : `${page.counts.pieces} pieces`;
 
+  const second = page.badge === "Skip" ? null : role ? "Estimating" : "Skip";
   return (
     <div
+      ref={ref}
       className={`page-card${selected ? " on" : ""}`}
       onClick={onSelect}
       data-testid={`page-card-${page.page_number}`}
     >
-      <div className="row">
+      <div className="head">
         <span className="title">
           Page {page.page_number} |{" "}
           {role
@@ -93,21 +117,23 @@ export const PageCard: React.FC<{
             actions.build(page);
           }}
         >
-          ▶
+          <Play size={15} />
         </button>
         <span style={{ position: "relative" }}>
           <button
             className="icon"
             aria-label="page menu"
+            title="Page menu"
             onClick={(e) => {
               e.stopPropagation();
               setMenu(!menu);
             }}
           >
-            ⋮
+            <EllipsisVertical size={15} />
           </button>
           {menu && (
             <div className="menu" onClick={(e) => e.stopPropagation()}>
+              <span className="label">Page type</span>
               {(["column_plan", "framing", null] as Role[]).map((r) => (
                 <button
                   key={String(r)}
@@ -120,11 +146,25 @@ export const PageCard: React.FC<{
                   {ROLE_LABEL[r ?? "skip"]}
                 </button>
               ))}
+              {role && (
+                <>
+                  <hr />
+                  <button
+                    className={hasNoBeams(page) ? "on" : ""}
+                    title="Beam pen = none; ▶ then removes the beams you did not edit"
+                    onClick={() => {
+                      setMenu(false);
+                      actions.noBeams(page);
+                    }}
+                  >
+                    No beams
+                  </button>
+                </>
+              )}
               {role === "framing" && (
                 <>
-                  <span className="muted" style={{ padding: "6px 10px 2px" }}>
-                    Column plan
-                  </span>
+                  <hr />
+                  <span className="label">Column plan</span>
                   {[...columnPlans.filter((c) => c.id !== page.id), null].map(
                     (c) => (
                       <button
@@ -151,17 +191,22 @@ export const PageCard: React.FC<{
           )}
         </span>
       </div>
-      <div className="row">
-        <span className="muted">{page.sheet_number ?? "—"}</span>
-        <span className="grow" />
-        <span
-          className={`badge ${badgeClass(page.badge)}`}
-          title={page.reasons.join("; ")}
-        >
-          {page.badge}
-        </span>
+      <div className="sheet-no">{page.sheet_number ?? "—"}</div>
+      <div className="thumb">
+        {page.thumbnail_url ? (
+          <img src={page.thumbnail_url} alt="" loading="lazy" />
+        ) : null}
+        <div className="badges">
+          <span
+            className={`badge ${badgeClass(page.badge)}`}
+            title={page.reasons.join("; ")}
+          >
+            {page.badge}
+          </span>
+          {second && <span className={`badge ${second}`}>{second}</span>}
+        </div>
       </div>
-      {role && (
+      {selected && role && (
         <>
           <div className="field" onClick={(e) => e.stopPropagation()}>
             <span>Top of Steel</span>
@@ -227,9 +272,13 @@ export const PageCard: React.FC<{
               </select>
             )}
           </div>
+          <div className="field">
+            <span>Status</span>
+            <span className="status">{status}</span>
+          </div>
         </>
       )}
-      <div className="status">{status}</div>
+      {selected && !role && <div className="status">{status}</div>}
     </div>
   );
 };

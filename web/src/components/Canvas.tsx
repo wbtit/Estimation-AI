@@ -1,9 +1,24 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import type { PDFDocumentProxy } from "pdfjs-dist";
+import {
+  Crop,
+  Filter,
+  Maximize,
+  Minus,
+  MousePointer2,
+  PenLine,
+  Pipette,
+  Plus,
+  Ruler,
+  Undo2,
+  type LucideIcon,
+} from "lucide-react";
 import { formatFtIn } from "../lib/ftin";
 import { fitZoom, MM_PER_PT } from "../lib/geometry";
 import {
+  beamLabel,
   evidenceText,
+  flagOf,
   isColumn,
   isUndefinedBeam,
   linesOfClass,
@@ -20,6 +35,7 @@ import {
   type SheetLines,
 } from "../lib/lf";
 import { snapPoint } from "../lib/snap";
+import { ColumnIcon } from "./icons";
 import { PageView } from "./PageView";
 
 export type Tool = "select" | "crop" | "pick" | "beam" | "column" | "measure";
@@ -39,22 +55,24 @@ export interface CanvasProps {
   onDraw: (kind: "Beams" | "Column", a: Pt2, b: Pt2 | null) => void;
   onEnds: (piece: Piece, a: Pt2, b: Pt2 | null) => void;
   onUndo: () => void;
-  onSave: () => void;
   onDeleteSelected: () => void;
   /** Raised by the Crop section's "Redraw": switch to the Crop tool. */
   cropAsk?: number;
 }
 
-const TOOLS: { tool: Tool; icon: string; label: string }[] = [
-  { tool: "select", icon: "↖", label: "Select" },
-  { tool: "crop", icon: "⛶", label: "Crop" },
-  { tool: "pick", icon: "✎", label: "Pick beam" },
-  { tool: "beam", icon: "╱", label: "Draw beam" },
-  { tool: "column", icon: "Ɪ", label: "Draw column" },
-  { tool: "measure", icon: "📏", label: "Measure" },
+const TOOLS: { tool: Tool; Icon: LucideIcon; label: string }[] = [
+  { tool: "select", Icon: MousePointer2, label: "Select" },
+  { tool: "crop", Icon: Crop, label: "Crop" },
+  { tool: "pick", Icon: Pipette, label: "Pick beam" },
+  { tool: "beam", Icon: PenLine, label: "Draw beam" },
+  { tool: "column", Icon: ColumnIcon, label: "Draw column" },
+  { tool: "measure", Icon: Ruler, label: "Measure" },
 ];
+const ICON = { size: 20, strokeWidth: 2 } as const;
 
 const SNAP_PX = 10;
+/** The page's margins in the viewport (styles.css .page-wrap: 76 left for the toolbar, 16 else). */
+const PAGE_MARGIN = { x: 76 + 16, y: 16 + 16 };
 
 export const Canvas: React.FC<CanvasProps> = (props) => {
   const { pdf, page, data, lines, layers, onLayers, selected } = props;
@@ -85,8 +103,8 @@ export const Canvas: React.FC<CanvasProps> = (props) => {
     if (el)
       setZoom(
         Math.min(
-          fitZoom(w, el.clientWidth),
-          Math.max(0.05, (el.clientHeight - 16) / h),
+          fitZoom(w, el.clientWidth - PAGE_MARGIN.x + 16),
+          Math.max(0.05, (el.clientHeight - PAGE_MARGIN.y) / h),
         ),
       );
   }, [w, h]);
@@ -263,17 +281,41 @@ export const Canvas: React.FC<CanvasProps> = (props) => {
       : [];
   const crop = data?.crop ?? page.setup.crop;
 
+  const toolButton = (t: (typeof TOOLS)[number]) => (
+    <button
+      key={t.tool}
+      data-tip={t.label}
+      aria-label={t.label}
+      className={tool === t.tool ? "on" : ""}
+      onClick={() => {
+        setTool(t.tool);
+        setFirst(null);
+      }}
+    >
+      <t.Icon {...ICON} />
+    </button>
+  );
+  const hint =
+    tool === "pick"
+      ? "Click one beam line"
+      : tool === "crop"
+        ? "Drag a box around the plan"
+        : tool === "beam" || tool === "measure"
+          ? first
+            ? "Click the second point"
+            : "Click the first point"
+          : tool === "column"
+            ? "Click the column centre"
+            : null;
+
   return (
     <div className="center">
-      <div className="canvas-head">
+      <div className="canvas-chip">
         <b>
           Page {page.page_number}
           {page.sheet_number ? ` · ${page.sheet_number}` : ""}
         </b>
-        <span className="muted">
-          {TOOLS.find((t) => t.tool === tool)?.label}
-        </span>
-        {tool === "pick" && <span className="muted">Click one beam line</span>}
+        {hint && <span className="muted">{hint}</span>}
         {measure && ratio && (
           <span data-testid="measure">
             {formatFtIn(
@@ -286,225 +328,216 @@ export const Canvas: React.FC<CanvasProps> = (props) => {
             )}
           </span>
         )}
-        <span className="grow" />
-        <button
-          className="icon"
-          aria-label="zoom out"
-          onClick={() => setZoom((z) => Math.max(0.05, z / 1.25))}
-        >
-          −
-        </button>
-        <span className="muted">{Math.round(zoom * 100)}%</span>
-        <button
-          className="icon"
-          aria-label="zoom in"
-          onClick={() => setZoom((z) => Math.min(8, z * 1.25))}
-        >
-          +
-        </button>
-        <button className="primary" onClick={props.onSave}>
-          Save page
-        </button>
       </div>
-      <div className="canvas-area">
-        <div className="toolbar">
+      <div className="toolbar" data-testid="toolbar">
+        {toolButton(TOOLS[0]!)}
+        <span style={{ position: "relative" }}>
           <button
-            title="Layers"
-            aria-label="layers"
+            data-tip={layersOpen ? undefined : "Layers"}
+            aria-label="Layers"
             className={layersOpen ? "on" : ""}
             onClick={() => setLayersOpen(!layersOpen)}
           >
-            ☰
+            <Filter {...ICON} />
           </button>
           {layersOpen && <LayerFilter layers={layers} onChange={onLayers} />}
-          {TOOLS.map((t) => (
-            <button
-              key={t.tool}
-              title={t.label}
-              aria-label={t.label}
-              className={tool === t.tool ? "on" : ""}
-              onClick={() => {
-                setTool(t.tool);
-                setFirst(null);
-              }}
-            >
-              {t.icon}
-            </button>
-          ))}
-          <button title="Fit" aria-label="Fit" onClick={fit}>
-            ⤢
-          </button>
-          <button
-            title="Undo"
-            aria-label="Undo"
-            onClick={props.onUndo}
-            disabled={props.pendingEdits === 0}
-          >
-            ↶
-            {props.pendingEdits > 0 && (
-              <span className="count">{props.pendingEdits}</span>
-            )}
-          </button>
-        </div>
-        <div
-          className="viewport"
-          ref={viewport}
-          onWheel={onWheel}
-          onContextMenu={(e) => e.preventDefault()}
+        </span>
+        <button data-tip="Fit" aria-label="Fit" onClick={fit}>
+          <Maximize {...ICON} />
+        </button>
+        <div className="sep" />
+        {TOOLS.slice(1).map(toolButton)}
+        <div className="sep" />
+        <button
+          data-tip="Undo"
+          aria-label="Undo"
+          onClick={props.onUndo}
+          disabled={props.pendingEdits === 0}
         >
-          {pdf ? (
-            <PageView
-              pdf={pdf}
-              pageIndex={page.page_index}
-              widthPt={w}
-              heightPt={h}
-              zoom={zoom}
-              dimPlan={!layers.plan}
-              onPointerDown={down}
-              onPointerMove={move}
-              onPointerUp={up}
-              cursor={tool === "select" ? "default" : "crosshair"}
-            >
-              {crop && (
-                <rect
-                  x={crop.x0}
-                  y={crop.y0}
-                  width={crop.x1 - crop.x0}
-                  height={crop.y1 - crop.y0}
-                  fill="none"
-                  stroke="#3b5bdb"
-                  strokeWidth={1.5 * px}
-                  strokeDasharray={`${8 * px} ${5 * px}`}
-                  pointerEvents="none"
-                />
-              )}
-              {layers.grids &&
-                data?.grid_lines.map((g, i) => (
-                  <g key={i} pointerEvents="none">
-                    <line
-                      x1={g.a[0]}
-                      y1={g.a[1]}
-                      x2={g.b[0]}
-                      y2={g.b[1]}
-                      stroke="var(--grid)"
-                      strokeWidth={1 * px}
-                      strokeDasharray={`${10 * px} ${3 * px} ${2 * px} ${3 * px}`}
-                      opacity={0.8}
-                    />
-                    {g.bubble && g.label && (
-                      <text
-                        x={g.bubble.cx}
-                        y={g.bubble.cy - g.bubble.r - 3 * px}
-                        fontSize={11 * px}
-                        textAnchor="middle"
-                        fill="var(--grid)"
-                        fontWeight={700}
-                      >
-                        {g.label}
-                      </text>
-                    )}
-                  </g>
-                ))}
-              {penLines.map((r, i) => (
-                <line
-                  key={`pen${i}`}
-                  x1={r[0]}
-                  y1={r[1]}
-                  x2={r[2]}
-                  y2={r[3]}
-                  stroke="#ff7a00"
-                  strokeWidth={3 * px}
-                  opacity={0.7}
-                  pointerEvents="none"
+          <Undo2 {...ICON} />
+          {props.pendingEdits > 0 && (
+            <span className="count">{props.pendingEdits}</span>
+          )}
+        </button>
+      </div>
+      <div className="zoom-card">
+        <button
+          aria-label="zoom out"
+          title="Zoom out"
+          onClick={() => setZoom((z) => Math.max(0.05, z / 1.25))}
+        >
+          <Minus size={16} />
+        </button>
+        <span>{Math.round(zoom * 100)}%</span>
+        <button
+          aria-label="zoom in"
+          title="Zoom in"
+          onClick={() => setZoom((z) => Math.min(8, z * 1.25))}
+        >
+          <Plus size={16} />
+        </button>
+      </div>
+      <div
+        className="viewport"
+        ref={viewport}
+        onWheel={onWheel}
+        onContextMenu={(e) => e.preventDefault()}
+      >
+        {pdf ? (
+          <PageView
+            pdf={pdf}
+            pageIndex={page.page_index}
+            widthPt={w}
+            heightPt={h}
+            zoom={zoom}
+            dimPlan={!layers.plan}
+            onPointerDown={down}
+            onPointerMove={move}
+            onPointerUp={up}
+            cursor={tool === "select" ? "default" : "crosshair"}
+          >
+            {crop && (
+              <rect
+                x={crop.x0}
+                y={crop.y0}
+                width={crop.x1 - crop.x0}
+                height={crop.y1 - crop.y0}
+                fill="none"
+                stroke="var(--crop)"
+                strokeWidth={1.5 * px}
+                strokeDasharray={`${8 * px} ${5 * px}`}
+                pointerEvents="none"
+              />
+            )}
+            {layers.grids &&
+              data?.grid_lines.map((g, i) => (
+                <g key={i} pointerEvents="none">
+                  <line
+                    x1={g.a[0]}
+                    y1={g.a[1]}
+                    x2={g.b[0]}
+                    y2={g.b[1]}
+                    stroke="var(--grid)"
+                    strokeWidth={1 * px}
+                    strokeDasharray={`${10 * px} ${3 * px} ${2 * px} ${3 * px}`}
+                    opacity={0.8}
+                  />
+                  {g.bubble && g.label && (
+                    <text
+                      x={g.bubble.cx}
+                      y={g.bubble.cy - g.bubble.r - 3 * px}
+                      fontSize={11 * px}
+                      textAnchor="middle"
+                      fill="var(--grid)"
+                      fontWeight={700}
+                    >
+                      {g.label}
+                    </text>
+                  )}
+                </g>
+              ))}
+            {penLines.map((r, i) => (
+              <line
+                key={`pen${i}`}
+                x1={r[0]}
+                y1={r[1]}
+                x2={r[2]}
+                y2={r[3]}
+                stroke="var(--pick)"
+                strokeWidth={3 * px}
+                opacity={0.7}
+                pointerEvents="none"
+              />
+            ))}
+            {pieces
+              .filter((p) => visible(p, layers))
+              .map((p) => (
+                <PieceMark
+                  key={p.id}
+                  p={p}
+                  px={px}
+                  on={selected.has(p.id)}
+                  labels={layers.labels}
+                  flags={layers.flags}
                 />
               ))}
-              {pieces
-                .filter((p) => visible(p, layers))
-                .map((p) => (
-                  <PieceMark
-                    key={p.id}
-                    p={p}
-                    px={px}
-                    on={selected.has(p.id)}
-                    labels={layers.labels}
-                  />
-                ))}
-              {single && single.a && tool === "select" && (
-                <g>
-                  {(["a", "b"] as const).map((end) => {
-                    const q =
-                      handle && handle.end === end ? handle.at : single[end];
-                    return q ? (
-                      <circle
-                        key={end}
-                        cx={q[0]}
-                        cy={q[1]}
-                        r={5 * px}
-                        fill="#fff"
-                        stroke="var(--beam)"
-                        strokeWidth={2 * px}
-                        style={{ cursor: "move" }}
-                      />
-                    ) : null;
-                  })}
-                </g>
-              )}
-              {drag && (
-                <rect
-                  x={Math.min(drag.from[0], drag.to[0])}
-                  y={Math.min(drag.from[1], drag.to[1])}
-                  width={Math.abs(drag.to[0] - drag.from[0])}
-                  height={Math.abs(drag.to[1] - drag.from[1])}
-                  fill={
-                    tool === "crop"
-                      ? "rgba(59,91,219,0.08)"
-                      : "rgba(139,61,255,0.08)"
-                  }
-                  stroke={tool === "crop" ? "#3b5bdb" : "var(--beam)"}
-                  strokeWidth={1 * px}
-                  pointerEvents="none"
-                />
-              )}
-              {first && hover && (
-                <line
-                  x1={first[0]}
-                  y1={first[1]}
-                  x2={hover[0]}
-                  y2={hover[1]}
-                  stroke={tool === "beam" ? "var(--beam)" : "#111"}
-                  strokeWidth={2 * px}
-                  strokeDasharray={`${4 * px} ${3 * px}`}
-                  pointerEvents="none"
-                />
-              )}
-              {measure && (
-                <line
-                  x1={measure.a[0]}
-                  y1={measure.a[1]}
-                  x2={measure.b[0]}
-                  y2={measure.b[1]}
-                  stroke="#111"
-                  strokeWidth={1.5 * px}
-                  pointerEvents="none"
-                />
-              )}
-            </PageView>
-          ) : (
-            <div className="empty">Loading drawing…</div>
-          )}
-        </div>
+            {single && single.a && tool === "select" && (
+              <g>
+                {(["a", "b"] as const).map((end) => {
+                  const q =
+                    handle && handle.end === end ? handle.at : single[end];
+                  return q ? (
+                    <circle
+                      key={end}
+                      cx={q[0]}
+                      cy={q[1]}
+                      r={5 * px}
+                      fill="#fff"
+                      stroke="var(--beam)"
+                      strokeWidth={2 * px}
+                      style={{ cursor: "move" }}
+                    />
+                  ) : null;
+                })}
+              </g>
+            )}
+            {drag && (
+              <rect
+                x={Math.min(drag.from[0], drag.to[0])}
+                y={Math.min(drag.from[1], drag.to[1])}
+                width={Math.abs(drag.to[0] - drag.from[0])}
+                height={Math.abs(drag.to[1] - drag.from[1])}
+                fill={
+                  tool === "crop"
+                    ? "rgba(59,91,219,0.08)"
+                    : "rgba(139,61,255,0.08)"
+                }
+                stroke={tool === "crop" ? "#3b5bdb" : "var(--beam)"}
+                strokeWidth={1 * px}
+                pointerEvents="none"
+              />
+            )}
+            {first && hover && (
+              <line
+                x1={first[0]}
+                y1={first[1]}
+                x2={hover[0]}
+                y2={hover[1]}
+                stroke={tool === "beam" ? "var(--beam)" : "#111"}
+                strokeWidth={2 * px}
+                strokeDasharray={`${4 * px} ${3 * px}`}
+                pointerEvents="none"
+              />
+            )}
+            {measure && (
+              <line
+                x1={measure.a[0]}
+                y1={measure.a[1]}
+                x2={measure.b[0]}
+                y2={measure.b[1]}
+                stroke="#111"
+                strokeWidth={1.5 * px}
+                pointerEvents="none"
+              />
+            )}
+          </PageView>
+        ) : (
+          <div className="empty">Loading drawing…</div>
+        )}
       </div>
     </div>
   );
 };
 
-/** One piece on the page: a purple beam line or a blue I column, the size read, a state mark. */
+/** One piece on the page: a thin purple beam line with its size written beside it, or a dark
+ * blue I column with its ID; one small flag at the middle when it needs review or attention. */
 export const PieceMark: React.FC<{
   p: Piece;
   px: number;
   on: boolean;
   labels: boolean;
-}> = ({ p, px, on, labels }) => {
+  flags?: boolean;
+}> = ({ p, px, on, labels, flags = true }) => {
   if (!p.a) return null;
   const tip = [
     `${p.tag ?? ""} ${p.profile ?? "no size"}`.trim(),
@@ -516,26 +549,36 @@ export const PieceMark: React.FC<{
     .filter(Boolean)
     .join("\n");
   const colour = p.ignored
-    ? "#9aa1b2"
+    ? "var(--beam-ignored)"
     : isColumn(p)
       ? "var(--column)"
       : isUndefinedBeam(p)
         ? "var(--beam-undef)"
         : "var(--beam)";
   const mid: Pt2 = p.b ? [(p.a[0] + p.b[0]) / 2, (p.a[1] + p.b[1]) / 2] : p.a;
-  const box = p.evidence?.size?.box;
-  const mark =
-    p.build_state === "attention"
-      ? "var(--red)"
-      : p.build_state === "needs_review"
-        ? "var(--amber)"
-        : null;
-  const t = 7 * px;
+  const flag = flags ? flagOf(p) : null;
+  const t = 6 * px;
+  // the label runs along the beam, upright, a little above it
+  let angle = p.b
+    ? (Math.atan2(p.b[1] - p.a[1], p.b[0] - p.a[0]) * 180) / Math.PI
+    : 0;
+  if (angle > 90) angle -= 180;
+  if (angle <= -90) angle += 180;
+  const label = isColumn(p) ? "" : beamLabel(p);
   return (
-    <g data-testid={`piece-${p.tag ?? p.id}`}>
+    <g data-testid={`piece-${p.tag ?? p.id}`} data-flag={flag ?? undefined}>
       <title>{tip}</title>
       {isColumn(p) ? (
-        <g stroke={colour} strokeWidth={(on ? 3 : 2) * px} fill="none">
+        <g stroke={colour} strokeWidth={(on ? 2.5 : 2) * px} fill="none">
+          {on && (
+            <circle
+              cx={p.a[0]}
+              cy={p.a[1]}
+              r={t * 2}
+              stroke="var(--select)"
+              strokeWidth={3 * px}
+            />
+          )}
           <line
             x1={p.a[0] - t}
             y1={p.a[1] - t}
@@ -549,24 +592,27 @@ export const PieceMark: React.FC<{
             y2={p.a[1] + t}
           />
           <line x1={p.a[0]} y1={p.a[1] - t} x2={p.a[0]} y2={p.a[1] + t} />
-          {on && (
-            <circle
-              cx={p.a[0]}
-              cy={p.a[1]}
-              r={t * 1.8}
-              strokeWidth={1.5 * px}
-            />
-          )}
-          <text
-            x={p.a[0] + t + 3 * px}
-            y={p.a[1] - t}
-            fontSize={10 * px}
-            fill={colour}
+          {/* a wide transparent box makes the column easy to hover */}
+          <rect
+            x={p.a[0] - 2 * t}
+            y={p.a[1] - 2 * t}
+            width={4 * t}
+            height={4 * t}
             stroke="none"
-            fontWeight={700}
-          >
-            {p.tag}
-          </text>
+            fill="transparent"
+          />
+          {labels && p.tag && (
+            <text
+              x={p.a[0] + t + 2 * px}
+              y={p.a[1] - t}
+              fontSize={9 * px}
+              fill={colour}
+              stroke="none"
+              fontWeight={600}
+            >
+              {p.tag}
+            </text>
+          )}
         </g>
       ) : (
         <>
@@ -576,9 +622,10 @@ export const PieceMark: React.FC<{
               y1={p.a[1]}
               x2={p.b![0]}
               y2={p.b![1]}
-              stroke="#ffd43b"
-              strokeWidth={9 * px}
-              opacity={0.6}
+              stroke="var(--select)"
+              strokeWidth={7 * px}
+              strokeOpacity={0.7}
+              strokeLinecap="round"
             />
           )}
           <line
@@ -587,7 +634,8 @@ export const PieceMark: React.FC<{
             x2={p.b![0]}
             y2={p.b![1]}
             stroke={colour}
-            strokeWidth={(on ? 4 : 3) * px}
+            strokeOpacity={on ? 1 : 0.72}
+            strokeWidth={(on ? 2.5 : 2) * px}
             strokeDasharray={
               isUndefinedBeam(p) ? `${6 * px} ${4 * px}` : undefined
             }
@@ -602,27 +650,50 @@ export const PieceMark: React.FC<{
             stroke="transparent"
             strokeWidth={10 * px}
           />
+          {labels && label && (
+            <text
+              transform={`translate(${mid[0]} ${mid[1]}) rotate(${angle})`}
+              y={-3 * px}
+              fontSize={8 * px}
+              textAnchor="middle"
+              fill="var(--beam-label)"
+              pointerEvents="none"
+            >
+              {label}
+            </text>
+          )}
         </>
       )}
-      {labels && p.profile && (
-        <text
-          x={box ? box[0] : mid[0] + 4 * px}
-          y={box ? box[3] + 7 * px : mid[1] + 10 * px}
-          fontSize={7 * px}
-          fill={colour}
-          pointerEvents="none"
-        >
-          {p.profile}
-        </text>
-      )}
-      {mark && (
-        <path
-          d={`M ${mid[0]} ${mid[1] - 9 * px} L ${mid[0] + 7 * px} ${mid[1] + 4 * px} L ${mid[0] - 7 * px} ${mid[1] + 4 * px} Z`}
-          fill={mark}
-          stroke="#fff"
-          strokeWidth={1 * px}
-        />
-      )}
+      {flag && <FlagMark at={mid} px={px} colour={flag} />}
+    </g>
+  );
+};
+
+/** A small flag standing on a point: a pole and a pennant, red or amber. */
+const FlagMark: React.FC<{
+  at: Pt2;
+  px: number;
+  colour: "red" | "amber";
+}> = ({ at, px, colour }) => {
+  const [x, y] = at;
+  const h = 11 * px;
+  const w = 7 * px;
+  return (
+    <g pointerEvents="none" data-testid="flag">
+      <line
+        x1={x}
+        y1={y}
+        x2={x}
+        y2={y - h}
+        stroke="#3a3a3a"
+        strokeWidth={1.2 * px}
+      />
+      <path
+        d={`M ${x} ${y - h} L ${x + w} ${y - h + w / 2.2} L ${x} ${y - h + w * 0.9} Z`}
+        fill={colour === "red" ? "var(--red)" : "var(--amber)"}
+        stroke="#fff"
+        strokeWidth={0.6 * px}
+      />
     </g>
   );
 };
@@ -647,12 +718,14 @@ const LayerFilter: React.FC<{
     text.trim() === "" || isNaN(Number(text)) ? null : Number(text) * 304.8;
   return (
     <div className="layers" data-testid="layers">
+      <span className="label">Layers</span>
       {box("plan", "Plan")}
       {box("grids", "Grids")}
       {box("beams", "Beams")}
       {box("undefinedBeams", "Undefined Beams")}
       {box("columns", "Columns")}
       {box("labels", "Labels")}
+      {box("flags", "Show flags")}
       {box("isolateUndefined", "Only undefined beams")}
       <div className="row">
         <span className="muted">Length ft</span>

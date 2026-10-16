@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { ChevronDown, ChevronRight, Lock, Trash2 } from "lucide-react";
 import { formatFtIn } from "../lib/ftin";
 import {
   common,
@@ -27,6 +28,32 @@ export interface PieceEdit {
 const show = (v: unknown): string =>
   v === null || v === undefined ? "" : String(v);
 
+/** A section of the panel that opens and closes on its title. */
+const Section: React.FC<{
+  title: string;
+  extra?: React.ReactNode;
+  testId?: string;
+  children: React.ReactNode;
+}> = ({ title, extra, testId, children }) => {
+  const [open, setOpen] = useState(true);
+  return (
+    <div className="section" data-testid={testId}>
+      <div className="row" style={{ paddingRight: 12 }}>
+        <button
+          className="sec-head"
+          aria-expanded={open}
+          onClick={() => setOpen(!open)}
+        >
+          {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+          {title}
+        </button>
+        {extra}
+      </div>
+      {open && <div className="sec-body">{children}</div>}
+    </div>
+  );
+};
+
 /** Properties: Summary (project or sheet), Member (one or several pieces), Crop. */
 export const PropertiesPanel: React.FC<{
   bomRows: BomRow[];
@@ -50,42 +77,43 @@ export const PropertiesPanel: React.FC<{
   const [scope, setScope] = useState<"project" | "sheet">("sheet");
   const s = summary(bomRows, scope === "sheet" ? sheetId : undefined);
   return (
-    <div className="props">
-      <div className="section">
-        <div className="row">
-          <h4>Summary</h4>
-          <span className="grow" />
-          <div className="switch" style={{ border: "none" }}>
-            <button
-              className={scope === "project" ? "on" : ""}
-              onClick={() => setScope("project")}
-            >
-              Project
-            </button>
-            <button
-              className={scope === "sheet" ? "on" : ""}
-              onClick={() => setScope("sheet")}
-            >
-              Sheet
-            </button>
-          </div>
-        </div>
-        <div className="stats" data-testid="summary">
-          <div>
-            <b>{s.columns}</b>Column
-          </div>
-          <div>
-            <b>{s.beams}</b>Beam
-          </div>
-          <div>
-            <b>{s.braces}</b>Brace
-          </div>
-          <div title="US short tons (2000 lb), found and needs review">
-            <b>{s.tons.toFixed(2)}</b>tons
-          </div>
-        </div>
-      </div>
+    <div className="props dark">
+      <div className="panel-head">Properties</div>
       <div className="scroll">
+        <Section
+          title="Summary"
+          extra={
+            <div className="seg" style={{ margin: 0, flex: "none" }}>
+              <button
+                className={scope === "project" ? "on" : ""}
+                onClick={() => setScope("project")}
+              >
+                Project
+              </button>
+              <button
+                className={scope === "sheet" ? "on" : ""}
+                onClick={() => setScope("sheet")}
+              >
+                Sheet
+              </button>
+            </div>
+          }
+        >
+          <div className="stats" data-testid="summary">
+            <div title="Pieces drawn, every state">
+              <b>{s.columns}</b>Column
+            </div>
+            <div title="Pieces drawn, every state">
+              <b>{s.beams}</b>Beam
+            </div>
+            <div title="Pieces drawn, every state">
+              <b>{s.braces}</b>Brace
+            </div>
+            <div title="US short tons (2000 lb) of found and needs review pieces">
+              <b>{s.tons.toFixed(2)}</b>tons
+            </div>
+          </div>
+        </Section>
         {selected.length > 0 ? (
           <MemberSection
             selected={selected}
@@ -94,17 +122,14 @@ export const PropertiesPanel: React.FC<{
             onDelete={onDelete}
           />
         ) : (
-          <div className="section">
-            <h4>Member</h4>
+          <Section title="Member">
             <span className="muted">Click a member</span>
-          </div>
+          </Section>
         )}
-        <div className="section">
-          <div className="row">
-            <h4>Crop</h4>
-            <span className="grow" />
-            <button onClick={onCropTool}>Redraw</button>
-          </div>
+        <Section
+          title="Crop"
+          extra={<button onClick={onCropTool}>Redraw</button>}
+        >
           {crop ? (
             <div className="kv">
               <span>Left, top</span>
@@ -119,7 +144,7 @@ export const PropertiesPanel: React.FC<{
           ) : (
             <span className="muted">No crop</span>
           )}
-        </div>
+        </Section>
       </div>
     </div>
   );
@@ -158,14 +183,15 @@ const MemberSection: React.FC<{
   );
 
   return (
-    <div className="section" data-testid="member">
-      <div className="row">
-        <h4>Member</h4>
-        <span className="grow" />
-        {selected.length > 1 && (
+    <Section
+      title="Member"
+      testId="member"
+      extra={
+        selected.length > 1 && (
           <span className="muted">{selected.length} selected</span>
-        )}
-      </div>
+        )
+      }
+    >
       <div className="kv">
         <span>Piecemark</span>
         <span>{show(tag) || "—"}</span>
@@ -223,12 +249,12 @@ const MemberSection: React.FC<{
           }
         />
         <span>Left end elev.</span>
-        <span title="Top of Steel of the page (locked)">
-          🔒 {show(elev) || "—"}
+        <span title="Top of Steel of the page (locked)" className="row">
+          <Lock size={12} /> {show(elev) || "—"}
         </span>
         <span>Right end elev.</span>
-        <span title="Top of Steel of the page (locked)">
-          🔒 {show(elev) || "—"}
+        <span title="Top of Steel of the page (locked)" className="row">
+          <Lock size={12} /> {show(elev) || "—"}
         </span>
         <span>Ignore</span>
         <span>
@@ -243,12 +269,13 @@ const MemberSection: React.FC<{
           />
         </span>
       </div>
-      <div className="row">
-        <span className="grow" />
-        <button className="danger" onClick={onDelete}>
-          Delete
-        </button>
-      </div>
-    </div>
+      <button
+        className="danger row"
+        style={{ justifyContent: "center", gap: 6 }}
+        onClick={onDelete}
+      >
+        <Trash2 size={15} /> Delete
+      </button>
+    </Section>
   );
 };

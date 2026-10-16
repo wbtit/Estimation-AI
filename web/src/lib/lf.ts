@@ -19,6 +19,7 @@ export interface Project {
   number: string | null;
   status: string;
   stage: "Estimating" | "Submitted" | "Won" | "Lost";
+  archived: boolean;
   created_at: string;
   thumbnail_url?: string | null;
   document: {
@@ -198,6 +199,8 @@ export interface Layers {
   undefinedBeams: boolean;
   columns: boolean;
   labels: boolean;
+  /** One flag per "needs review" (amber) or "attention" (red) member, at its middle. */
+  flags: boolean;
   /** Only undefined beams (isolate). */
   isolateUndefined: boolean;
   /** Length filter in mm (beams); null = no bound. */
@@ -212,6 +215,7 @@ export const ALL_LAYERS: Layers = {
   undefinedBeams: true,
   columns: true,
   labels: true,
+  flags: true,
   isolateUndefined: false,
   minMm: null,
   maxMm: null,
@@ -293,6 +297,22 @@ export function linesOfClass(
   return k < 0 ? [] : lines.lines.filter((r) => r[4] === k);
 }
 
+/** The flag colour of a piece: red for "attention", amber for "needs review", none when found. */
+export function flagOf(p: Piece): "red" | "amber" | null {
+  if (p.ignored) return null;
+  if (p.build_state === "attention") return "red";
+  if (p.build_state === "needs_review") return "amber";
+  return null;
+}
+
+/** The size written beside a beam, Steel Genie style: "w18x35 <10>" (studs in angle brackets). */
+export function beamLabel(p: Piece): string {
+  if (!p.profile) return "";
+  return p.studs
+    ? `${p.profile.toLowerCase()} <${p.studs}>`
+    : p.profile.toLowerCase();
+}
+
 // ---- properties -----------------------------------------------------------------------------------
 export const MIXED = "Mixed";
 
@@ -315,7 +335,8 @@ export interface Summary {
   tons: number;
 }
 
-/** Counts and weight of BOM rows in the main total (optionally of one sheet), in US short tons. */
+/** Counts of every BOM row (optionally of one sheet), "attention" included: the pieces drawn on
+ * the page. The weight is the main total only (found and needs review), in US short tons. */
 export function summary(
   rows: readonly BomRow[],
   sheetId?: string | null,
@@ -323,16 +344,28 @@ export function summary(
   const out: Summary = { columns: 0, beams: 0, braces: 0, tons: 0 };
   let lb = 0;
   for (const r of rows) {
-    if (!r.in_main_total) continue;
     if (sheetId !== undefined && r.sheet_id !== sheetId) continue;
     const cat = (r.category ?? "").toLowerCase();
     if (cat === "column") out.columns += r.qty;
     else if (cat.includes("brace")) out.braces += r.qty;
     else out.beams += r.qty;
-    lb += r.weight_lb ?? 0;
+    if (r.in_main_total) lb += r.weight_lb ?? 0;
   }
   out.tons = Math.round((lb / LB_PER_SHORT_TON) * 100) / 100;
   return out;
+}
+
+// ---- BOM ----------------------------------------------------------------------------------------
+const byText = (a: string | null, b: string | null) =>
+  (a ?? "").localeCompare(b ?? "", undefined, { numeric: true });
+
+/** The BOM order: Category, then Section, then Piecemark (B2 before B10). */
+export function bomOrder(a: BomRow, b: BomRow): number {
+  return (
+    byText(a.category, b.category) ||
+    byText(a.section, b.section) ||
+    byText(a.piecemark, b.piecemark)
+  );
 }
 
 // ---- misc -----------------------------------------------------------------------------------------

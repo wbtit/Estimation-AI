@@ -273,3 +273,49 @@ page:
   dropdown, typing T.O.S., ▶ rebuild); how to fix members (click, Section Size, delete, Ignore, draw
   a missing beam or column, multi-select); "Save page"; check against the drawing, do not just
   accept what is shown.
+
+## 11. System version breakdown (job-018 copy, frozen snapshot; counts only, no fix)
+Read from `build_snapshots` of the one auto run (880 pieces), the run's `beam_lines`, `support_nodes`,
+`sheet_lines` and `text_items`. Page numbers are as shown on the cards (page index + 1). Pages 7, 8,
+9 and 14 are outside the 16 pre-registered pages. The rules are frozen; nothing below was changed.
+
+**208'-0" (3 pieces, pages 5, 6 and 7, one each).** Each is one vertical beam line of the page's beam
+pen class made of 39 drawn segments (about 15 pt each) with 38 gaps of 9 pt: a dashed line drawn
+as separate solid strokes. The 24 pt gap bridge joins the dashes into one 936 pt run, clipped by
+the crop at its lower end. No support node falls on it, so it is never split: an unsplit run, size
+undefined and no support ("attention"). Not a border line and not a column stroke.
+
+**1'-4" (74 pieces, the most common BOM length; 16" real on every page, drawn at 11.8, 24 or 36 pt
+depending on the scale):**
+
+| Page | Pieces | What they are |
+|---|---|---|
+| 16 | 26 | stubs cut out of longer beam lines (2-4% of the line) between two close beam-beam crossings (all 52 ends are `beam_intersection` nodes); support both; 15 are "needs review" (in the total), 11 "attention" (no size) |
+| 18 | 24 + 4 | 24 are column strokes: pairs of parallel 16" lines 8" apart with a web line between them (a column drawn to scale, not taken by the column glyph rule); 4 single strokes; no support |
+| 21 | 12 + 4 | 12 column strokes (same pairs with a web); 3 single strokes; 1 stub of a longer line (one end supported) |
+| 11 | 4 | single short vertical strokes, no pair, no support |
+
+So: column glyph strokes 36, short splits between close crossings 26, other isolated strokes 12.
+None is a border line.
+
+**Beams along the page frame or the title-block border.** Page 21: two. One runs along the top
+page frame (horizontal, 1559 pt inside the crop, on a 2880 pt frame line, 57'-9") and one along the
+title-block border (vertical, 2002 pt, on a 2088 pt line, 74'-2"). Both are of the page's pen class,
+are "attention" (no size, no support), and are there because the proposed crop reaches the frame:
+the crop's top edge is 7 pt from the page top and its right edge is on the border line. Page 5: no
+beam lies on the frame or on a line longer than 400 pt other than the 208'-0" dashed run above
+(192 pt inside the crop's right edge). The page 5 screenshot shows which line was meant.
+
+**Attention by reason (757):**
+
+| Kind | No size only | Unsupported only | Both |
+|---|---|---|---|
+| Beams | 145 | 1 | 386 |
+| Column | 225 | 0 | 0 |
+
+Needs review (99, all beams): size from a nearby label 57, one end not supported 12, both 30.
+
+**Column schedule in the set: no.** No page is guessed as a schedule (guesses: 7 foundation plans,
+6 framing plans, 6 details, 4 other); no text item matches "column schedule" (2 items on 1 page
+have the word "schedule" alone); 0 legend rows. All 14,760 text items of the set were read. The 225
+columns have no size because neither the page nor a schedule gives one.

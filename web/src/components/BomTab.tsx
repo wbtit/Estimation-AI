@@ -1,11 +1,18 @@
 import React, { useMemo, useState } from "react";
 import { formatFtIn } from "../lib/ftin";
-import type { Bom } from "../lib/lf";
+import { bomOrder, type Bom } from "../lib/lf";
 
 const lb = (v: number | null) =>
   v === null ? "—" : Math.round(v).toLocaleString();
 
-/** BOM: Main, Category, Piecemark, Qty, Section Type, Section, Length, Grade, Weight (lb). */
+const STATUS_TEXT: Record<string, string> = {
+  found: "Found",
+  needs_review: "Needs review",
+  attention: "Attention: not in the total (no size or no support)",
+};
+
+/** BOM: Status, Main, Category, Piecemark, Qty, Section Type, Section, Length, Grade, Weight (lb);
+ * sorted by Category, then Section, then Piecemark. */
 export const BomTab: React.FC<{ bom: Bom | null; projectId: string }> = ({
   bom,
   projectId,
@@ -14,11 +21,13 @@ export const BomTab: React.FC<{ bom: Bom | null; projectId: string }> = ({
   const [section, setSection] = useState("");
   const rows = useMemo(
     () =>
-      (bom?.rows ?? []).filter(
-        (r) =>
-          (category === "" || r.category === category) &&
-          (section === "" || r.section === section),
-      ),
+      (bom?.rows ?? [])
+        .filter(
+          (r) =>
+            (category === "" || r.category === category) &&
+            (section === "" || r.section === section),
+        )
+        .sort(bomOrder),
     [bom, category, section],
   );
   const cats = [
@@ -72,6 +81,9 @@ export const BomTab: React.FC<{ bom: Bom | null; projectId: string }> = ({
       <table className="grid" data-testid="bom">
         <thead>
           <tr>
+            <th title="Found / needs review / attention" style={{ width: 1 }}>
+              Status
+            </th>
             <th>Main</th>
             <th>Category</th>
             <th>Piecemark</th>
@@ -85,13 +97,13 @@ export const BomTab: React.FC<{ bom: Bom | null; projectId: string }> = ({
         </thead>
         <tbody>
           {rows.map((r) => (
-            <tr
-              key={r.member}
-              className={r.in_main_total ? "" : "att"}
-              title={
-                r.in_main_total ? "" : "Not in the total: no size or no support"
-              }
-            >
+            <tr key={r.member}>
+              <td title={STATUS_TEXT[r.build_state ?? ""] ?? "—"}>
+                <span
+                  className={`dot ${r.build_state ?? "none"}`}
+                  data-testid="status-dot"
+                />
+              </td>
               <td>{r.main}</td>
               <td>{r.category ?? "—"}</td>
               <td>{r.piecemark ?? "—"}</td>
@@ -104,7 +116,7 @@ export const BomTab: React.FC<{ bom: Bom | null; projectId: string }> = ({
             </tr>
           ))}
           <tr className="total">
-            <td colSpan={3}>Total</td>
+            <td colSpan={4}>Total</td>
             <td className="num">{total.qty}</td>
             <td colSpan={4} />
             <td className="num">{lb(total.lb)}</td>

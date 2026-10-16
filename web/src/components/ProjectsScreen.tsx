@@ -1,14 +1,17 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { Plus, Search } from "lucide-react";
 import { api, ApiError, send } from "../lib/api";
 import { nameFromFile, STAGES, type Project } from "../lib/lf";
 
-/** The projects screen: search, a card per project, "Add new project". */
+/** The projects screen: search, a card per project, "Add new project"; archived projects (old test
+ * projects) only with "Show archived". */
 export const ProjectsScreen: React.FC<{ onOpen: (id: string) => void }> = ({
   onOpen,
 }) => {
   const [projects, setProjects] = useState<Project[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [q, setQ] = useState("");
+  const [showArchived, setShowArchived] = useState(false);
   const [creating, setCreating] = useState(false);
   const [processing, setProcessing] = useState<string | null>(null);
 
@@ -26,28 +29,49 @@ export const ProjectsScreen: React.FC<{ onOpen: (id: string) => void }> = ({
     const t = q.trim().toLowerCase();
     return (projects ?? []).filter(
       (p) =>
-        t === "" ||
-        p.name.toLowerCase().includes(t) ||
-        (p.number ?? "").toLowerCase().includes(t),
+        (showArchived || !p.archived) &&
+        (t === "" ||
+          p.name.toLowerCase().includes(t) ||
+          (p.number ?? "").toLowerCase().includes(t)),
     );
-  }, [projects, q]);
+  }, [projects, q, showArchived]);
+  const archived = (projects ?? []).filter((p) => p.archived).length;
 
   return (
     <div>
-      <div className="topbar">
-        <span className="brand">Estimation</span>
+      <div className="topbar dark">
+        <div className="side">
+          <span className="brand">Estimation</span>
+        </div>
       </div>
       <div className="projects">
         <div className="head">
           <h2>Projects</h2>
           <span className="grow" />
-          <input
-            aria-label="search projects"
-            placeholder="Search"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            style={{ width: 240 }}
-          />
+          {archived > 0 && (
+            <label>
+              <input
+                type="checkbox"
+                aria-label="show archived"
+                checked={showArchived}
+                onChange={(e) => setShowArchived(e.target.checked)}
+              />
+              Show archived ({archived})
+            </label>
+          )}
+          <span className="row" style={{ position: "relative" }}>
+            <Search
+              size={15}
+              style={{ position: "absolute", left: 9, color: "var(--muted)" }}
+            />
+            <input
+              aria-label="search projects"
+              placeholder="Search"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              style={{ width: 240, paddingLeft: 30 }}
+            />
+          </span>
         </div>
         {error && <div className="muted">{error}</div>}
         <div className="cards">
@@ -58,7 +82,9 @@ export const ProjectsScreen: React.FC<{ onOpen: (id: string) => void }> = ({
             onClick={() => setCreating(true)}
             onKeyDown={(e) => e.key === "Enter" && setCreating(true)}
           >
-            + Add new project
+            <span className="row" style={{ gap: 6 }}>
+              <Plus size={18} /> Add new project
+            </span>
           </div>
           {shown.map((p) => (
             <ProjectCard
@@ -102,7 +128,7 @@ const ProjectCard: React.FC<{ p: Project; onOpen: () => void }> = ({
   onOpen,
 }) => (
   <div
-    className="card"
+    className={`card${p.archived ? " archived" : ""}`}
     role="button"
     tabIndex={0}
     onClick={onOpen}
@@ -121,9 +147,12 @@ const ProjectCard: React.FC<{ p: Project; onOpen: () => void }> = ({
           {new Date(p.created_at).toLocaleDateString()}
         </span>
         <span className="grow" />
+        {p.archived && <span className="badge Archived">Archived</span>}
         <span className={`badge ${p.stage}`}>{p.stage}</span>
       </div>
-      <div style={{ fontWeight: 600 }}>{p.name}</div>
+      <div className="name" title={p.name}>
+        {p.name}
+      </div>
       {p.number && <div className="muted">#{p.number}</div>}
     </div>
   </div>
