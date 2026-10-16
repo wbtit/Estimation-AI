@@ -17,6 +17,7 @@ export function projectView(
     number: project.number,
     status: project.status,
     stage: project.stage,
+    archived: project.archived,
     design_standard: project.design_standard,
     unit_system: project.unit_system,
     location: project.location,

@@ -10,7 +10,7 @@ from build_factory import XS, YS, column, framing_plan, grids, line
 from db_fixtures import DbProject
 
 from src.build.auto import auto_build, person_actions
-from src.build.job import setup_reasons, take_tag_numbers
+from src.build.job import build_sheet, setup_reasons, take_tag_numbers
 from src.build.propose import (
     choose_column_plan,
     propose_crop,
@@ -98,6 +98,10 @@ def test_setup_reasons_with_system_values_need_values_not_confirmations() -> Non
         "no crop",
         "no scale",
     ]
+    # "No beams": a person set the pen to none
+    none = {**sheet, "pen_class_source": "person", "pen_class_confirmed_by": "tester"}
+    assert setup_reasons(none, allow_system=True) == []
+    assert "beam pen class not confirmed" not in setup_reasons(none)
 
 
 # ---- auto mode on the database -------------------------------------------------------------------
@@ -252,6 +256,38 @@ def test_a_page_without_scale_or_pen_class_gets_a_reason_and_no_build(dbp: DbPro
         (framing_id,),
     ).fetchone()
     assert beam["start_elevation_mm"] is None and beam["start_x_mm"] is not None
+
+
+def test_no_beams_rebuild_removes_untouched_beams_and_keeps_edited_ones(dbp: DbProject) -> None:
+    _, framing_id, _ = _project(dbp)
+    auto_build(dbp.conn, dbp.config, dbp.project_id)
+    beams = dbp.conn.execute(
+        "SELECT id FROM members WHERE sheet_id = %s AND kind = 'Beams' ORDER BY member_id",
+        (framing_id,),
+    ).fetchall()
+    assert len(beams) >= 2
+    kept = str(beams[0]["id"])
+    dbp.conn.execute("UPDATE members SET review_status = 'approved' WHERE id = %s", (kept,))
+    dbp.conn.execute(
+        "UPDATE sheets SET pen_class = NULL, pen_class_source = 'person',"
+        " pen_class_confirmed_by = 'tester' WHERE id = %s",
+        (framing_id,),
+    )
+    run_id = dbp.conn.execute(
+        "INSERT INTO build_runs (project_id, sheet_id, requested_by, mode, inputs)"
+        " VALUES (%s, %s, 'tester', 'person', '{\"allow_system_values\": true}') RETURNING id",
+        (dbp.project_id, framing_id),
+    ).fetchone()["id"]
+    dbp.conn.commit()
+    out = build_sheet(dbp.conn, dbp.config, str(run_id))
+    assert out["pieces"] == 0 and out["beam_lines"] == 0
+    left = [
+        str(r["id"])
+        for r in dbp.conn.execute(
+            "SELECT id FROM members WHERE sheet_id = %s AND kind = 'Beams'", (framing_id,)
+        )
+    ]
+    assert left == [kept]
 
 
 def test_one_tag_counter_per_project_never_reuses_a_number(dbp: DbProject) -> None:

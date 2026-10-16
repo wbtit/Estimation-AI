@@ -55,6 +55,15 @@ def run_build_sheet(conn: psycopg.Connection, job: Job, config: WorkerConfig) ->
     return build_sheet(conn, config, str(job.payload.get("build_run_id", "")))
 
 
+def no_beams(sheet: dict[str, Any]) -> bool:
+    """A person set the beam pen to none ("No beams"): no pen class, source person, confirmed."""
+    return (
+        not sheet.get("pen_class")
+        and sheet.get("pen_class_source") == "person"
+        and bool(sheet.get("pen_class_confirmed_by"))
+    )
+
+
 def setup_reasons(sheet: dict[str, Any], allow_system: bool = False) -> list[str]:
     """Why the page cannot be built yet (empty when it can). Same rules as the API. With
     `allow_system` a value only has to be there (auto mode and the review UI's build)."""
@@ -67,7 +76,7 @@ def setup_reasons(sheet: dict[str, Any], allow_system: bool = False) -> list[str
             out.append("no crop")
         if sheet.get("build_scale_ratio") is None:
             out.append("no scale")
-        if role == "framing" and not sheet.get("pen_class"):
+        if role == "framing" and not sheet.get("pen_class") and not no_beams(sheet):
             out.append("no beam pen class")
         return out
     if sheet.get("crop_region") is None or not sheet.get("crop_confirmed_by"):
@@ -77,7 +86,9 @@ def setup_reasons(sheet: dict[str, Any], allow_system: bool = False) -> list[str
     if role == "framing":
         if not sheet.get("tos_confirmed_by"):
             out.append("T.O.S. not confirmed")
-        if not sheet.get("pen_class") or not sheet.get("pen_class_confirmed_by"):
+        if (not sheet.get("pen_class") and not no_beams(sheet)) or not sheet.get(
+            "pen_class_confirmed_by"
+        ):
             out.append("beam pen class not confirmed")
     return out
 

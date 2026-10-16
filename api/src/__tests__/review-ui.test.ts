@@ -15,7 +15,7 @@ import {
   systemReport,
   type SetupValues,
 } from '../review/system-report.js';
-import { ftIn, nearestClass } from '../routes/build.js';
+import { ftIn, nearestClass, setupReasons } from '../routes/build.js';
 import {
   deleteEdition,
   deleteProject,
@@ -554,6 +554,32 @@ describe('review UI routes (test database)', () => {
     expect(log.map((l) => l.action)).toContain('pick_pen');
   });
 
+  it('"No beams" sets the beam pen to none as a person; such a page can still build', async () => {
+    const res = await post(`/sheets/${planId}/build-setup/no-beams`, { who: WHO });
+    expect(res.statusCode).toBe(200);
+    const s = await db
+      .selectFrom('sheets')
+      .selectAll()
+      .where('id', '=', planId)
+      .executeTakeFirstOrThrow();
+    expect([s.pen_class, s.pen_class_source, s.pen_class_confirmed_by]).toEqual([
+      null,
+      'person',
+      WHO,
+    ]);
+    const framing = { ...s, build_role: 'framing', crop_region: {}, build_scale_ratio: '96' };
+    expect(setupReasons(framing as never, true)).toEqual([]);
+    expect(setupReasons({ ...framing, pen_class_source: 'suggested' } as never, true)).toEqual([
+      'no beam pen class',
+    ]);
+    const edits = await db
+      .selectFrom('sheet_edits')
+      .select(['field_name', 'corrected_value'])
+      .where('sheet_id', '=', planId)
+      .execute();
+    expect(edits).toEqual([{ field_name: 'pen_class', corrected_value: null }]);
+  });
+
   it('builds with system values from the review UI (mode person), logged as a rebuild', async () => {
     const strict = await post(`/sheets/${framingId}/build`, { who: WHO });
     expect(strict.statusCode).toBe(409);
@@ -730,8 +756,20 @@ describe('review UI routes (test database)', () => {
       payload: { stage: 'Maybe' },
     });
     expect(bad.statusCode).toBe(400);
+    expect(patched.json().archived).toBe(false);
+    const archived = await app.inject({
+      method: 'PATCH',
+      url: `/api/projects/${id}`,
+      payload: { archived: true },
+    });
+    expect(archived.json()).toMatchObject({ stage: 'Won', archived: true });
+    const empty = await app.inject({ method: 'PATCH', url: `/api/projects/${id}`, payload: {} });
+    expect(empty.statusCode).toBe(400);
     const list = (await app.inject({ method: 'GET', url: '/api/projects' })).json().projects;
-    expect(list.find((p: { id: string }) => p.id === id)).toHaveProperty('thumbnail_url', null);
+    expect(list.find((p: { id: string }) => p.id === id)).toMatchObject({
+      thumbnail_url: null,
+      archived: true,
+    });
     const auto = await app.inject({
       method: 'POST',
       url: `/api/projects/${id}/auto-build`,

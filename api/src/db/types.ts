@@ -25,6 +25,7 @@ export interface ProjectsTable {
   label_radius_pt: Generated<Numeric>;
   // Phase 11b (migration 017)
   stage: Generated<ProjectStage>;
+  archived: Generated<boolean>;
   created_at: Timestamp;
   updated_at: Timestamp;
 }

@@ -4,6 +4,7 @@
 //   POST /api/projects/:projectId/sheets/:sheetId/build-setup/scale        { scale_text | ratio, who }
 //   POST /api/projects/:projectId/sheets/:sheetId/build-setup/tos          { tos_mm, raw?, source, who }
 //   POST /api/projects/:projectId/sheets/:sheetId/build-setup/pen-class    { pen_class, source, who }
+//   POST /api/projects/:projectId/sheets/:sheetId/build-setup/no-beams     { who } beam pen = none
 //   POST /api/projects/:projectId/sheets/:sheetId/build-setup/pick-pen     { x, y, who }  click a line
 //   POST /api/projects/:projectId/sheets/:sheetId/build-setup/column-plan  { sheet_id | null, who }
 //   GET  /api/projects/:projectId/sheets/:sheetId/build                    page build state
@@ -56,6 +57,13 @@ export const PEN_CLASS_RE =
 
 type Sheet = Selectable<SheetsTable>;
 
+/** "No beams": a person set the beam pen to none (no pen class, source person, confirmed). */
+export function noBeams(
+  s: Pick<Sheet, 'pen_class' | 'pen_class_source' | 'pen_class_confirmed_by'>,
+): boolean {
+  return !s.pen_class && s.pen_class_source === 'person' && !!s.pen_class_confirmed_by;
+}
+
 /** Why the page cannot be built yet; empty when it can. Same rules as the worker. With
  * `allowSystem` a value only has to be there (auto mode and the review UI's build). */
 export function setupReasons(s: Sheet, allowSystem = false): string[] {
@@ -65,14 +73,15 @@ export function setupReasons(s: Sheet, allowSystem = false): string[] {
   if (allowSystem) {
     if (s.crop_region === null) out.push('no crop');
     if (s.build_scale_ratio === null) out.push('no scale');
-    if (s.build_role === 'framing' && !s.pen_class) out.push('no beam pen class');
+    if (s.build_role === 'framing' && !s.pen_class && !noBeams(s)) out.push('no beam pen class');
     return out;
   }
   if (s.crop_region === null || !s.crop_confirmed_by) out.push('crop not confirmed');
   if (s.build_scale_ratio === null || !s.scale_confirmed_by) out.push('scale not confirmed');
   if (s.build_role === 'framing') {
     if (!s.tos_confirmed_by) out.push('T.O.S. not confirmed');
-    if (!s.pen_class || !s.pen_class_confirmed_by) out.push('beam pen class not confirmed');
+    if ((!s.pen_class && !noBeams(s)) || !s.pen_class_confirmed_by)
+      out.push('beam pen class not confirmed');
   }
   return out;
 }
@@ -427,6 +436,41 @@ export const buildRoutes: FastifyPluginAsync<BuildRouteOptions> = async (app, op
         'pick_pen',
       );
       return { ok: true, pen_class: hit.pen_class, distance_pt: hit.distance_pt };
+    },
+  );
+
+  // "No beams" (a column plan or a page with no beams to take off): the next build makes no beam
+  // pieces, so untouched beams of the page go; edited ones stay, as with any rebuild.
+  app.post<{ Params: { projectId: string; sheetId: string }; Body: { who: string } }>(
+    '/api/projects/:projectId/sheets/:sheetId/build-setup/no-beams',
+    {
+      schema: {
+        params: sheetParams,
+        body: {
+          type: 'object',
+          required: ['who'],
+          additionalProperties: false,
+          properties: { who },
+        },
+      },
+    },
+    async (request) => {
+      const s = await loadSheet(request.params.projectId, request.params.sheetId);
+      const editor = who_(request.body.who);
+      await confirm(
+        s,
+        'pen_class',
+        s.pen_class,
+        null,
+        {
+          pen_class: null,
+          pen_class_source: 'person',
+          pen_class_confirmed_by: editor,
+          pen_class_confirmed_at: new Date(),
+        },
+        editor,
+      );
+      return { ok: true, pen_class: null };
     },
   );
 

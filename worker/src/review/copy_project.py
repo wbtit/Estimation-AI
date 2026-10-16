@@ -182,6 +182,7 @@ def copy_project(
                 "id": dst,
                 "name": sql.Placeholder("name"),
                 "count_mode": sql.SQL("false"),
+                "archived": sql.SQL("false"),  # a new copy is for use, even of an archived project
                 "created_at": now,
                 "updated_at": now,
             },

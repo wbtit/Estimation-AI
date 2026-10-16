@@ -99,6 +99,8 @@ def test_preview_writes_nothing(dbp: DbProject):
 
 def test_copy_is_clean_and_the_source_is_unchanged(dbp: DbProject):
     ids = build(dbp)
+    dbp.conn.execute("UPDATE projects SET archived = true WHERE id = %s", (dbp.project_id,))
+    dbp.conn.commit()
     before = source_counts(dbp.conn, dbp.project_id)
     h_before = content_hash(dbp.conn, dbp.project_id)
     r = copy_project(dbp.conn, dbp.config, dbp.project_id, "pilot-test-copy", apply=True)
@@ -119,9 +121,9 @@ def test_copy_is_clean_and_the_source_is_unchanged(dbp: DbProject):
         assert got["members"] == 1 and got["members_manual"] == 0
         assert got["member_edits"] == 0 and got["count_actions"] == 0 and got["measurements"] == 0
         p = dbp.conn.execute(
-            "SELECT name, count_mode FROM projects WHERE id = %s", (new,)
+            "SELECT name, count_mode, archived FROM projects WHERE id = %s", (new,)
         ).fetchone()
-        assert p == {"name": "pilot-test-copy", "count_mode": False}
+        assert p == {"name": "pilot-test-copy", "count_mode": False, "archived": False}
         m = dbp.conn.execute(
             "SELECT m.count_state, m.count_source, s.project_id AS sheet_project,"
             " v.sheet_id = m.sheet_id AS view_on_sheet, l.project_id AS legend_project,"

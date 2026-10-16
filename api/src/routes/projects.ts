@@ -2,7 +2,8 @@
 //   POST /api/projects                 create a project (status is set by the server)
 //   GET  /api/projects                 list
 //   GET  /api/projects/:projectId      get, with the uploaded document and scan progress
-//   PATCH /api/projects/:projectId     { stage } the estimator's status (Estimating, Submitted, Won, Lost)
+//   PATCH /api/projects/:projectId     { stage?, archived? } the estimator's status (Estimating,
+//                                      Submitted, Won, Lost); archived hides it from the list
 //   POST /api/projects/:projectId/pdf  upload the project's one PDF (multipart, streamed to disk)
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
@@ -50,9 +51,9 @@ const createBody = {
 
 const patchBody = {
   type: 'object',
-  required: ['stage'],
+  minProperties: 1,
   additionalProperties: false,
-  properties: { stage: { enum: [...PROJECT_STAGES] } },
+  properties: { stage: { enum: [...PROJECT_STAGES] }, archived: { type: 'boolean' } },
 } as const;
 
 interface CreateBody {
@@ -161,14 +162,17 @@ export const projectRoutes: FastifyPluginAsync<ProjectRouteOptions> = async (app
     },
   );
 
-  app.patch<{ Params: { projectId: string }; Body: { stage: ProjectStage } }>(
+  app.patch<{ Params: { projectId: string }; Body: { stage?: ProjectStage; archived?: boolean } }>(
     '/api/projects/:projectId',
     { schema: { params: idParams, body: patchBody } },
     async (request) => {
       await loadProject(request.params.projectId);
       const project = await db()
         .updateTable('projects')
-        .set({ stage: request.body.stage })
+        .set({
+          ...(request.body.stage !== undefined && { stage: request.body.stage }),
+          ...(request.body.archived !== undefined && { archived: request.body.archived }),
+        })
         .where('id', '=', request.params.projectId)
         .returningAll()
         .executeTakeFirstOrThrow();
