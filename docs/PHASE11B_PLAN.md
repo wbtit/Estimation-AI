@@ -55,7 +55,8 @@ and `docs/PHASE11_RESULTS.md` repeats it. Branch `phase-11b-ui` (from `phase-11-
   - **scale**: the stored effective ratio;
   - **column plan** for a framing page:
     - the only column plan page when there is one;
-    - else the one with the most grid lines matched in registration;
+    - else the one with the most grid labels (family and label) in common with the page (as
+      built: a label count, simpler than running registration against each plan);
     - on a tie, none.
 - Every proposed value is stored with source `system`, then `build_sheet` runs in mode `auto`:
   column plan pages first, then framing pages.

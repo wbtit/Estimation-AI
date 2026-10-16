@@ -346,9 +346,9 @@ describe('build routes (test database)', () => {
       'Qty',
       'Section Type',
       'Section',
-      'Length (mm)',
+      'Length',
       'Grade',
-      'Weight (kg)',
+      'Weight (lb)',
     ]);
   });
 });

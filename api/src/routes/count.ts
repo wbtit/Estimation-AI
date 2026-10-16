@@ -27,6 +27,7 @@ import { recordAction } from '../review/actions.js';
 import { logCountAction, pageTimes } from '../review/count-log.js';
 import { loadKinds, typeOfKind } from '../review/kinds.js';
 import { nextTagNumber } from '../review/member-ops.js';
+import { takeTagNumbers } from '../review/tag-counter.js';
 import { tagPool, type TagScope } from '../review/tag-scope.js';
 import {
   applyPrefixChanges,
@@ -355,10 +356,15 @@ export const countRoutes: FastifyPluginAsync<CountRouteOptions> = async (app, op
       // the estimators' own prefix of this kind when the project maps one, else the kind list's prefix
       const prefix =
         prefixForKind(await loadPrefixKinds(db(), projectId), b.kind) ?? kindInfo.prefix;
-      // the next number of this kind: across the job (default) or on this sheet, in click order
-      const number = nextTagNumber(
-        await tagPool(db(), projectId, sheetMembers, cfg.tag_scope),
+      // the next number of this kind: across the job (default) or on this sheet, in click order,
+      // from the project's one tag counter (shared with the line-first build and the review UI)
+      const number = await takeTagNumbers(
+        db(),
+        projectId,
+        b.sheet_id,
         prefix,
+        1,
+        nextTagNumber(await tagPool(db(), projectId, sheetMembers, cfg.tag_scope), prefix) - 1,
       );
       const view = await db()
         .selectFrom('sheet_views')

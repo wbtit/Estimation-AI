@@ -12,6 +12,8 @@
 //                ends sit at the page T.O.S.); null for a column (no elevations) or no geometry.
 //   Grade        the grade a person set for the shape family; null ("not set") otherwise.
 //   Weight       Qty x Length (m) x catalog kg/m; null when length or catalog weight is missing.
+//                Also in lb (weight_lb, kg / 0.45359237) with the catalog lb/ft (unit_w_lb_ft): the
+//                review UI and the Excel export show lb and ft-in (Phase 11b owner decision).
 //
 // Totals follow the existing rule: rows in "attention" (no size, or no support) stay out of the
 // main total and are summed on their own line; "found" and "needs review" rows are in it.
@@ -19,6 +21,8 @@ import type { CatalogLookup } from '../catalog/lookup.js';
 import type { GradeRule } from './grades.js';
 import { familyOf } from './grades.js';
 import type { ShapeFamily } from '../db/types.js';
+
+export const KG_PER_LB = 0.45359237;
 
 export interface BuiltPiece {
   id: string;
@@ -48,6 +52,8 @@ export interface LineFirstBomRow {
   length_mm: number | null;
   grade: string | null;
   weight_kg: number | null;
+  weight_lb: number | null;
+  unit_w_lb_ft: number | null;
   member: string;
   sheet_id: string | null;
   build_state: BuiltPiece['build_state'];
@@ -64,6 +70,7 @@ export interface LineFirstBomTotal {
   pieces_without_weight: number;
   length_mm: number;
   weight_kg: number;
+  weight_lb: number;
 }
 
 export interface LineFirstBom {
@@ -87,6 +94,7 @@ function emptyTotal(): LineFirstBomTotal {
     pieces_without_weight: 0,
     length_mm: 0,
     weight_kg: 0,
+    weight_lb: 0,
   };
 }
 
@@ -96,7 +104,10 @@ function add(t: LineFirstBomTotal, r: LineFirstBomRow): void {
   if (r.length_mm === null) t.pieces_without_length += r.qty;
   else t.length_mm += r.length_mm * r.qty;
   if (r.weight_kg === null) t.pieces_without_weight += r.qty;
-  else t.weight_kg += r.weight_kg;
+  else {
+    t.weight_kg += r.weight_kg;
+    t.weight_lb += r.weight_lb ?? 0;
+  }
 }
 
 export function lineFirstBom(
@@ -123,6 +134,12 @@ export function lineFirstBom(
       length_mm: length === null ? null : Math.round(length * 10) / 10,
       grade: family ? (grades.get(family)?.grade ?? null) : null,
       weight_kg: weight === null ? null : Math.round(weight * 100) / 100,
+      weight_lb: weight === null ? null : Math.round((weight / KG_PER_LB) * 100) / 100,
+      unit_w_lb_ft:
+        shape === null
+          ? null
+          : (shape.weight_lb_per_ft ??
+            Math.round(((shape.weight_kg_per_m * 0.3048) / KG_PER_LB) * 1000) / 1000),
       member: p.member_id,
       sheet_id: p.sheet_id,
       build_state: p.build_state,

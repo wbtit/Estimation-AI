@@ -1,16 +1,21 @@
 // Line-first build (Phase 11): per-page setup, Build, page build state and the BOM.
-//   POST /api/projects/:projectId/sheets/:sheetId/build-setup/role       { role, who }
-//   POST /api/projects/:projectId/sheets/:sheetId/build-setup/crop       { box, who }
-//   POST /api/projects/:projectId/sheets/:sheetId/build-setup/scale      { scale_text | ratio, who }
-//   POST /api/projects/:projectId/sheets/:sheetId/build-setup/tos        { tos_mm, raw?, source, who }
-//   POST /api/projects/:projectId/sheets/:sheetId/build-setup/pen-class  { pen_class, source, who }
-//   GET  /api/projects/:projectId/sheets/:sheetId/build                  page build state
-//   POST /api/projects/:projectId/sheets/:sheetId/build                  { who, column_plan_sheet_id?, no_column_plan? }
-//   GET  /api/projects/:projectId/line-first/bom[.xlsx]                  Steel Genie columns
+//   POST /api/projects/:projectId/sheets/:sheetId/build-setup/role         { role (null = skip), who }
+//   POST /api/projects/:projectId/sheets/:sheetId/build-setup/crop         { box, who }
+//   POST /api/projects/:projectId/sheets/:sheetId/build-setup/scale        { scale_text | ratio, who }
+//   POST /api/projects/:projectId/sheets/:sheetId/build-setup/tos          { tos_mm, raw?, source, who }
+//   POST /api/projects/:projectId/sheets/:sheetId/build-setup/pen-class    { pen_class, source, who }
+//   POST /api/projects/:projectId/sheets/:sheetId/build-setup/pick-pen     { x, y, who }  click a line
+//   POST /api/projects/:projectId/sheets/:sheetId/build-setup/column-plan  { sheet_id | null, who }
+//   GET  /api/projects/:projectId/sheets/:sheetId/build                    page build state
+//   POST /api/projects/:projectId/sheets/:sheetId/build                    { who, column_plan_sheet_id?, no_column_plan?, allow_system_values? }
+//   GET  /api/projects/:projectId/line-first/bom[.xlsx]                    Steel Genie columns
 //
-// Every confirmation stores who and when on the sheet and an append-only sheet_edits row (before and
-// after). Build refuses (409, with the reasons, and a refused build_runs row) until the page is set
-// up: the same rules as the worker's build_sheet job (worker/src/build/job.py, setup_reasons).
+// Every setup change stores who and when on the sheet (the value is then a person's value), marks
+// the page "Requesting Build" (setup_changed_at), writes an append-only sheet_edits row (before and
+// after) and logs a count_actions row. Build refuses (409, with the reasons, and a refused build_runs
+// row) until the page is set up: the same rules as the worker's build_sheet job
+// (worker/src/build/job.py, setup_reasons); with allow_system_values (the review UI's build) a value
+// only has to be there, as in auto mode.
 import type { FastifyPluginAsync } from 'fastify';
 import { sql, type Kysely, type Selectable } from 'kysely';
 import ExcelJS from 'exceljs';
@@ -19,10 +24,14 @@ import { getDb } from '../db/client.js';
 import type { Database, SheetsTable } from '../db/types.js';
 import { XLSX_MIME } from '../excel/index.js';
 import { loadGrades } from '../review/grades.js';
-import { lineFirstBom, type BuiltPiece } from '../review/line-first-bom.js';
+import { lineFirstBom } from '../review/line-first-bom.js';
+import { counted, effectiveState, loadPieces, toBuiltPiece } from '../review/line-first-pieces.js';
+import { logCountAction } from '../review/count-log.js';
+import { feetAndInches } from '../review/answer-key.js';
 import { parseScaleExact } from '../scale/index.js';
 import { HttpError } from './http-error.js';
-import { loadMemberViews } from './members.js';
+
+export { effectiveState };
 
 export interface BuildRouteOptions {
   db?: Kysely<Database>;
@@ -47,11 +56,18 @@ export const PEN_CLASS_RE =
 
 type Sheet = Selectable<SheetsTable>;
 
-/** Why the page cannot be built yet; empty when it can. Same rules as the worker. */
-export function setupReasons(s: Sheet): string[] {
+/** Why the page cannot be built yet; empty when it can. Same rules as the worker. With
+ * `allowSystem` a value only has to be there (auto mode and the review UI's build). */
+export function setupReasons(s: Sheet, allowSystem = false): string[] {
   const out: string[] = [];
   if (s.build_role !== 'column_plan' && s.build_role !== 'framing')
     out.push('page role not set (column plan or framing)');
+  if (allowSystem) {
+    if (s.crop_region === null) out.push('no crop');
+    if (s.build_scale_ratio === null) out.push('no scale');
+    if (s.build_role === 'framing' && !s.pen_class) out.push('no beam pen class');
+    return out;
+  }
   if (s.crop_region === null || !s.crop_confirmed_by) out.push('crop not confirmed');
   if (s.build_scale_ratio === null || !s.scale_confirmed_by) out.push('scale not confirmed');
   if (s.build_role === 'framing') {
@@ -59,23 +75,6 @@ export function setupReasons(s: Sheet): string[] {
     if (!s.pen_class || !s.pen_class_confirmed_by) out.push('beam pen class not confirmed');
   }
   return out;
-}
-
-/**
- * Colour state of a built piece after a person's edits: a size a person gave makes an undefined
- * piece sized ('person'); the support part is the build's (worker/src/build/pieces.py rules).
- */
-export function effectiveState(
-  sizeState: string | null,
-  supportState: string | null,
-  profile: string | null,
-): { size_state: string | null; build_state: BuiltPiece['build_state'] } {
-  const size = profile && sizeState === 'undefined' ? 'person' : sizeState;
-  if (size === 'undefined' || supportState === 'none')
-    return { size_state: size, build_state: 'attention' };
-  if (size === 'inferred' || supportState === 'one')
-    return { size_state: size, build_state: 'needs_review' };
-  return { size_state: size, build_state: 'found' };
 }
 
 function who_(value: string): string {
@@ -103,7 +102,8 @@ export const buildRoutes: FastifyPluginAsync<BuildRouteOptions> = async (app, op
     return s;
   }
 
-  /** Set sheet columns and log the change as one sheet_edits row, in one transaction. */
+  /** Set sheet columns and log the change as one sheet_edits row and one count_actions row, in
+   * one transaction; the page is then "Requesting Build" until it is built again. */
   async function confirm(
     sheet: Sheet,
     field: string,
@@ -111,15 +111,23 @@ export const buildRoutes: FastifyPluginAsync<BuildRouteOptions> = async (app, op
     after: unknown,
     set: Record<string, unknown>,
     editor: string,
+    action: 'setup' | 'pick_pen' = 'setup',
   ): Promise<void> {
     await db()
       .transaction()
       .execute(async (trx) => {
         await trx
           .updateTable('sheets')
-          .set(set as never)
+          .set({ ...set, setup_changed_at: new Date() } as never)
           .where('id', '=', sheet.id)
           .execute();
+        await logCountAction(trx, {
+          projectId: sheet.project_id,
+          sheetId: sheet.id,
+          action,
+          who: editor,
+          detail: { field },
+        });
         await trx
           .insertInto('sheet_edits')
           .values({
@@ -133,7 +141,10 @@ export const buildRoutes: FastifyPluginAsync<BuildRouteOptions> = async (app, op
       });
   }
 
-  app.post<{ Params: { projectId: string; sheetId: string }; Body: { role: string; who: string } }>(
+  app.post<{
+    Params: { projectId: string; sheetId: string };
+    Body: { role: 'column_plan' | 'framing' | null; who: string };
+  }>(
     '/api/projects/:projectId/sheets/:sheetId/build-setup/role',
     {
       schema: {
@@ -142,7 +153,7 @@ export const buildRoutes: FastifyPluginAsync<BuildRouteOptions> = async (app, op
           type: 'object',
           required: ['role', 'who'],
           additionalProperties: false,
-          properties: { role: { enum: ['column_plan', 'framing'] }, who },
+          properties: { role: { enum: ['column_plan', 'framing', null] }, who },
         },
       },
     },
@@ -156,6 +167,8 @@ export const buildRoutes: FastifyPluginAsync<BuildRouteOptions> = async (app, op
         request.body.role,
         {
           build_role: request.body.role,
+          role_confirmed_by: editor,
+          role_confirmed_at: new Date(),
         },
         editor,
       );
@@ -365,6 +378,99 @@ export const buildRoutes: FastifyPluginAsync<BuildRouteOptions> = async (app, op
     },
   );
 
+  app.post<{
+    Params: { projectId: string; sheetId: string };
+    Body: { x: number; y: number; who: string };
+  }>(
+    '/api/projects/:projectId/sheets/:sheetId/build-setup/pick-pen',
+    {
+      schema: {
+        params: sheetParams,
+        body: {
+          type: 'object',
+          required: ['x', 'y', 'who'],
+          additionalProperties: false,
+          properties: { x: { type: 'number' }, y: { type: 'number' }, who },
+        },
+      },
+    },
+    async (request) => {
+      const s = await loadSheet(request.params.projectId, request.params.sheetId);
+      const editor = who_(request.body.who);
+      const lines = await db()
+        .selectFrom('sheet_lines')
+        .select(['classes', 'lines'])
+        .where('sheet_id', '=', s.id)
+        .executeTakeFirst();
+      if (!lines) throw new HttpError(409, { error: 'the lines of this page are not ready yet' });
+      const hit = nearestClass(
+        lines.classes as string[],
+        lines.lines as number[][],
+        request.body.x,
+        request.body.y,
+      );
+      if (!hit) throw new HttpError(404, { error: 'no line there: click on a beam line' });
+      if (!PEN_CLASS_RE.test(hit.pen_class))
+        throw new HttpError(400, { error: 'that line has no usable pen class' });
+      await confirm(
+        s,
+        'pen_class',
+        s.pen_class,
+        hit.pen_class,
+        {
+          pen_class: hit.pen_class,
+          pen_class_source: 'person',
+          pen_class_confirmed_by: editor,
+          pen_class_confirmed_at: new Date(),
+        },
+        editor,
+        'pick_pen',
+      );
+      return { ok: true, pen_class: hit.pen_class, distance_pt: hit.distance_pt };
+    },
+  );
+
+  app.post<{
+    Params: { projectId: string; sheetId: string };
+    Body: { sheet_id: string | null; who: string };
+  }>(
+    '/api/projects/:projectId/sheets/:sheetId/build-setup/column-plan',
+    {
+      schema: {
+        params: sheetParams,
+        body: {
+          type: 'object',
+          required: ['sheet_id', 'who'],
+          additionalProperties: false,
+          properties: { sheet_id: { anyOf: [uuid, { type: 'null' }] }, who },
+        },
+      },
+    },
+    async (request) => {
+      const { projectId } = request.params;
+      const s = await loadSheet(projectId, request.params.sheetId);
+      const editor = who_(request.body.who);
+      const plan = request.body.sheet_id;
+      if (plan !== null) {
+        if (plan === s.id) throw new HttpError(400, { error: 'a page is not its own column plan' });
+        await loadSheet(projectId, plan);
+      }
+      await confirm(
+        s,
+        'column_plan_sheet_id',
+        s.column_plan_sheet_id,
+        plan,
+        {
+          column_plan_sheet_id: plan,
+          column_plan_confirmed_by: editor,
+          column_plan_confirmed_at: new Date(),
+        },
+        editor,
+      );
+      return { ok: true, column_plan_sheet_id: plan };
+    },
+  );
+
   app.get<{ Params: { projectId: string; sheetId: string } }>(
     '/api/projects/:projectId/sheets/:sheetId/build',
     { schema: { params: sheetParams } },
@@ -438,7 +544,12 @@ export const buildRoutes: FastifyPluginAsync<BuildRouteOptions> = async (app, op
 
   app.post<{
     Params: { projectId: string; sheetId: string };
-    Body: { who: string; column_plan_sheet_id?: string; no_column_plan?: boolean };
+    Body: {
+      who: string;
+      column_plan_sheet_id?: string;
+      no_column_plan?: boolean;
+      allow_system_values?: boolean;
+    };
   }>(
     '/api/projects/:projectId/sheets/:sheetId/build',
     {
@@ -448,7 +559,12 @@ export const buildRoutes: FastifyPluginAsync<BuildRouteOptions> = async (app, op
           type: 'object',
           required: ['who'],
           additionalProperties: false,
-          properties: { who, column_plan_sheet_id: uuid, no_column_plan: { type: 'boolean' } },
+          properties: {
+            who,
+            column_plan_sheet_id: uuid,
+            no_column_plan: { type: 'boolean' },
+            allow_system_values: { type: 'boolean' },
+          },
         },
       },
     },
@@ -460,7 +576,14 @@ export const buildRoutes: FastifyPluginAsync<BuildRouteOptions> = async (app, op
       if (request.body.column_plan_sheet_id)
         inputs.column_plan_sheet_id = request.body.column_plan_sheet_id;
       if (request.body.no_column_plan) inputs.no_column_plan = true;
-      const reasons = setupReasons(s);
+      const allowSystem = request.body.allow_system_values === true;
+      if (allowSystem) inputs.allow_system_values = true;
+      if (!inputs.column_plan_sheet_id && !inputs.no_column_plan) {
+        // the page's own choice (a person's or auto mode's), as the worker reads it
+        if (s.column_plan_sheet_id) inputs.column_plan_sheet_id = s.column_plan_sheet_id;
+        else if (s.column_plan_confirmed_by) inputs.no_column_plan = true;
+      }
+      const reasons = setupReasons(s, allowSystem);
       if (s.build_role === 'framing' && reasons.length === 0 && !inputs.no_column_plan) {
         const plans = await db()
           .selectFrom('sheets')
@@ -472,6 +595,7 @@ export const buildRoutes: FastifyPluginAsync<BuildRouteOptions> = async (app, op
         const named = inputs.column_plan_sheet_id as string | undefined;
         if (named && !plans.some((p) => p.id === named))
           reasons.push('the named column plan page is not built');
+        else if (!named && plans.length !== 1 && allowSystem) inputs.no_column_plan = true;
         else if (!named && plans.length === 0)
           reasons.push('build the column plan page first, or say the job has none');
         else if (!named && plans.length > 1)
@@ -523,10 +647,18 @@ export const buildRoutes: FastifyPluginAsync<BuildRouteOptions> = async (app, op
               project_id: projectId,
               sheet_id: s.id,
               requested_by: editor,
+              mode: 'person',
               inputs: JSON.stringify(inputs),
             })
             .returning('id')
             .executeTakeFirstOrThrow();
+          await logCountAction(trx, {
+            projectId,
+            sheetId: s.id,
+            action: 'rebuild',
+            who: editor,
+            detail: { build_run_id: run.id },
+          });
           const job = await trx
             .insertInto('jobs')
             .values({ type: 'build_sheet', payload: JSON.stringify({ build_run_id: run.id }) })
@@ -550,43 +682,7 @@ export const buildRoutes: FastifyPluginAsync<BuildRouteOptions> = async (app, op
       .where('id', '=', projectId)
       .executeTakeFirst();
     if (!project) throw new HttpError(404, { error: 'project not found' });
-    const rows = await db()
-      .selectFrom('members')
-      .selectAll()
-      .where('project_id', '=', projectId)
-      .where('build_run_id', 'is not', null)
-      .execute();
-    const views = rows.length
-      ? await loadMemberViews(db(), projectId, { memberIds: rows.map((r) => r.id) })
-      : [];
-    const viewOf = new Map(views.map((v) => [v.id, v]));
-    const num = (v: string | null) => (v === null ? null : Number(v));
-    const pieces: BuiltPiece[] = [];
-    for (const r of rows) {
-      const v = viewOf.get(r.id);
-      if (!v || v.deleted || v.not_member !== null || v.existing || v.merged_into !== null)
-        continue;
-      const xyz = (x: string | null, y: string | null, z: string | null) => {
-        const a = [num(x), num(y), num(z)];
-        return a.every((n): n is number => n !== null) ? (a as [number, number, number]) : null;
-      };
-      pieces.push({
-        id: r.id,
-        member_id: r.member_id,
-        sheet_id: r.sheet_id,
-        type: v.type,
-        kind: v.kind.name ?? r.kind,
-        tag: v.tag.text || null,
-        quantity: v.quantity,
-        profile: v.profile,
-        profile_raw: v.profile_raw,
-        start: xyz(r.start_x_mm, r.start_y_mm, r.start_z_mm),
-        end: xyz(r.end_x_mm, r.end_y_mm, r.end_z_mm),
-        ...effectiveState(r.size_state, r.support_state, v.profile),
-        support_state: r.support_state,
-        piece_index: r.piece_index,
-      });
-    }
+    const pieces = (await loadPieces(db(), projectId)).filter(counted).map(toBuiltPiece);
     const catalog = await defaultCatalogLookup(db());
     return lineFirstBom(pieces, catalog, await loadGrades(db(), projectId));
   }
@@ -612,9 +708,9 @@ export const buildRoutes: FastifyPluginAsync<BuildRouteOptions> = async (app, op
         'Qty',
         'Section Type',
         'Section',
-        'Length (mm)',
+        'Length',
         'Grade',
-        'Weight (kg)',
+        'Weight (lb)',
         'State',
       ]);
       for (const r of b.rows)
@@ -625,9 +721,9 @@ export const buildRoutes: FastifyPluginAsync<BuildRouteOptions> = async (app, op
           r.qty,
           r.section_type,
           r.section,
-          r.length_mm,
+          r.length_mm === null ? null : ftIn(r.length_mm),
           r.grade,
-          r.weight_kg,
+          r.weight_lb,
           r.build_state,
         ]);
       ws.addRow([]);
@@ -638,9 +734,9 @@ export const buildRoutes: FastifyPluginAsync<BuildRouteOptions> = async (app, op
         b.totals.pieces,
         null,
         null,
-        Math.round(b.totals.length_mm),
+        ftIn(b.totals.length_mm),
         null,
-        Math.round(b.totals.weight_kg * 100) / 100,
+        Math.round(b.totals.weight_lb),
       ]);
       ws.addRow([
         'ATTENTION (not in the total)',
@@ -649,9 +745,9 @@ export const buildRoutes: FastifyPluginAsync<BuildRouteOptions> = async (app, op
         b.attention.pieces,
         null,
         null,
-        Math.round(b.attention.length_mm),
+        ftIn(b.attention.length_mm),
         null,
-        Math.round(b.attention.weight_kg * 100) / 100,
+        Math.round(b.attention.weight_lb),
       ]);
       const buf = await wb.xlsx.writeBuffer();
       return reply
@@ -664,3 +760,44 @@ export const buildRoutes: FastifyPluginAsync<BuildRouteOptions> = async (app, op
     },
   );
 };
+
+/** Feet-inches text to 1/16": 3810 -> 12'-6". */
+export function ftIn(mm: number): string {
+  const { ft, inch } = feetAndInches(mm);
+  const whole = Math.floor(inch);
+  let frac = Math.round((inch - whole) * 16);
+  let d = 16;
+  while (frac > 0 && frac % 2 === 0) {
+    frac /= 2;
+    d /= 2;
+  }
+  const inchText = frac === 0 ? `${whole}` : whole === 0 ? `${frac}/${d}` : `${whole} ${frac}/${d}`;
+  return `${ft}'-${inchText}"`;
+}
+
+/** The pen class of the extracted line nearest to a page point (within PICK_PEN_MAX_PT); ties go
+ * to the longer line. Rows are sheet_lines rows [x0, y0, x1, y1, class index, width, ...]. */
+export const PICK_PEN_MAX_PT = 12;
+export function nearestClass(
+  classes: readonly string[],
+  rows: readonly number[][],
+  x: number,
+  y: number,
+): { pen_class: string; distance_pt: number } | null {
+  let best: { d: number; len: number; cls: string } | null = null;
+  for (const r of rows) {
+    const [x0, y0, x1, y1, ci] = r as [number, number, number, number, number];
+    const dx = x1 - x0;
+    const dy = y1 - y0;
+    const len2 = dx * dx + dy * dy;
+    const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, ((x - x0) * dx + (y - y0) * dy) / len2));
+    const d = Math.hypot(x - (x0 + t * dx), y - (y0 + t * dy));
+    if (d > PICK_PEN_MAX_PT) continue;
+    const cls = classes[ci];
+    if (cls === undefined) continue;
+    const len = Math.sqrt(len2);
+    if (!best || d < best.d - 1e-9 || (Math.abs(d - best.d) <= 1e-9 && len > best.len))
+      best = { d, len, cls };
+  }
+  return best ? { pen_class: best.cls, distance_pt: Math.round(best.d * 100) / 100 } : null;
+}

@@ -2,6 +2,7 @@
 //   POST /api/projects                 create a project (status is set by the server)
 //   GET  /api/projects                 list
 //   GET  /api/projects/:projectId      get, with the uploaded document and scan progress
+//   PATCH /api/projects/:projectId     { stage } the estimator's status (Estimating, Submitted, Won, Lost)
 //   POST /api/projects/:projectId/pdf  upload the project's one PDF (multipart, streamed to disk)
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
@@ -11,7 +12,7 @@ import multipart from '@fastify/multipart';
 import type { Kysely } from 'kysely';
 import { DEFAULT_MAX_UPLOAD_BYTES, resolveUploadDir } from '../config.js';
 import { getDb } from '../db/client.js';
-import type { Database } from '../db/types.js';
+import type { Database, ProjectStage } from '../db/types.js';
 import { NotPdfError, receivePdf, TooLargeError } from '../uploads/receive.js';
 import { sanitizeFilename } from '../uploads/filename.js';
 import { projectView } from '../views.js';
@@ -31,6 +32,8 @@ const idParams = {
   properties: { projectId: { type: 'string', format: 'uuid' } },
 } as const;
 
+export const PROJECT_STAGES = ['Estimating', 'Submitted', 'Won', 'Lost'] as const;
+
 const createBody = {
   type: 'object',
   required: ['name'],
@@ -41,7 +44,15 @@ const createBody = {
     location: { type: ['string', 'null'], maxLength: 200 },
     design_standard: { type: 'string', minLength: 1, maxLength: 50 },
     unit_system: { type: 'string', enum: ['mm'] },
+    stage: { enum: [...PROJECT_STAGES] },
   },
+} as const;
+
+const patchBody = {
+  type: 'object',
+  required: ['stage'],
+  additionalProperties: false,
+  properties: { stage: { enum: [...PROJECT_STAGES] } },
 } as const;
 
 interface CreateBody {
@@ -50,6 +61,7 @@ interface CreateBody {
   location?: string | null;
   design_standard?: string;
   unit_system?: 'mm';
+  stage?: ProjectStage;
 }
 
 function isUniqueViolation(err: unknown): boolean {
@@ -103,6 +115,7 @@ export const projectRoutes: FastifyPluginAsync<ProjectRouteOptions> = async (app
           status: 'created',
           design_standard: request.body.design_standard?.trim() || 'AISC',
           unit_system: request.body.unit_system ?? 'mm',
+          stage: request.body.stage ?? 'Estimating',
           drawing_issue: null,
           grids: '[]',
           levels: '[]',
@@ -121,7 +134,22 @@ export const projectRoutes: FastifyPluginAsync<ProjectRouteOptions> = async (app
       .execute();
     const files = await db().selectFrom('project_files').selectAll().execute();
     const byProject = new Map(files.map((f) => [f.project_id, f]));
-    return { projects: projects.map((p) => projectView(p, byProject.get(p.id) ?? null)) };
+    // the card picture: the first page's thumbnail
+    const firsts = await db()
+      .selectFrom('sheets')
+      .select(['id', 'project_id'])
+      .where('page_index', '=', 0)
+      .where('thumbnail_path', 'is not', null)
+      .execute();
+    const thumbOf = new Map(
+      firsts.map((s) => [s.project_id, `/api/projects/${s.project_id}/sheets/${s.id}/thumbnail`]),
+    );
+    return {
+      projects: projects.map((p) => ({
+        ...projectView(p, byProject.get(p.id) ?? null),
+        thumbnail_url: thumbOf.get(p.id) ?? null,
+      })),
+    };
   });
 
   app.get<{ Params: { projectId: string } }>(
@@ -129,6 +157,21 @@ export const projectRoutes: FastifyPluginAsync<ProjectRouteOptions> = async (app
     { schema: { params: idParams } },
     async (request) => {
       const project = await loadProject(request.params.projectId);
+      return projectView(project, await loadFile(project.id));
+    },
+  );
+
+  app.patch<{ Params: { projectId: string }; Body: { stage: ProjectStage } }>(
+    '/api/projects/:projectId',
+    { schema: { params: idParams, body: patchBody } },
+    async (request) => {
+      await loadProject(request.params.projectId);
+      const project = await db()
+        .updateTable('projects')
+        .set({ stage: request.body.stage })
+        .where('id', '=', request.params.projectId)
+        .returningAll()
+        .executeTakeFirstOrThrow();
       return projectView(project, await loadFile(project.id));
     },
   );
