@@ -40,6 +40,28 @@ def build(dbp: DbProject) -> dict[str, str]:
         " VALUES (%s, 'takeoff', 'null', '\"include\"', 'x')",
         (sheets[0],),
     )
+    v1 = c.execute(
+        "SELECT id FROM build_views WHERE sheet_id = %s AND position = 1", (sheets[0],)
+    ).fetchone()["id"]
+    v2 = c.execute(
+        "INSERT INTO build_views (sheet_id, position, name, box, role_name, column_plan_view_id)"
+        ' VALUES (%s, 2, \'View 2\', \'{"x0":0,"y0":0,"x1":9,"y1":9}\', \'Framing plan\', %s)'
+        " RETURNING id",
+        (sheets[0], v1),
+    ).fetchone()["id"]
+    c.execute(
+        "INSERT INTO view_pens (view_id, position, pen_class, source) VALUES"
+        " (%s, 1, '1-1.5|black|solid', 'person'), (%s, 2, '0.5-1|black|solid', 'person')",
+        (v2, v2),
+    )
+    c.execute(
+        "INSERT INTO view_exclusions (view_id, box, status) VALUES (%s, '{}', 'accepted')", (v2,)
+    )
+    c.execute(
+        "INSERT INTO view_deselections (view_id, x0, y0, x1, y1, created_by)"
+        " VALUES (%s, 0, 0, 1, 1, 'x')",
+        (v2,),
+    )
     legend = c.execute(
         "INSERT INTO legend_rows (project_id, sheet_id, mark, designation_raw, source)"
         " VALUES (%s, %s, 'B1', 'W12x26', '{}') RETURNING id",
@@ -50,8 +72,9 @@ def build(dbp: DbProject) -> dict[str, str]:
         ids[key] = str(
             c.execute(
                 "INSERT INTO members (project_id, sheet_id, view_id, plan_sheet_id, legend_row_id,"
-                " member_id, origin, type, field_sources, field_confidence, count_state)"
-                " VALUES (%s, %s, %s, %s, %s, %s, %s, 'beam', '{}', '{}', %s) RETURNING id",
+                " member_id, origin, type, field_sources, field_confidence, count_state,"
+                " build_view_id)"
+                " VALUES (%s, %s, %s, %s, %s, %s, %s, 'beam', '{}', '{}', %s, %s) RETURNING id",
                 (
                     dbp.project_id,
                     sheets[0],
@@ -61,6 +84,7 @@ def build(dbp: DbProject) -> dict[str, str]:
                     f"M-{key}",
                     origin,
                     "confirmed" if origin == "manual" else "suggested",
+                    v2,
                 ),
             ).fetchone()["id"]
         )
@@ -116,6 +140,10 @@ def test_copy_is_clean_and_the_source_is_unchanged(dbp: DbProject):
             "sheet_lines",
             "text_items",
             "legend_rows",
+            "build_views",
+            "view_pens",
+            "view_exclusions",
+            "view_deselections",
         ):
             assert got[k] == before[k], k
         assert got["members"] == 1 and got["members_manual"] == 0
@@ -136,6 +164,23 @@ def test_copy_is_clean_and_the_source_is_unchanged(dbp: DbProject):
         assert m["count_state"] == "suggested" and m["count_source"] is None
         assert str(m["sheet_project"]) == new and str(m["legend_project"]) == new
         assert m["view_on_sheet"] and m["plan_sheet"]
+        # build views: one per page plus the second, links remapped inside the copy
+        assert got["build_views"] == before["build_views"] == 3
+        bv = dbp.conn.execute(
+            "SELECT v.position, s.project_id, p.sheet_id = v.sheet_id AS plan_same_sheet,"
+            " (SELECT count(*) FROM members m WHERE m.build_view_id = v.id) AS members"
+            " FROM build_views v JOIN sheets s ON s.id = v.sheet_id"
+            " LEFT JOIN build_views p ON p.id = v.column_plan_view_id"
+            " WHERE s.project_id = %s AND v.position = 2",
+            (new,),
+        ).fetchone()
+        assert bv == {
+            "position": 2,
+            "project_id": bv["project_id"],
+            "plan_same_sheet": True,
+            "members": 1,
+        }
+        assert str(bv["project_id"]) == new
         stored = dbp.conn.execute(
             "SELECT stored_path FROM project_files WHERE project_id = %s", (new,)
         ).fetchone()["stored_path"]

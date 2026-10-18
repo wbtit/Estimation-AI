@@ -3,7 +3,8 @@
 What is copied: the project settings (a new id and the given name, count mode OFF), the PDF (a new
 stored copy, so deleting one project never removes the other's file) and the page thumbnails, every
 sheet with its stored columns and sheet decisions (`sheet_edits`, e.g. in or out of the takeoff),
-its views (box, scale, line classes), its extracted lines (`sheet_lines`), its text items, the
+its views (box, scale, line classes), its build views (setup, beam pens, exclude areas,
+deselected lines), its extracted lines (`sheet_lines`), its text items, the
 legend rows, the project's grade rules, and every member the SYSTEM made (origin other than
 `manual`) with its stored values and its count state reset to an undecided suggestion.
 
@@ -27,7 +28,8 @@ from psycopg import sql
 from src.config import WorkerConfig
 
 # tables keyed by project / sheet that are copied, in insert order
-SHEET_TABLES = ("sheet_edits", "sheet_views", "sheet_lines", "text_items")
+SHEET_TABLES = ("sheet_edits", "sheet_views", "sheet_lines", "text_items", "build_views")
+VIEW_TABLES = ("view_pens", "view_exclusions", "view_deselections")
 NOT_COPIED = ("member_edits", "count_actions", "measurements", "project_prefix_kinds")
 
 
@@ -43,6 +45,14 @@ def source_counts(conn: psycopg.Connection, project_id: str) -> dict[str, int]:
         "sheet_views": one(f"SELECT count(*) n FROM sheet_views WHERE sheet_id IN ({sheets})"),
         "sheet_lines": one(f"SELECT count(*) n FROM sheet_lines WHERE sheet_id IN ({sheets})"),
         "text_items": one(f"SELECT count(*) n FROM text_items WHERE sheet_id IN ({sheets})"),
+        "build_views": one(f"SELECT count(*) n FROM build_views WHERE sheet_id IN ({sheets})"),
+        **{
+            t: one(
+                f"SELECT count(*) n FROM {t} WHERE view_id IN"
+                f" (SELECT id FROM build_views WHERE sheet_id IN ({sheets}))"
+            )
+            for t in VIEW_TABLES
+        },
         "legend_rows": one("SELECT count(*) n FROM legend_rows WHERE project_id = %s"),
         "project_grade_rules": one(
             "SELECT count(*) n FROM project_grade_rules WHERE project_id = %s"
@@ -137,6 +147,8 @@ def copy_project(
                 "sheet_views",
                 "sheet_lines",
                 "text_items",
+                "build_views",
+                *VIEW_TABLES,
                 "legend_rows",
                 "project_grade_rules",
             )
@@ -166,6 +178,10 @@ def copy_project(
         conn.execute(
             "CREATE TEMP TABLE map_view ON COMMIT DROP AS SELECT v.id AS old,"
             " gen_random_uuid() AS new FROM sheet_views v JOIN map_sheet m ON m.old = v.sheet_id"
+        )
+        conn.execute(
+            "CREATE TEMP TABLE map_bview ON COMMIT DROP AS SELECT v.id AS old,"
+            " gen_random_uuid() AS new FROM build_views v JOIN map_sheet m ON m.old = v.sheet_id"
         )
         conn.execute(
             "CREATE TEMP TABLE map_legend ON COMMIT DROP AS SELECT id AS old,"
@@ -238,6 +254,31 @@ def copy_project(
             p,
         )
         _copy(conn, "sheet_lines", in_sheets, {"sheet_id": sheet_of}, p)
+        # the sheets trigger made an empty first view per new page: the copied views replace them
+        conn.execute("DELETE FROM build_views WHERE sheet_id IN (SELECT new FROM map_sheet)")
+        bview_of = "(SELECT new FROM map_bview WHERE old = s.{})"
+        _copy(
+            conn,
+            "build_views",
+            in_sheets,
+            {
+                "id": sql.SQL(bview_of.format("id")),
+                "sheet_id": sheet_of,
+                "column_plan_view_id": sql.SQL(bview_of.format("column_plan_view_id")),
+            },
+            p,
+        )
+        for t in VIEW_TABLES:
+            _copy(
+                conn,
+                t,
+                sql.SQL("s.view_id IN (SELECT old FROM map_bview)"),
+                {
+                    "id": sql.SQL("gen_random_uuid()"),
+                    "view_id": sql.SQL(bview_of.format("view_id")),
+                },
+                p,
+            )
         _copy(
             conn,
             "text_items",
@@ -274,6 +315,7 @@ def copy_project(
                 "sheet_id": sheet_of,
                 "plan_sheet_id": sql.SQL("(SELECT new FROM map_sheet WHERE old = s.plan_sheet_id)"),
                 "view_id": sql.SQL("(SELECT new FROM map_view WHERE old = s.view_id)"),
+                "build_view_id": sql.SQL(bview_of.format("build_view_id")),
                 "legend_row_id": sql.SQL(
                     "(SELECT new FROM map_legend WHERE old = s.legend_row_id)"
                 ),
