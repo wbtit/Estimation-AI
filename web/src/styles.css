@@ -1439,3 +1439,159 @@ table.grid tr.total td {
 .thumb .issue-counts .n-review {
   background: var(--review);
 }
+
+/* views of a page (selected page card) */
+.page-card .views {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px 2px;
+}
+
+.page-card .views-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--shell-muted);
+  margin-right: 2px;
+}
+
+.view-chip {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--shell-line);
+  border-radius: 999px;
+  background: var(--shell-input);
+  overflow: hidden;
+}
+
+.view-chip button {
+  border: none;
+  background: transparent;
+  color: var(--shell-text);
+  padding: 2px 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.view-chip button.x {
+  padding: 2px 5px 2px 0;
+  color: var(--shell-muted);
+}
+
+.view-chip.on {
+  background: var(--crop);
+  border-color: var(--crop);
+}
+
+.page-card button.add-view {
+  border: 1px dashed var(--shell-muted);
+  background: transparent;
+  color: var(--shell-text);
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+/* the role of a view: a name with its build behaviour */
+.role-select {
+  position: relative;
+  display: inline-flex;
+  min-width: 0;
+}
+
+.role-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--shell-input);
+  color: var(--shell-text);
+  border: 1px solid var(--shell-line);
+  padding: 3px 8px;
+  max-width: 100%;
+}
+
+.behaviour {
+  font-size: 10px;
+  font-weight: 700;
+  border-radius: 999px;
+  padding: 1px 6px;
+  white-space: nowrap;
+}
+
+.behaviour.framing {
+  background: rgba(213, 0, 249, 0.18);
+  color: #f3b7ff;
+}
+
+.behaviour.column_plan {
+  background: rgba(41, 121, 255, 0.2);
+  color: #a9c8ff;
+}
+
+.behaviour.none {
+  background: rgba(154, 165, 186, 0.2);
+  color: var(--shell-muted);
+}
+
+.menu.role-menu {
+  left: 0;
+  right: auto;
+  min-width: 230px;
+  max-height: 360px;
+  overflow: auto;
+  z-index: 40;
+}
+
+.menu.role-menu button {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+}
+
+.menu.role-menu .behaviour.framing {
+  color: #8e00a8;
+}
+
+.menu.role-menu .behaviour.column_plan {
+  color: #1a56c4;
+}
+
+.menu.role-menu .behaviour.none {
+  color: #5b6474;
+}
+
+.role-ask,
+.role-edit {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  color: var(--shell-text);
+}
+
+/* Set size for all … (Sheet Summary) */
+.set-size {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.set-size > button {
+  text-align: left;
+  background: var(--shell-input);
+  color: var(--shell-text);
+  border: 1px solid var(--shell-line);
+}
+
+.set-size > button.on {
+  border-color: var(--accent);
+}

@@ -15,7 +15,7 @@ import {
   type Piece,
   type Project,
   type Pt2,
-  type Role,
+  type RoleName,
   type Route,
   type SheetLines,
 } from "../lib/lf";
@@ -50,6 +50,15 @@ export const Workspace: React.FC<{
   const [lines, setLines] = useState<SheetLines | null>(null);
   const [bom, setBom] = useState<Bom | null>(null);
   const [kinds, setKinds] = useState<Kind[]>([]);
+  const [roles, setRoles] = useState<RoleName[]>([]);
+  const loadRoles = useCallback(
+    () =>
+      api<{ roles: RoleName[] }>("/api/role-names").then(
+        (r) => setRoles(r.roles),
+        () => undefined,
+      ),
+    [],
+  );
   const [layers, setLayers] = useState<Layers>(ALL_LAYERS);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [left, setLeft] = useState<"pages" | "members">("pages");
@@ -118,6 +127,7 @@ export const Workspace: React.FC<{
     );
     void loadPages();
     void loadBom();
+    void loadRoles();
   }, [projectId]);
 
   useEffect(() => {
@@ -152,51 +162,112 @@ export const Workspace: React.FC<{
       return refresh();
     }, fail);
 
+  const withView = (viewId: string | null) =>
+    viewId ? { view_id: viewId } : {};
   const actions: PageActions = {
     build: (p) =>
       act(
         send("POST", sheetUrl(p, "build"), { who, allow_system_values: true }),
         "Building…",
       ),
-    setRole: (p, role: Role) =>
-      act(send("POST", sheetUrl(p, "build-setup/role"), { role, who })),
-    setColumnPlan: (p, id) =>
+    setRole: (p, viewId, roleName) =>
       act(
-        send("POST", sheetUrl(p, "build-setup/column-plan"), {
-          sheet_id: id,
+        send("POST", sheetUrl(p, "build-setup/role"), {
+          role_name: roleName,
+          ...withView(viewId),
           who,
         }),
       ),
-    setTos: (p, mm, raw) =>
+    createRole: (name, behaviour, p, viewId) =>
+      act(
+        send("POST", "/api/role-names", {
+          name,
+          behaviour,
+          who,
+          project_id: projectId,
+          sheet_id: p.id,
+        }).then(() =>
+          send("POST", sheetUrl(p, "build-setup/role"), {
+            role_name: name,
+            ...withView(viewId),
+            who,
+          }),
+        ),
+        `Role "${name}" saved for every project`,
+      ).then(loadRoles),
+    editRole: (name, change) =>
+      act(
+        send("PATCH", `/api/role-names/${encodeURIComponent(name)}`, {
+          ...change,
+          who,
+          project_id: projectId,
+          ...(sheetId ? { sheet_id: sheetId } : {}),
+        }),
+      ).then(loadRoles),
+    addView: () => askTool("view"),
+    deleteView: (p, viewId) => {
+      if (
+        !window.confirm(
+          "Delete this view? Its pieces nobody edited go with it.",
+        )
+      )
+        return;
+      void act(
+        send(
+          "DELETE",
+          `/api/projects/${projectId}/sheets/${p.id}/build-views/${viewId}`,
+          {
+            who,
+          },
+        ),
+        "View deleted",
+      ).then(() => setViewId(null));
+    },
+    setColumnPlan: (p, viewId, id) =>
+      act(
+        send("POST", sheetUrl(p, "build-setup/column-plan"), {
+          sheet_id: id,
+          ...withView(viewId),
+          who,
+        }),
+      ),
+    setTos: (p, viewId, mm, raw) =>
       act(
         send("POST", sheetUrl(p, "build-setup/tos"), {
           tos_mm: mm,
           raw,
           source: "typed",
+          ...withView(viewId),
           who,
         }),
       ),
-    noBeams: (p) =>
+    noBeams: (p, viewId) =>
       act(
-        send("POST", sheetUrl(p, "build-setup/no-beams"), { who }),
+        send("POST", sheetUrl(p, "build-setup/no-beams"), {
+          ...withView(viewId),
+          who,
+        }),
         "No beams: press ▶ to rebuild",
       ),
-    setScale: (p, v) =>
+    setScale: (p, viewId, v) =>
       act(
-        send("POST", sheetUrl(p, "build-setup/scale"), { ...v, who }).catch(
-          (e: unknown) => {
-            // a scale as printed may carry more words than the parser reads: keep its ratio
-            if (v.scale_text && e instanceof ApiError && e.status === 400) {
-              const found = p.scales_found.find((s) => s.raw === v.scale_text);
-              if (found?.ratio)
-                return send("POST", sheetUrl(p, "build-setup/scale"), {
-                  ratio: found.ratio,
-                  who,
-                });
-            }
-            throw e;
-          },
-        ),
+        send("POST", sheetUrl(p, "build-setup/scale"), {
+          ...v,
+          ...withView(viewId),
+          who,
+        }).catch((e: unknown) => {
+          // a scale as printed may carry more words than the parser reads: keep its ratio
+          if (v.scale_text && e instanceof ApiError && e.status === 400) {
+            const found = p.scales_found.find((s) => s.raw === v.scale_text);
+            if (found?.ratio)
+              return send("POST", sheetUrl(p, "build-setup/scale"), {
+                ratio: found.ratio,
+                ...withView(viewId),
+                who,
+              });
+          }
+          throw e;
+        }),
       ),
   };
 
@@ -355,6 +426,11 @@ export const Workspace: React.FC<{
                       selected={p.id === sheetId}
                       onSelect={() => selectSheet(p.id)}
                       actions={actions}
+                      roles={roles}
+                      activeViewId={
+                        p.id === sheetId ? (view?.id ?? null) : null
+                      }
+                      onActiveView={setViewId}
                     />
                   ))}
                 </div>
@@ -555,6 +631,28 @@ export const Workspace: React.FC<{
             onEdit={(e) => void editSelected(e)}
             onDelete={deleteSelected}
             onCropTool={() => askTool("crop")}
+            viewPieces={pieces.filter(
+              (p) =>
+                (p.build_view_id ?? data?.views?.[0]?.id ?? null) ===
+                (view?.id ?? null),
+            )}
+            viewName={
+              (data?.views?.length ?? 0) > 1 ? (view?.name ?? null) : null
+            }
+            onSetSizeAll={(ids, profile) =>
+              void act(
+                send(
+                  "POST",
+                  `/api/projects/${projectId}/line-first/pieces/edit`,
+                  {
+                    who,
+                    member_ids: ids,
+                    profile_text: profile,
+                  },
+                ),
+                `${profile} set on ${ids.length} pieces (Undo puts them back)`,
+              )
+            }
           />
         </div>
       )}

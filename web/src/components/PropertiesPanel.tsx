@@ -94,6 +94,11 @@ export const PropertiesPanel: React.FC<{
   onEdit: (e: PieceEdit) => void;
   onDelete: () => void;
   onCropTool: () => void;
+  /** The pieces of the active view (for "Set size for all …"), and its name when the page has
+   * several views. */
+  viewPieces?: Piece[];
+  viewName?: string | null;
+  onSetSizeAll?: (ids: string[], profile: string) => void;
 }> = ({
   bomRows,
   sheetId,
@@ -103,6 +108,9 @@ export const PropertiesPanel: React.FC<{
   onEdit,
   onDelete,
   onCropTool,
+  viewPieces = [],
+  viewName = null,
+  onSetSizeAll,
 }) => {
   const [tab, setTab] = useState<"summary" | "member">(
     selected.length ? "member" : "summary",
@@ -137,6 +145,13 @@ export const PropertiesPanel: React.FC<{
           <>
             <Section title="Sheet Summary" testId="summary">
               <SummaryList rows={bomRows} sheetId={sheetId} />
+              {onSetSizeAll && (
+                <SetSizeAll
+                  pieces={viewPieces}
+                  viewName={viewName}
+                  onSet={onSetSizeAll}
+                />
+              )}
             </Section>
             <Section title="Project Summary" testId="project-summary">
               <SummaryList rows={bomRows} />
@@ -174,6 +189,69 @@ export const PropertiesPanel: React.FC<{
           </Section>
         )}
       </div>
+    </div>
+  );
+};
+
+/** The pieces "Set size for all" applies to: undefined beams, and columns without a size (shown
+ * ones, not ignored or deleted). */
+export function withoutSize(pieces: readonly Piece[]): {
+  beams: Piece[];
+  columns: Piece[];
+} {
+  const open = pieces.filter((p) => !p.ignored && !p.deleted && !p.profile);
+  return {
+    beams: open.filter((p) => p.type !== "column"),
+    columns: open.filter((p) => p.type === "column"),
+  };
+}
+
+/** "Set size for all undefined beams" / "… columns without a size": the AISC search, then one
+ * edit of all of them (one logged action; Undo puts them back). */
+const SetSizeAll: React.FC<{
+  pieces: Piece[];
+  viewName: string | null;
+  onSet: (ids: string[], profile: string) => void;
+}> = ({ pieces, viewName, onSet }) => {
+  const [open, setOpen] = useState<"beams" | "columns" | null>(null);
+  const { beams, columns } = withoutSize(pieces);
+  const where = viewName ? ` in ${viewName}` : "";
+  const target = open === "beams" ? beams : open === "columns" ? columns : [];
+  return (
+    <div className="set-size" data-testid="set-size-all">
+      {beams.length > 0 && (
+        <button
+          className={open === "beams" ? "on" : ""}
+          onClick={() => setOpen(open === "beams" ? null : "beams")}
+        >
+          Set size for all undefined beams{where} ({beams.length})
+        </button>
+      )}
+      {columns.length > 0 && (
+        <button
+          className={open === "columns" ? "on" : ""}
+          onClick={() => setOpen(open === "columns" ? null : "columns")}
+        >
+          Set size for all columns without a size{where} ({columns.length})
+        </button>
+      )}
+      {open && target.length > 0 && (
+        <div className="fld">
+          <span className="fld-label">
+            Size for {target.length} {open === "beams" ? "beams" : "columns"}
+          </span>
+          <SectionSearch
+            value=""
+            onPick={(name) => {
+              onSet(
+                target.map((p) => p.id),
+                name,
+              );
+              setOpen(null);
+            }}
+          />
+        </div>
+      )}
     </div>
   );
 };

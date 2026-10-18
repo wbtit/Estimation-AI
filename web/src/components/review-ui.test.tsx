@@ -5,15 +5,19 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ALL_LAYERS,
   type BomRow,
   type Page,
+  type PageViewInfo,
   type Piece,
   type Project,
+  type RoleName,
 } from "../lib/lf";
+import { RoleSelect } from "./RoleSelect";
 import { BomTab } from "./BomTab";
 import { Canvas, PieceMark } from "./Canvas";
 import { PageCard, type PageActions } from "./PageCard";
@@ -272,6 +276,7 @@ function actions(): PageActions & Record<string, ReturnType<typeof vi.fn>> {
     setTos: vi.fn(),
     setScale: vi.fn(),
     noBeams: vi.fn(),
+    addView: vi.fn(),
   };
 }
 
@@ -348,10 +353,11 @@ describe("page card", () => {
     fireEvent.click(screen.getByText("No beams"));
     expect(a.noBeams).toHaveBeenCalledWith(
       expect.objectContaining({ id: "s1" }),
+      null,
     );
   });
 
-  it("⋮ sets the role and the column plan", () => {
+  it("⋮ sets the column plan of the view", () => {
     const a = actions();
     const plan = page({
       id: "s0",
@@ -371,13 +377,78 @@ describe("page card", () => {
     fireEvent.click(screen.getByText("Page 2 · S-201"));
     expect(a.setColumnPlan).toHaveBeenCalledWith(
       expect.objectContaining({ id: "s1" }),
+      null,
       "s0",
     );
-    fireEvent.click(screen.getByLabelText("page menu"));
-    fireEvent.click(screen.getByText("Skip"));
+  });
+
+  it("the selected card lists the views; a view's fields are its own; + Add view", () => {
+    const a = actions();
+    const base = page();
+    const v = (over: Partial<PageViewInfo>): PageViewInfo => ({
+      id: "v1",
+      position: 1,
+      name: "View 1",
+      box: null,
+      role_name: "Framing plan",
+      behaviour: "framing",
+      scale_ratio: 96,
+      scale_text: null,
+      tos_mm: null,
+      tos_raw: null,
+      pens: [],
+      no_beams: false,
+      column_plan_view_id: null,
+      column_plan_sheet_id: null,
+      exclusions: [],
+      deselections: [],
+      setup_changed_at: null,
+      built_at: null,
+      badge: "Built",
+      reasons: [],
+      system_values: [],
+      counts: base.counts,
+      ...over,
+    });
+    const onActive = vi.fn();
+    render(
+      <PageCard
+        page={page({
+          views: [
+            v({}),
+            v({
+              id: "v2",
+              position: 2,
+              name: "View 2",
+              role_name: "Detail",
+              behaviour: "none",
+            }),
+          ],
+        })}
+        columnPlans={[]}
+        selected
+        onSelect={() => undefined}
+        actions={a}
+        roles={ROLES}
+        activeViewId="v2"
+        onActiveView={onActive}
+      />,
+    );
+    expect(screen.getByText("Page 5 | 2 views")).toBeTruthy();
+    expect(screen.getByTestId("views").textContent).toContain("View 2");
+    expect(screen.queryByLabelText("top of steel")).toBeNull(); // Detail: Don't build
+    fireEvent.click(screen.getByText("View 1"));
+    expect(onActive).toHaveBeenCalledWith("v1");
+    fireEvent.click(screen.getByText("Add view"));
+    expect(a.addView).toHaveBeenCalled();
+    fireEvent.click(screen.getByLabelText("role"));
+    fireEvent.click(
+      within(screen.getByTestId("role-menu")).getByText("Roof framing"),
+    );
     expect(a.setRole).toHaveBeenCalledWith(
       expect.objectContaining({ id: "s1" }),
-      null,
+      "v2",
+      "Roof framing",
     );
   });
 
@@ -401,6 +472,7 @@ describe("page card", () => {
     fireEvent.blur(tos);
     expect(a.setTos).toHaveBeenCalledWith(
       expect.anything(),
+      null,
       expect.closeTo(4051.3, 1),
       `13'-3 1/2"`,
     );
@@ -423,11 +495,112 @@ describe("page card", () => {
   });
 });
 
+const ROLES: RoleName[] = [
+  { name: "Column plan", behaviour: "column_plan", built_in: true },
+  { name: "Framing plan", behaviour: "framing", built_in: true },
+  { name: "Roof framing", behaviour: "framing", built_in: true },
+  { name: "Detail", behaviour: "none", built_in: true },
+  { name: "Mezzanine", behaviour: "framing", built_in: false },
+];
+
+describe("role dropdown", () => {
+  it("lists built-in and custom names with their behaviour; a new name asks once how to build it", () => {
+    const onPick = vi.fn();
+    const onCreate = vi.fn();
+    const onEdit = vi.fn();
+    render(
+      <RoleSelect
+        value="Framing plan"
+        roles={ROLES}
+        onPick={onPick}
+        onCreate={onCreate}
+        onEdit={onEdit}
+      />,
+    );
+    expect(screen.getByLabelText("role").textContent).toContain("Framing plan");
+    expect(screen.getByLabelText("role").textContent).toContain("Framing");
+    fireEvent.click(screen.getByLabelText("role"));
+    const menu = screen.getByTestId("role-menu");
+    expect(menu.textContent).toContain("Built-in");
+    expect(menu.textContent).toContain("Custom");
+    fireEvent.click(within(menu).getByText("Mezzanine"));
+    expect(onPick).toHaveBeenCalledWith("Mezzanine");
+    fireEvent.click(screen.getByLabelText("role"));
+    fireEvent.click(screen.getByText("+ Type a new role…"));
+    const input = screen.getByLabelText("new role name");
+    fireEvent.change(input, { target: { value: "  Canopy   framing " } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(screen.getByTestId("role-ask").textContent).toContain(
+      "Build “Canopy   framing” as:",
+    );
+    fireEvent.click(
+      within(screen.getByTestId("role-ask")).getByText("Framing"),
+    );
+    expect(onCreate).toHaveBeenCalledWith("Canopy framing", "framing");
+    // a typed name that exists is just picked (no question)
+    fireEvent.click(screen.getByLabelText("role"));
+    fireEvent.click(screen.getByText("+ Type a new role…"));
+    const again = screen.getByLabelText("new role name");
+    fireEvent.change(again, { target: { value: "detail" } });
+    fireEvent.keyDown(again, { key: "Enter" });
+    expect(onPick).toHaveBeenLastCalledWith("Detail");
+    // custom names are editable later
+    fireEvent.click(screen.getByLabelText("role"));
+    fireEvent.click(screen.getByText("Edit custom roles…"));
+    fireEvent.change(screen.getByLabelText("behaviour of Mezzanine"), {
+      target: { value: "none" },
+    });
+    expect(onEdit).toHaveBeenCalledWith("Mezzanine", { behaviour: "none" });
+  });
+});
+
 describe("properties", () => {
   const kinds = [
     { kind: "Beams", scope: "main", symbol_group: "linear" },
     { kind: "Column", scope: "main", symbol_group: "column" },
   ];
+
+  it("Set size for all undefined beams of the view is one edit of all of them", () => {
+    stubFetch({ "/api/catalog/sections": { sections: [] } });
+    const onSetSizeAll = vi.fn();
+    const viewPieces = [
+      piece({ id: "u1", profile: null, build_state: "attention" }),
+      piece({ id: "u2", profile: null, build_state: "attention" }),
+      piece({ id: "ig", profile: null, ignored: true }),
+      piece({ id: "ok" }),
+      piece({ id: "c1", type: "column", b: null, profile: null }),
+    ];
+    render(
+      <PropertiesPanel
+        bomRows={[]}
+        sheetId="s1"
+        selected={[]}
+        kinds={kinds}
+        crop={null}
+        onEdit={() => undefined}
+        onDelete={() => undefined}
+        onCropTool={() => undefined}
+        viewPieces={viewPieces}
+        viewName="View 2"
+        onSetSizeAll={onSetSizeAll}
+      />,
+    );
+    const box = screen.getByTestId("set-size-all");
+    expect(box.textContent).toContain(
+      "Set size for all undefined beams in View 2 (2)",
+    );
+    expect(box.textContent).toContain(
+      "Set size for all columns without a size in View 2 (1)",
+    );
+    fireEvent.click(
+      screen.getByText("Set size for all undefined beams in View 2 (2)"),
+    );
+    const input = within(box).getByLabelText("section size");
+    fireEvent.change(input, { target: { value: "W12X26" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(onSetSizeAll).toHaveBeenCalledTimes(1);
+    expect(onSetSizeAll).toHaveBeenCalledWith(["u1", "u2"], "W12X26");
+  });
 
   it("shows Mixed for different values, locked elevations in feet-inches and the summary in tons", () => {
     stubFetch({ "/api/catalog": { sections: [] } });
