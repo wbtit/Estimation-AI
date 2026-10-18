@@ -64,3 +64,19 @@ export function pageBadge(p: BadgeInput): Badge {
   if (p.system_values.length > 0) return 'Not confirmed';
   return 'Built';
 }
+
+/** The badge of a page with several views: the first in this order wins, so a page shows the view
+ * that needs the most attention. All Skip (or Reviewed with no building view) stays as it is. */
+const PAGE_ORDER: Badge[] = [
+  'Building',
+  'Requesting Build',
+  'Not built',
+  'Not confirmed',
+  'Built',
+  'Reviewed',
+  'Skip',
+];
+export function combineBadges(badges: Badge[]): Badge {
+  if (badges.length === 0) return 'Skip';
+  return PAGE_ORDER.find((b) => badges.includes(b)) ?? badges[0]!;
+}

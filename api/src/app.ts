@@ -2,6 +2,7 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import { countRoutes } from './routes/count.js';
 import { bomRoutes, type BomRouteOptions } from './routes/bom.js';
 import { buildRoutes } from './routes/build.js';
+import { buildViewRoutes } from './routes/build-views.js';
 import { reviewUiRoutes } from './routes/review-ui.js';
 import { healthRoutes, type HealthRouteOptions } from './routes/health.js';
 import { memberActionRoutes } from './routes/member-actions.js';
@@ -45,6 +46,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
   app.register(countRoutes, {});
   app.register(takeoffRoutes, {});
   app.register(buildRoutes, {});
+  app.register(buildViewRoutes, {});
   app.register(reviewUiRoutes, {});
   return app;
 }

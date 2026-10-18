@@ -16,11 +16,14 @@ import {
   type SetupValues,
 } from '../review/system-report.js';
 import { ftIn, nearestClass, setupReasons } from '../routes/build.js';
+import { asSheet, viewsOf } from '../review/build-views.js';
 import {
   deleteEdition,
   deleteProject,
+  firstView,
   insertProject,
   insertSheet,
+  setFirstView,
   uniqueLabel,
 } from './helpers.js';
 
@@ -129,6 +132,7 @@ function fin(over: Partial<PieceView>): PieceView {
     scale_ratio: 96,
     evidence: null,
     build_run_id: 'r',
+    build_view_id: null,
     start: null,
     end: null,
     ...over,
@@ -384,17 +388,20 @@ describe('review UI routes (test database)', () => {
     // the page as auto mode leaves it: system values only
     await db
       .updateTable('sheets')
-      .set({
-        build_role: 'framing',
-        crop_region: JSON.stringify({ x0: 0, y0: 0, x1: 1000, y1: 800 }),
-        build_scale_ratio: 96,
-        pen_class: '0.5-1|black|solid',
-        pen_class_source: 'suggested',
-        build_status: 'built',
-        built_at: new Date(Date.now() - 60_000),
-      } as never)
+      .set({ build_status: 'built', built_at: new Date(Date.now() - 60_000) })
       .where('id', '=', framingId)
       .execute();
+    await setFirstView(
+      db,
+      framingId,
+      {
+        role_name: 'Framing plan',
+        box: JSON.stringify({ x0: 0, y0: 0, x1: 1000, y1: 800 }),
+        scale_ratio: 96,
+        built_at: new Date(Date.now() - 60_000),
+      },
+      [{ pen_class: '0.5-1|black|solid', source: 'suggested' }],
+    );
     await db
       .insertInto('sheet_lines')
       .values({
@@ -532,13 +539,10 @@ describe('review UI routes (test database)', () => {
     });
     expect(res.statusCode).toBe(200);
     expect(res.json().pen_class).toBe('1.5-2.5|black|solid');
-    const s = await db
-      .selectFrom('sheets')
-      .selectAll()
-      .where('id', '=', framingId)
-      .executeTakeFirstOrThrow();
-    expect(s.pen_class_source).toBe('person');
-    expect(s.pen_class_confirmed_by).toBe(WHO);
+    const v = await firstView(db, framingId);
+    expect(v.pens.map((p) => [p.pen_class, p.source, p.confirmed_by])).toEqual([
+      ['1.5-2.5|black|solid', 'person', WHO],
+    ]);
     expect((await pageOf(framingId)).badge).toBe('Requesting Build');
     const miss = await post(`/sheets/${framingId}/build-setup/pick-pen`, {
       x: 900,
@@ -557,11 +561,14 @@ describe('review UI routes (test database)', () => {
   it('"No beams" sets the beam pen to none as a person; such a page can still build', async () => {
     const res = await post(`/sheets/${planId}/build-setup/no-beams`, { who: WHO });
     expect(res.statusCode).toBe(200);
-    const s = await db
+    const v = await firstView(db, planId);
+    expect([v.pens.length, v.no_beams_by]).toEqual([0, WHO]);
+    const page = await db
       .selectFrom('sheets')
       .selectAll()
       .where('id', '=', planId)
       .executeTakeFirstOrThrow();
+    const s = asSheet(page, (await viewsOf(db, planId))[0]!);
     expect([s.pen_class, s.pen_class_source, s.pen_class_confirmed_by]).toEqual([
       null,
       'person',
@@ -600,11 +607,7 @@ describe('review UI routes (test database)', () => {
       .set({ status: 'done', finished_at: new Date() })
       .where('id', '=', run.id)
       .execute();
-    await db
-      .updateTable('sheets')
-      .set({ built_at: new Date() })
-      .where('id', '=', framingId)
-      .execute();
+    await setFirstView(db, framingId, { built_at: new Date() });
   });
 
   it('edits several pieces as one action; undo puts them back', async () => {

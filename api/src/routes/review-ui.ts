@@ -37,7 +37,16 @@ import {
   type PieceView,
 } from '../review/line-first-pieces.js';
 import { deleteEntries, kindValue, patchEntries } from '../review/member-ops.js';
-import { pageBadge, systemValues } from '../review/page-badge.js';
+import { combineBadges, pageBadge, systemValues } from '../review/page-badge.js';
+import {
+  asSheet,
+  loadViews,
+  pickView,
+  viewAt,
+  viewJson,
+  viewsOf,
+  type LoadedView,
+} from '../review/build-views.js';
 import { parseProfile } from '../review/profile.js';
 import { systemReport, type SetupValues } from '../review/system-report.js';
 import { takeTagNumbers } from '../review/tag-counter.js';
@@ -291,19 +300,21 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
         .execute();
       const runs = await db()
         .selectFrom('build_runs')
-        .select(['sheet_id', 'status', 'started_at', 'error', 'notes', 'mode'])
+        .select(['sheet_id', 'view_id', 'status', 'started_at', 'error', 'notes', 'mode', 'counts'])
         .where('project_id', '=', projectId)
         .orderBy('started_at', 'desc')
         .orderBy('id', 'desc')
         .execute();
-      const lastRun = new Map<string, (typeof runs)[number]>();
-      for (const r of runs) if (!lastRun.has(r.sheet_id)) lastRun.set(r.sheet_id, r);
+      const viewsBy = await loadViews(
+        db(),
+        sheets.map((s) => s.id),
+      );
       const log = await db()
         .selectFrom('count_actions')
         .select(['sheet_id', 'action', 'created_at'])
         .where('project_id', '=', projectId)
         .where('sheet_id', 'is not', null)
-        .where('action', 'not in', [...NOT_EDITS, 'setup', 'pick_pen', 'rebuild'])
+        .where('action', 'not in', [...NOT_EDITS, 'setup', 'pick_pen', 'rebuild', 'role'])
         .orderBy('created_at')
         .execute();
       const pieces = await loadPieces(db(), projectId);
@@ -311,7 +322,10 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
       for (const p of pieces)
         if (p.sheet_id) piecesOf.set(p.sheet_id, [...(piecesOf.get(p.sheet_id) ?? []), p]);
       return {
-        pages: sheets.map((s) => {
+        pages: sheets.map((page) => {
+          const views = viewsBy.get(page.id) ?? [];
+          const first = pickView(views);
+          const s = first ? asSheet(page, first) : page;
           const own = log.filter((l) => l.sheet_id === s.id);
           const lastEdit = own.length ? own[own.length - 1]!.created_at : null;
           const since = s.reviewed_at ? new Date(s.reviewed_at as Date).getTime() : -Infinity;
@@ -321,10 +335,66 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
             recent.filter((l) => (EDIT_ACTIONS as readonly string[]).includes(l.action)).length -
               recent.filter((l) => l.action === 'undo').length,
           );
-          const run = lastRun.get(s.id) ?? null;
-          const sys = systemValues(s);
+          const firstViewId = first?.row.id;
+          const runOf = (v: LoadedView) =>
+            runs.find((r) => r.sheet_id === page.id && (r.view_id ?? firstViewId) === v.row.id) ??
+            null;
           const ps = (piecesOf.get(s.id) ?? []).filter(counted);
-          const byState = (st: string) => ps.filter((p) => p.build_state === st).length;
+          const stateCounts = (list: PieceView[]) => {
+            const byState = (st: string) => list.filter((p) => p.build_state === st).length;
+            return {
+              pieces: list.length,
+              beams: list.filter((p) => p.type !== 'column' && p.type !== 'brace').length,
+              columns: list.filter((p) => p.type === 'column').length,
+              braces: list.filter((p) => p.type === 'brace').length,
+              found: byState('found'),
+              needs_review: byState('needs_review'),
+              attention: byState('attention'),
+            };
+          };
+          const several = views.length > 1;
+          const perView = views.map((v) => {
+            const vs = asSheet(page, v);
+            const run = runOf(v);
+            const sys = systemValues(vs);
+            const badge = pageBadge({
+              role: vs.build_role,
+              built_at: vs.built_at,
+              setup_changed_at: vs.setup_changed_at,
+              reviewed_at: page.reviewed_at,
+              last_edit_at: lastEdit,
+              last_run: run ? { status: run.status, started_at: run.started_at } : null,
+              system_values: sys,
+            });
+            const reasons =
+              run && (run.status === 'refused' || run.status === 'failed')
+                ? (run.error ?? '').split('; ').filter((x) => x !== '')
+                : setupReasons(vs, true);
+            const counts = (run?.counts ?? {}) as Record<string, unknown>;
+            return {
+              v,
+              run,
+              sys,
+              badge,
+              reasons,
+              json: {
+                ...viewJson(v),
+                badge,
+                reasons,
+                notes: run?.notes ?? [],
+                system_values: sys,
+                deselections_unmatched:
+                  typeof counts.deselections_unmatched === 'number'
+                    ? counts.deselections_unmatched
+                    : 0,
+                counts: stateCounts(
+                  ps.filter((p) => (p.build_view_id ?? firstViewId) === v.row.id),
+                ),
+              },
+            };
+          });
+          const firstRun = perView[0]?.run ?? null;
+          const sys = [...new Set(perView.flatMap((x) => x.sys))];
           return {
             id: s.id,
             page_index: s.page_index,
@@ -339,20 +409,11 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
             thumbnail_url: s.thumbnail_path
               ? `/api/projects/${projectId}/sheets/${s.id}/thumbnail`
               : null,
-            badge: pageBadge({
-              role: s.build_role,
-              built_at: s.built_at,
-              setup_changed_at: s.setup_changed_at,
-              reviewed_at: s.reviewed_at,
-              last_edit_at: lastEdit,
-              last_run: run ? { status: run.status, started_at: run.started_at } : null,
-              system_values: sys,
-            }),
-            reasons:
-              run && (run.status === 'refused' || run.status === 'failed')
-                ? (run.error ?? '').split('; ').filter((x) => x !== '')
-                : setupReasons(s, true),
-            notes: run?.notes ?? [],
+            badge: combineBadges(perView.map((x) => x.badge)),
+            reasons: perView.flatMap((x) =>
+              several ? x.reasons.map((m) => `${x.v.row.name}: ${m}`) : x.reasons,
+            ),
+            notes: firstRun?.notes ?? [],
             system_values: sys,
             setup: {
               role: s.build_role,
@@ -365,20 +426,13 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
               tos_raw: s.tos_raw,
               column_plan_sheet_id: s.column_plan_sheet_id,
             },
+            views: perView.map((x) => x.json),
             scales_found: s.scales,
             built_at: s.built_at,
             reviewed_by: s.reviewed_by,
             reviewed_at: s.reviewed_at,
             pending_edits: pending,
-            counts: {
-              pieces: ps.length,
-              beams: ps.filter((p) => p.type !== 'column' && p.type !== 'brace').length,
-              columns: ps.filter((p) => p.type === 'column').length,
-              braces: ps.filter((p) => p.type === 'brace').length,
-              found: byState('found'),
-              needs_review: byState('needs_review'),
-              attention: byState('attention'),
-            },
+            counts: stateCounts(ps),
           };
         }),
       };
@@ -390,20 +444,30 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
     { schema: { params: sheetParams } },
     async (request) => {
       const { projectId, sheetId } = request.params;
-      const s = await loadSheet(projectId, sheetId);
-      const run = await db()
+      const page = await loadSheet(projectId, sheetId);
+      const views = await viewsOf(db(), page.id);
+      const first = pickView(views);
+      const s = first ? asSheet(page, first) : page;
+      // the grid lines of each view's latest finished build
+      const done = await db()
         .selectFrom('build_runs')
-        .select('id')
+        .select(['id', 'view_id', 'counts'])
         .where('sheet_id', '=', s.id)
         .where('status', '=', 'done')
         .orderBy('finished_at', 'desc')
-        .limit(1)
-        .executeTakeFirst();
-      const grid = run
+        .execute();
+      const latest = views
+        .map((v) => done.find((r) => (r.view_id ?? first?.row.id) === v.row.id))
+        .filter((r): r is NonNullable<typeof r> => r !== undefined);
+      const grid = latest.length
         ? await db()
             .selectFrom('grid_lines')
             .select(['label', 'family', 'x0', 'y0', 'x1', 'y1', 'bubble'])
-            .where('build_run_id', '=', run.id)
+            .where(
+              'build_run_id',
+              'in',
+              latest.map((r) => r.id),
+            )
             .orderBy('label')
             .execute()
         : [];
@@ -412,8 +476,18 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
         sheet_id: s.id,
         crop: s.crop_region,
         pen_class: s.pen_class,
+        pens: first ? first.pens.map((p) => p.pen_class) : [],
         tos_mm: num(s.tos_mm),
         scale_ratio: num(s.build_scale_ratio),
+        views: views.map((v) => {
+          const run = done.find((r) => (r.view_id ?? first?.row.id) === v.row.id);
+          const c = (run?.counts ?? {}) as Record<string, unknown>;
+          return {
+            ...viewJson(v),
+            deselections_unmatched:
+              typeof c.deselections_unmatched === 'number' ? c.deselections_unmatched : 0,
+          };
+        }),
         grid_lines: grid.map((g) => ({
           label: g.label,
           family: g.family,
@@ -448,24 +522,48 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
       const s = await loadSheet(request.params.projectId, request.params.sheetId);
       const editor = trimWho(request.body.who);
       const now = new Date();
-      const confirmed = systemValues(s);
-      const set: Record<string, unknown> = { reviewed_by: editor, reviewed_at: now };
-      const by = (col: string) => {
-        set[`${col}_confirmed_by`] = editor;
-        set[`${col}_confirmed_at`] = now;
+      const views = await viewsOf(db(), s.id);
+      // per view: the values still system values; the view column of each is
+      // <value>_confirmed_by / _at (role, box for the crop, scale, tos, column_plan); a system pen
+      // is confirmed on its view_pens row
+      const COL: Record<string, string> = {
+        role: 'role',
+        crop: 'box',
+        scale: 'scale',
+        tos: 'tos',
+        column_plan: 'column_plan',
       };
-      // the column of each value is <value>_confirmed_by / _at (role, crop, scale, pen_class, tos,
-      // column_plan)
-      for (const v of confirmed) by(v);
-      if (confirmed.includes('pen_class')) set.pen_class_source = s.pen_class_source ?? 'suggested';
+      const perView = views.map((v) => ({ v, values: systemValues(asSheet(s, v)) }));
+      const confirmed = [...new Set(perView.flatMap((x) => x.values))];
       await db()
         .transaction()
         .execute(async (trx) => {
           await trx
             .updateTable('sheets')
-            .set(set as never)
+            .set({ reviewed_by: editor, reviewed_at: now })
             .where('id', '=', s.id)
             .execute();
+          for (const { v, values } of perView) {
+            const set: Record<string, unknown> = {};
+            for (const x of values)
+              if (COL[x]) {
+                set[`${COL[x]}_confirmed_by`] = editor;
+                set[`${COL[x]}_confirmed_at`] = now;
+              }
+            if (Object.keys(set).length)
+              await trx
+                .updateTable('build_views')
+                .set(set as never)
+                .where('id', '=', v.row.id)
+                .execute();
+            if (values.includes('pen_class'))
+              await trx
+                .updateTable('view_pens')
+                .set({ confirmed_by: editor, confirmed_at: now })
+                .where('view_id', '=', v.row.id)
+                .where('confirmed_by', 'is', null)
+                .execute();
+          }
           await trx
             .insertInto('sheet_edits')
             .values({
@@ -697,7 +795,14 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
 
   app.post<{
     Params: { projectId: string; sheetId: string };
-    Body: { who: string; kind: string; a: PagePt; b?: PagePt | null; profile_text?: string | null };
+    Body: {
+      who: string;
+      kind: string;
+      a: PagePt;
+      b?: PagePt | null;
+      profile_text?: string | null;
+      view_id?: string;
+    };
   }>(
     '/api/projects/:projectId/sheets/:sheetId/line-first/pieces',
     {
@@ -713,13 +818,22 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
             a: point,
             b: { anyOf: [point, { type: 'null' }] },
             profile_text: { type: ['string', 'null'], maxLength: 80 },
+            view_id: uuid,
           },
         },
       },
     },
     async (request, reply) => {
       const { projectId, sheetId } = request.params;
-      const s = await loadSheet(projectId, sheetId);
+      const page = await loadSheet(projectId, sheetId);
+      const views = await viewsOf(db(), page.id);
+      // the view the piece is drawn in: the one named, else the smallest view box holding it
+      const view = request.body.view_id
+        ? pickView(views, request.body.view_id)
+        : viewAt(views, request.body.a[0], request.body.a[1]);
+      if (!view) throw new HttpError(404, { error: 'view not found on this page' });
+      const s = asSheet(page, view);
+      const firstView = pickView(views)!;
       const body = request.body;
       const editor = trimWho(body.who);
       const info = (await loadKinds(db())).get(body.kind);
@@ -742,20 +856,23 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
         .transaction()
         .execute(async (trx) => {
           // a drawn piece belongs to the page's latest finished build, or to a person's run
-          let run = await trx
+          const runs = await trx
             .selectFrom('build_runs')
-            .select('id')
+            .select(['id', 'view_id'])
             .where('sheet_id', '=', s.id)
             .where('status', '=', 'done')
             .orderBy('finished_at', 'desc')
-            .limit(1)
-            .executeTakeFirst();
+            .execute();
+          let run: { id: string } | undefined = runs.find(
+            (r) => (r.view_id ?? firstView.row.id) === view.row.id,
+          );
           if (!run)
             run = await trx
               .insertInto('build_runs')
               .values({
                 project_id: projectId,
                 sheet_id: s.id,
+                view_id: view.row.id,
                 requested_by: editor,
                 mode: 'person',
                 status: 'done',
@@ -782,6 +899,7 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
               tag_prefix: info.prefix,
               tag_number: number,
               build_run_id: run.id,
+              build_view_id: view.row.position === 1 ? null : view.row.id,
               page_x0: r2(body.a[0]),
               page_y0: r2(body.a[1]),
               page_x1: b ? r2(b[0]) : null,
@@ -911,10 +1029,21 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
       .selectAll()
       .where('auto_build_id', '=', auto.id)
       .execute();
+    const rawSheets = await db()
+      .selectFrom('sheets')
+      .selectAll()
+      .where('project_id', '=', projectId)
+      .execute();
+    const viewsBy = await loadViews(
+      db(),
+      rawSheets.map((s) => s.id),
+    );
+    // the final setup of a page is its first view's (the report compares per page)
     const sheets = new Map(
-      (
-        await db().selectFrom('sheets').selectAll().where('project_id', '=', projectId).execute()
-      ).map((s) => [s.id, s]),
+      rawSheets.map((s) => {
+        const first = pickView(viewsBy.get(s.id) ?? []);
+        return [s.id, first ? asSheet(s, first) : s];
+      }),
     );
     const pages = snaps
       .map((sn) => {

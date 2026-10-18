@@ -366,6 +366,8 @@ export interface MembersTable {
   ignored: Generated<boolean>;
   added_by: string | null;
   added_at: Timestamp | null;
+  // Phase 11c (migration 020): NULL = the page's first view
+  build_view_id: string | null;
   created_at: Timestamp;
   updated_at: Timestamp;
 }
@@ -394,7 +396,8 @@ export type CountActionName =
   | 'add'
   | 'ignore'
   | 'save'
-  | 'view';
+  | 'view'
+  | 'role';
 
 export interface SheetLinesTable {
   sheet_id: string;
@@ -527,6 +530,8 @@ export interface BuildRunsTable {
   // Phase 11b (migration 017)
   mode: ColumnType<'auto' | 'person', 'auto' | 'person' | undefined, 'auto' | 'person'>;
   auto_build_id: string | null;
+  // Phase 11c (migration 020): NULL = the page's first view
+  view_id: string | null;
 }
 
 export interface AutoBuildsTable {
@@ -632,6 +637,91 @@ export interface BeamLinesTable {
   created_at: Generated<Date>;
 }
 
+/** Phase 11c (migration 020): role names (name + build behaviour), organisation-wide. */
+export type RoleBehaviour = 'column_plan' | 'framing' | 'none';
+
+export interface RoleNamesTable {
+  name: string;
+  behaviour: RoleBehaviour;
+  built_in: Generated<boolean>;
+  position: Generated<number>;
+  created_by: string | null;
+  created_at: Generated<Date>;
+  updated_by: string | null;
+  updated_at: Generated<Date>;
+}
+
+/** A view of a page: the setup the build reads. A value is a system value while its
+ * *_confirmed_by is null. */
+export interface BuildViewsTable {
+  id: Generated<string>;
+  sheet_id: string;
+  position: number;
+  name: string;
+  box: Json | null;
+  box_confirmed_by: string | null;
+  box_confirmed_at: Timestamp | null;
+  role_name: string | null;
+  role_confirmed_by: string | null;
+  role_confirmed_at: Timestamp | null;
+  scale_ratio: Numeric | null;
+  scale_text: string | null;
+  scale_confirmed_by: string | null;
+  scale_confirmed_at: Timestamp | null;
+  tos_mm: Numeric | null;
+  tos_raw: string | null;
+  tos_source: 'read' | 'typed' | null;
+  tos_confirmed_by: string | null;
+  tos_confirmed_at: Timestamp | null;
+  no_beams_by: string | null;
+  no_beams_at: Timestamp | null;
+  column_plan_view_id: string | null;
+  column_plan_confirmed_by: string | null;
+  column_plan_confirmed_at: Timestamp | null;
+  setup_changed_at: Timestamp | null;
+  built_at: Timestamp | null;
+  registration: Json | null;
+  created_by: string | null;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
+export interface ViewPensTable {
+  id: Generated<string>;
+  view_id: string;
+  position: number;
+  pen_class: string;
+  source: 'suggested' | 'person';
+  confirmed_by: string | null;
+  confirmed_at: Timestamp | null;
+  created_at: Generated<Date>;
+}
+
+export interface ViewExclusionsTable {
+  id: Generated<string>;
+  view_id: string;
+  box: Json;
+  status: 'suggested' | 'accepted';
+  rule: 'frame' | 'title_block' | 'table' | null;
+  created_by: string | null;
+  created_at: Generated<Date>;
+  accepted_by: string | null;
+  accepted_at: Timestamp | null;
+}
+
+export interface ViewDeselectionsTable {
+  id: Generated<string>;
+  view_id: string;
+  x0: Numeric;
+  y0: Numeric;
+  x1: Numeric;
+  y1: Numeric;
+  line_index: number | null;
+  lines_version: string | null;
+  created_by: string;
+  created_at: Generated<Date>;
+}
+
 export interface Database {
   projects: ProjectsTable;
   sheets: SheetsTable;
@@ -658,4 +748,9 @@ export interface Database {
   auto_builds: AutoBuildsTable;
   build_snapshots: BuildSnapshotsTable;
   tag_counters: TagCountersTable;
+  role_names: RoleNamesTable;
+  build_views: BuildViewsTable;
+  view_pens: ViewPensTable;
+  view_exclusions: ViewExclusionsTable;
+  view_deselections: ViewDeselectionsTable;
 }

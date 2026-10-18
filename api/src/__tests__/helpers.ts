@@ -155,3 +155,59 @@ export async function jobsFor(db: Kysely<Database>, projectId: string) {
     .where(sql<boolean>`payload->>'project_id' = ${projectId}`)
     .execute();
 }
+
+/** Sets columns of a sheet's first build view (Phase 11c) and, if given, replaces its pens
+ * ({pen_class, source, confirmed_by?} in order). */
+export async function setFirstView(
+  db: Kysely<Database>,
+  sheetId: string,
+  set: Record<string, unknown>,
+  pens?: { pen_class: string; source: 'suggested' | 'person'; confirmed_by?: string | null }[],
+): Promise<string> {
+  const v = await db
+    .selectFrom('build_views')
+    .select('id')
+    .where('sheet_id', '=', sheetId)
+    .where('position', '=', 1)
+    .executeTakeFirstOrThrow();
+  if (Object.keys(set).length)
+    await db
+      .updateTable('build_views')
+      .set(set as never)
+      .where('id', '=', v.id)
+      .execute();
+  if (pens) {
+    await db.deleteFrom('view_pens').where('view_id', '=', v.id).execute();
+    let i = 0;
+    for (const p of pens)
+      await db
+        .insertInto('view_pens')
+        .values({
+          view_id: v.id,
+          position: ++i,
+          pen_class: p.pen_class,
+          source: p.source,
+          confirmed_by: p.confirmed_by ?? null,
+          confirmed_at: p.confirmed_by ? new Date() : null,
+        })
+        .execute();
+  }
+  return v.id;
+}
+
+/** A sheet's first build view and its pens. */
+export async function firstView(db: Kysely<Database>, sheetId: string) {
+  const v = await db
+    .selectFrom('build_views')
+    .selectAll()
+    .where('sheet_id', '=', sheetId)
+    .where('position', '=', 1)
+    .executeTakeFirstOrThrow();
+  const pens = await db
+    .selectFrom('view_pens')
+    .selectAll()
+    .where('view_id', '=', v.id)
+    .orderBy('position')
+    .execute();
+  return { ...v, pens };
+}

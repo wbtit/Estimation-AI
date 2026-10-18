@@ -7,7 +7,7 @@ import type { GradeRule } from '../review/grades.js';
 import { lineFirstBom, type BuiltPiece } from '../review/line-first-bom.js';
 import { effectiveState, PEN_CLASS_RE, setupReasons } from '../routes/build.js';
 import type { Selectable } from 'kysely';
-import { deleteProject, insertProject, insertSheet, loadWorkbook } from './helpers.js';
+import { deleteProject, firstView, insertProject, insertSheet, loadWorkbook } from './helpers.js';
 
 const app = buildApp();
 const db = getDb();
@@ -225,16 +225,19 @@ describe('build routes (test database)', () => {
       who: WHO,
     });
     expect(pen.statusCode).toBe(200);
+    const v = await firstView(db, sheetId);
+    expect(v.box_confirmed_by).toBe(WHO);
+    expect(Number(v.scale_ratio)).toBe(96);
+    expect(Number(v.tos_mm)).toBe(0);
+    expect(v.tos_confirmed_by).toBe(WHO);
+    expect(v.pens.map((p) => p.source)).toEqual(['suggested']);
+    // the sheets setup columns are a read-only legacy copy now
     const s = await db
       .selectFrom('sheets')
       .selectAll()
       .where('id', '=', sheetId)
       .executeTakeFirstOrThrow();
-    expect(s.crop_confirmed_by).toBe(WHO);
-    expect(Number(s.build_scale_ratio)).toBe(96);
-    expect(Number(s.tos_mm)).toBe(0);
-    expect(s.tos_confirmed_by).toBe(WHO);
-    expect(s.pen_class_source).toBe('suggested');
+    expect([s.crop_confirmed_by, s.pen_class]).toEqual([null, null]);
     const edits = await db
       .selectFrom('sheet_edits')
       .select('field_name')

@@ -50,6 +50,8 @@ export interface PieceView {
   scale_ratio: number | null;
   evidence: unknown;
   build_run_id: string | null;
+  /** The view the piece belongs to; null = the page's first view. */
+  build_view_id: string | null;
   /** Plan frame end points in mm (x right, y up), z = elevation or 0. */
   start: [number, number, number] | null;
   end: [number, number, number] | null;
@@ -191,6 +193,7 @@ export async function loadPieces(
       scale_ratio: ratio,
       evidence: r.label_evidence,
       build_run_id: r.build_run_id,
+      build_view_id: r.build_view_id,
       start,
       end,
     });
