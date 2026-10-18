@@ -683,6 +683,7 @@ h4 {
 }
 
 .page-card .field {
+  position: relative;
   display: grid;
   grid-template-columns: 70px 1fr;
   gap: 6px;
@@ -1083,6 +1084,11 @@ button.link {
   position: absolute;
   left: 0;
   top: 0;
+}
+
+.page-ink {
+  position: absolute;
+  inset: 0;
 }
 
 .page-canvas.dim {
@@ -1501,16 +1507,31 @@ table.grid tr.total td {
 }
 
 /* the role of a view: a name with its build behaviour */
-.role-select {
-  position: relative;
-  display: inline-flex;
+.page-card .field > * {
   min-width: 0;
+}
+
+/* the menu opens under the field, as wide as the card */
+.role-select {
+  position: static;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.built-as {
+  font-size: 11px;
+  color: var(--shell-muted);
 }
 
 .role-button {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  white-space: nowrap;
+  width: 100%;
+  min-width: 0;
   background: var(--shell-input);
   color: var(--shell-text);
   border: 1px solid var(--shell-line);
@@ -1541,10 +1562,18 @@ table.grid tr.total td {
   color: var(--shell-muted);
 }
 
+.role-button > span:first-child {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: left;
+}
+
 .menu.role-menu {
   left: 0;
-  right: auto;
-  min-width: 230px;
+  right: 0;
+  min-width: 0;
   max-height: 360px;
   overflow: auto;
   z-index: 40;
@@ -1594,4 +1623,9 @@ table.grid tr.total td {
 
 .set-size > button.on {
   border-color: var(--accent);
+}
+
+.menu.role-menu.up {
+  top: auto;
+  bottom: 100%;
 }

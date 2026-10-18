@@ -157,7 +157,7 @@ export const PropertiesPanel: React.FC<{
               <SummaryList rows={bomRows} />
             </Section>
             <Section
-              title="Crop"
+              title={viewName ? `Crop · ${viewName}` : "Crop"}
               extra={<button onClick={onCropTool}>Redraw</button>}
             >
               {crop ? (

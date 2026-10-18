@@ -24,6 +24,7 @@ export const RoleSelect: React.FC<{
 }> = ({ value, roles, onPick, onCreate, onEdit }) => {
   const [mode, setMode] = useState<"pick" | "type" | "ask" | "edit">("pick");
   const [open, setOpen] = useState(false);
+  const [up, setUp] = useState(false);
   const [text, setText] = useState("");
   const builtIn = roles.filter((r) => r.built_in);
   const custom = roles.filter((r) => !r.built_in);
@@ -113,21 +114,28 @@ export const RoleSelect: React.FC<{
         aria-label="role"
         aria-haspopup="listbox"
         aria-expanded={open}
-        onClick={() => setOpen(!open)}
+        onClick={(e) => {
+          // open upward when the panel has no room for the list below the button
+          const r = e.currentTarget.getBoundingClientRect();
+          setUp(window.innerHeight - r.bottom < 320 && r.top > 320);
+          setOpen(!open);
+        }}
       >
         <span>{value ?? "—"}</span>
-        {b && (
-          <span
-            className={`behaviour ${b}`}
-            title="What the build does with this view"
-          >
-            {BEHAVIOUR_LABEL[b]}
-          </span>
-        )}
         <ChevronDown size={14} />
       </button>
+      {b && (
+        <span className="built-as" title="What the build does with this view">
+          Built as{" "}
+          <span className={`behaviour ${b}`}>{BEHAVIOUR_LABEL[b]}</span>
+        </span>
+      )}
       {open && (
-        <div className="menu role-menu" role="listbox" data-testid="role-menu">
+        <div
+          className={`menu role-menu${up ? " up" : ""}`}
+          role="listbox"
+          data-testid="role-menu"
+        >
           <span className="label">Built-in</span>
           {builtIn.map(item)}
           {custom.length > 0 && <span className="label">Custom</span>}

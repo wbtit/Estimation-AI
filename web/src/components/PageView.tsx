@@ -24,6 +24,13 @@ export interface PageViewProps {
   scroller?: React.RefObject<HTMLDivElement | null>;
 }
 
+/** The drawing's opacity over the white page for a fade strength 0..1. Squared, so the default
+ * 45% turns black linework light grey (opacity 0.30, about #b3b3b3) while 0% keeps it black. */
+export function drawingOpacity(fade: number): number {
+  const f = Math.min(1, Math.max(0, fade));
+  return (1 - f) * (1 - f);
+}
+
 /** Long side of the low-resolution full-page render, in device pixels. */
 export const BASE_MAX_PX = 4096;
 /** Wait this long after the last zoom or pan before rendering the sharp layer. */
@@ -189,7 +196,7 @@ export const PageView: React.FC<PageViewProps> = ({
     const rect = (svgRef.current as SVGSVGElement).getBoundingClientRect();
     return clientToPage(e.clientX, e.clientY, rect, widthPt, heightPt);
   };
-  const opacity = dimPlan ? 0.18 : 1 - Math.min(1, Math.max(0, fade));
+  const opacity = dimPlan ? 0.18 : drawingOpacity(fade);
 
   return (
     <div
@@ -198,27 +205,29 @@ export const PageView: React.FC<PageViewProps> = ({
       style={{ width: cssW, height: cssH, cursor: cursor ?? "default" }}
       data-testid="page-wrap"
     >
-      <canvas
-        ref={baseRef}
-        className="page-canvas"
-        style={{ width: cssW, height: cssH, opacity }}
-      />
-      <canvas
-        ref={sharpRef}
-        className="page-canvas sharp"
-        data-testid="sharp-layer"
-        style={
-          sharp
-            ? {
-                left: sharp.x0 * zoom,
-                top: sharp.y0 * zoom,
-                width: (sharp.x1 - sharp.x0) * zoom,
-                height: (sharp.y1 - sharp.y0) * zoom,
-                opacity,
-              }
-            : { display: "none" }
-        }
-      />
+      {/* the fade applies to both layers together (each faded alone, they would stack darker) */}
+      <div className="page-ink" style={{ opacity }}>
+        <canvas
+          ref={baseRef}
+          className="page-canvas"
+          style={{ width: cssW, height: cssH }}
+        />
+        <canvas
+          ref={sharpRef}
+          className="page-canvas sharp"
+          data-testid="sharp-layer"
+          style={
+            sharp
+              ? {
+                  left: sharp.x0 * zoom,
+                  top: sharp.y0 * zoom,
+                  width: (sharp.x1 - sharp.x0) * zoom,
+                  height: (sharp.y1 - sharp.y0) * zoom,
+                }
+              : { display: "none" }
+          }
+        />
+      </div>
       <svg
         ref={svgRef}
         className="page-overlay"

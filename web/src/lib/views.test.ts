@@ -208,3 +208,13 @@ describe("pen preview", () => {
     expect(activeView([], null)).toBeNull();
   });
 });
+
+describe("drawing fade", () => {
+  it("0% keeps the drawing black, 45% turns it light grey, 100% hides it", async () => {
+    const { drawingOpacity } = await import("../components/PageView");
+    expect(drawingOpacity(0)).toBe(1);
+    expect(drawingOpacity(0.45)).toBeCloseTo(0.3025, 6);
+    expect(drawingOpacity(1)).toBe(0);
+    expect(drawingOpacity(-1)).toBe(1);
+  });
+});

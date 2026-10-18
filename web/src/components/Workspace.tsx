@@ -627,7 +627,7 @@ export const Workspace: React.FC<{
             sheetId={sheetId}
             selected={selectedPieces}
             kinds={kinds}
-            crop={data?.crop ?? page?.setup.crop ?? null}
+            crop={view ? view.box : (data?.crop ?? page?.setup.crop ?? null)}
             onEdit={(e) => void editSelected(e)}
             onDelete={deleteSelected}
             onCropTool={() => askTool("crop")}
