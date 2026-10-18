@@ -19,6 +19,7 @@ from src.build.propose import (
     propose_tos,
 )
 from src.build.segments import TextLine, page_text_lines
+from src.build.views import load_views, pick_view, view_as_sheet
 
 BOX = (100.0, 100.0, 900.0, 700.0)
 
@@ -138,7 +139,9 @@ def _project(dbp: DbProject, tos_note: bool = True) -> tuple[str, str, str]:
 
 
 def _sheet(dbp: DbProject, sid: str) -> dict:
-    return dbp.conn.execute("SELECT * FROM sheets WHERE id = %s", (sid,)).fetchone()
+    """The page as the setup rules read it: its first view's values (Phase 11c)."""
+    page = dbp.conn.execute("SELECT * FROM sheets WHERE id = %s", (sid,)).fetchone()
+    return view_as_sheet(page, pick_view(load_views(dbp.conn, sid)))
 
 
 def test_auto_mode_proposes_builds_with_system_values_and_freezes_the_system_version(
@@ -269,8 +272,11 @@ def test_no_beams_rebuild_removes_untouched_beams_and_keeps_edited_ones(dbp: DbP
     kept = str(beams[0]["id"])
     dbp.conn.execute("UPDATE members SET review_status = 'approved' WHERE id = %s", (kept,))
     dbp.conn.execute(
-        "UPDATE sheets SET pen_class = NULL, pen_class_source = 'person',"
-        " pen_class_confirmed_by = 'tester' WHERE id = %s",
+        "DELETE FROM view_pens WHERE view_id IN (SELECT id FROM build_views WHERE sheet_id = %s)",
+        (framing_id,),
+    )
+    dbp.conn.execute(
+        "UPDATE build_views SET no_beams_by = 'tester', no_beams_at = now() WHERE sheet_id = %s",
         (framing_id,),
     )
     run_id = dbp.conn.execute(

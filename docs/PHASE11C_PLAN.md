@@ -46,7 +46,7 @@ Any change to a view's box, role, scale, T.O.S., pens, exclusions or deselection
 ## 3. API
 
 - **View routes:**
-  - `GET/POST/PATCH/DELETE .../sheets/:sheetId/views` (box, name, role_name, scale, T.O.S., column plan view).
+  - `POST/PATCH/DELETE .../sheets/:sheetId/build-views` (box, name; `/views` is taken by the label-first API). Role, scale, T.O.S., crop and column plan go through the existing setup routes with a `view_id`.
   - `.../views/:viewId/pens`: pick (replace | add), delete.
   - `.../exclusions`: add, delete, accept, accept-all.
   - `.../exclusions/suggest`: proposes boxes from `sheet_lines` and text, using the deterministic rules below. The results are stored as suggested rows.

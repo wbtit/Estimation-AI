@@ -18,6 +18,11 @@ row, reviewed, or confirmed or rejected in count mode) is never changed or delet
 that overlaps a touched piece is not added; untouched pieces of earlier runs that are gone are
 removed. Category = members.kind ('Beams', 'Column'); tags (the BOM piecemark) follow the
 project's tag scope. Logs counts only, never page text.
+
+Views (Phase 11c): a run builds one view of the page (build_runs.view_id; NULL = the first view)
+with the view's setup (src/build/views.py) and person inputs (beam pens, accepted exclude boxes,
+deselected lines). Storage is scoped to the view: only that view's pieces and earlier geometry are
+replaced; pieces of a view after the first carry build_view_id and the view id in their stable id.
 """
 
 from __future__ import annotations
@@ -37,6 +42,7 @@ from src.build.labels import Attached
 from src.build.page import ColumnPlanRef, PageBuild, Setup, build_page
 from src.build.pieces import build_state, length_mm, plan_mm, stable_member_id
 from src.build.segments import TextLine
+from src.build.views import View, load_views, pick_view, view_as_sheet
 from src.config import WorkerConfig
 from src.queue import Job
 
@@ -110,42 +116,45 @@ def _refuse(conn, run_id: str, reasons: list[str]) -> dict[str, Any]:
 
 
 def _column_plan(
-    conn, project_id: str, sheet_id: str, inputs: dict[str, Any]
+    conn, project_id: str, view: View, inputs: dict[str, Any]
 ) -> tuple[ColumnPlanRef | None, str | None, list[str]]:
-    """(column plan, its sheet id, refusal reasons) for a framing page. The run's inputs win; else
-    the sheet's own choice (column_plan_sheet_id, or "none" when a person chose none)."""
+    """(column plan, its sheet id, refusal reasons) for a framing view. The run's inputs win
+    (column_plan_view_id, or column_plan_sheet_id = that page's first view); else the view's own
+    choice (column_plan_view_id, or "none" when a person chose none); else the only built
+    column-plan view of the project."""
     if inputs.get("no_column_plan"):
         return None, None, []
-    if not inputs.get("column_plan_sheet_id"):
-        own = conn.execute(
-            "SELECT column_plan_sheet_id, column_plan_confirmed_by FROM sheets WHERE id = %s",
-            (sheet_id,),
-        ).fetchone()
-        if own and own["column_plan_sheet_id"]:
-            inputs = {**inputs, "column_plan_sheet_id": str(own["column_plan_sheet_id"])}
-        elif own and own["column_plan_confirmed_by"]:
+    wanted = inputs.get("column_plan_view_id")
+    if not wanted and inputs.get("column_plan_sheet_id"):
+        first = pick_view(load_views(conn, str(inputs["column_plan_sheet_id"])))
+        wanted = first.id if first else None
+    if not wanted and not inputs.get("column_plan_sheet_id"):
+        if view.row["column_plan_view_id"]:
+            wanted = str(view.row["column_plan_view_id"])
+        elif view.row["column_plan_confirmed_by"]:
             return None, None, []
     rows = conn.execute(
-        "SELECT id FROM sheets WHERE project_id = %s AND build_role = 'column_plan'"
-        " AND build_status = 'built' AND id <> %s ORDER BY page_index",
-        (project_id, sheet_id),
+        "SELECT v.id, v.sheet_id, v.position, v.scale_ratio FROM build_views v"
+        " JOIN sheets s ON s.id = v.sheet_id JOIN role_names r ON r.name = v.role_name"
+        " WHERE s.project_id = %s AND r.behaviour = 'column_plan' AND v.built_at IS NOT NULL"
+        " AND v.id <> %s ORDER BY s.page_index, v.position",
+        (project_id, view.id),
     ).fetchall()
-    wanted = inputs.get("column_plan_sheet_id")
     if wanted:
-        if str(wanted) not in {str(r["id"]) for r in rows}:
+        plan = next((r for r in rows if str(r["id"]) == str(wanted)), None)
+        if plan is None:
             return None, None, ["the named column plan page is not built"]
-        plan_id = str(wanted)
     elif len(rows) == 1:
-        plan_id = str(rows[0]["id"])
+        plan = rows[0]
     elif not rows:
         return None, None, ["build the column plan page first, or say the job has none"]
     else:
         return None, None, ["several column plan pages are built: name one"]
-    plan = conn.execute("SELECT * FROM sheets WHERE id = %s", (plan_id,)).fetchone()
+    plan_sheet = str(plan["sheet_id"])
     run = conn.execute(
         "SELECT id FROM build_runs WHERE sheet_id = %s AND status = 'done'"
-        " ORDER BY finished_at DESC LIMIT 1",
-        (plan_id,),
+        " AND (view_id = %s OR (view_id IS NULL AND %s)) ORDER BY finished_at DESC LIMIT 1",
+        (plan_sheet, plan["id"], plan["position"] == 1),
     ).fetchone()
     if run is None:
         return None, None, ["the column plan page has no finished build"]
@@ -177,7 +186,7 @@ def _column_plan(
             (run["id"],),
         )
     ]
-    return ColumnPlanRef(grid, float(plan["build_scale_ratio"]), cols), plan_id, []
+    return ColumnPlanRef(grid, float(plan["scale_ratio"]), cols), plan_sheet, []
 
 
 def _text_lines(conn, sheet_id: str) -> list[TextLine]:
@@ -210,14 +219,18 @@ def build_sheet(conn: psycopg.Connection, config: WorkerConfig, run_id: str) -> 
     run = conn.execute("SELECT * FROM build_runs WHERE id = %s", (run_id,)).fetchone()
     if run is None:
         raise BuildError("build run not found")
-    sheet = conn.execute(
+    page = conn.execute(
         "SELECT s.*, f.stored_path FROM sheets s"
         " JOIN project_files f ON f.project_id = s.project_id"
         " WHERE s.id = %s",
         (run["sheet_id"],),
     ).fetchone()
-    if sheet is None:
+    if page is None:
         raise BuildError("sheet not found")
+    view = pick_view(load_views(conn, str(page["id"])), run.get("view_id"))
+    if view is None:
+        raise BuildError("view not found")
+    sheet = view_as_sheet(page, view)
     inputs = dict(run["inputs"] or {})
     allow_system = run["mode"] == "auto" or bool(inputs.get("allow_system_values"))
     reasons = setup_reasons(sheet, allow_system)
@@ -226,7 +239,7 @@ def build_sheet(conn: psycopg.Connection, config: WorkerConfig, run_id: str) -> 
     project_id, sheet_id = str(sheet["project_id"]), str(sheet["id"])
     plan_ref, plan_sheet = None, None
     if sheet["build_role"] == "framing":
-        plan_ref, plan_sheet, reasons = _column_plan(conn, project_id, sheet_id, inputs)
+        plan_ref, plan_sheet, reasons = _column_plan(conn, project_id, view, inputs)
         if reasons:
             return _refuse(conn, run_id, reasons)
     pdf_path = config.upload_dir / sheet["stored_path"]
@@ -240,6 +253,9 @@ def build_sheet(conn: psycopg.Connection, config: WorkerConfig, run_id: str) -> 
         sheet["pen_class"],
         sheet["build_role"],
         str(inputs.get("crossing_rule") or "family"),
+        pens=tuple(p["pen_class"] for p in view.pens),
+        excludes=tuple(view.excludes),
+        deselected=tuple(view.deselected),
     )
     if setup.crossing_rule not in CROSSING_RULES:
         return _refuse(conn, run_id, [f"unknown crossing rule {setup.crossing_rule!r}"])
@@ -253,7 +269,14 @@ def build_sheet(conn: psycopg.Connection, config: WorkerConfig, run_id: str) -> 
         pen_class=setup.pen_class,
         role=setup.role,
         column_plan_sheet_id=plan_sheet,
+        view_id=view.id,
     )
+    if len(setup.beam_pens()) > 1:
+        inputs["pens"] = setup.beam_pens()
+    if setup.excludes:
+        inputs["exclude_boxes"] = len(setup.excludes)
+    if setup.deselected:
+        inputs["deselections"] = len(setup.deselected)
     conn.execute(
         "UPDATE build_runs SET status = 'running', inputs = %s, rules_version = %s WHERE id = %s",
         (Jsonb(inputs), RULES_VERSION, run_id),
@@ -270,12 +293,17 @@ def build_sheet(conn: psycopg.Connection, config: WorkerConfig, run_id: str) -> 
                 _legend(conn, project_id),
                 plan_ref,
             )
-        counts = store(conn, project_id, sheet_id, run_id, sheet, pb)
+        counts = store(conn, project_id, sheet_id, run_id, sheet, pb, view)
         _finish(conn, run_id, "done", counts=counts, notes=pb.notes)
+        reg = Jsonb(pb.registration.to_json()) if pb.registration else None
         conn.execute(
             "UPDATE sheets SET build_status = 'built', built_at = now(), registration = %s"
             " WHERE id = %s",
-            (Jsonb(pb.registration.to_json()) if pb.registration else None, sheet_id),
+            (reg, sheet_id),
+        )
+        conn.execute(
+            "UPDATE build_views SET built_at = now(), registration = %s WHERE id = %s",
+            (reg, view.id),
         )
         conn.commit()
     except Exception as err:
@@ -290,14 +318,16 @@ def build_sheet(conn: psycopg.Connection, config: WorkerConfig, run_id: str) -> 
 
 
 # ---- storage ------------------------------------------------------------------------------------
-def _touched_rows(conn, sheet_id: str) -> dict[str, dict[str, Any]]:
-    """Built members of the sheet (member_id -> row) with a `touched` flag."""
+def _touched_rows(conn, sheet_id: str, view: View) -> dict[str, dict[str, Any]]:
+    """Built members of the view (member_id -> row) with a `touched` flag. Members with no view id
+    belong to the first view."""
     rows = conn.execute(
         "SELECT m.id, m.member_id, m.review_status, m.count_state, m.page_x0, m.page_y0,"
         " m.page_x1, m.page_y1,"
         " EXISTS (SELECT 1 FROM member_edits e WHERE e.member_id = m.id) AS has_edit"
-        " FROM members m WHERE m.sheet_id = %s AND m.member_id LIKE 'LF-%%'",
-        (sheet_id,),
+        " FROM members m WHERE m.sheet_id = %s AND m.member_id LIKE 'LF-%%'"
+        " AND (m.build_view_id = %s OR (m.build_view_id IS NULL AND %s))",
+        (sheet_id, view.id, view.first),
     ).fetchall()
     out = {}
     for r in rows:
@@ -337,30 +367,37 @@ def _size_fields(att: Attached) -> dict[str, Any]:
     }
 
 
-def store(conn, project_id: str, sheet_id: str, run_id: str, sheet, pb: PageBuild) -> dict:
+def store(
+    conn, project_id: str, sheet_id: str, run_id: str, sheet, pb: PageBuild, view: View
+) -> dict:
     ratio = pb.setup.ratio
     tos = pb.setup.tos_mm
-    # geometry of earlier runs goes, except what a touched piece still points at (a foreign key
-    # SET NULL would change that piece)
+    vid = None if view.first else view.id
+    key = sheet_id if view.first else f"{sheet_id}|{view.id}"  # stable ids stay as before views
+    # geometry of earlier runs of this view goes (rows of no run belong to the first view), except
+    # what a touched piece still points at (a foreign key SET NULL would change that piece)
     kept = (
         "SELECT {col} FROM members m WHERE m.sheet_id = %s AND m.{col} IS NOT NULL AND ("
         " m.review_status <> 'unreviewed' OR m.count_state <> 'suggested'"
         " OR EXISTS (SELECT 1 FROM member_edits e WHERE e.member_id = m.id))"
     )
-    conn.execute(
-        "DELETE FROM grid_lines WHERE sheet_id = %s AND build_run_id IS DISTINCT FROM %s",
-        (sheet_id, run_id),
+    of_view = (
+        "build_run_id IS DISTINCT FROM %s AND ((build_run_id IS NULL AND %s) OR build_run_id IN"
+        " (SELECT id FROM build_runs WHERE sheet_id = %s"
+        " AND (view_id = %s OR (view_id IS NULL AND %s))))"
     )
+    scope = (run_id, view.first, sheet_id, view.id, view.first)
+    conn.execute(f"DELETE FROM grid_lines WHERE sheet_id = %s AND {of_view}", (sheet_id, *scope))
     conn.execute(
-        "DELETE FROM beam_lines WHERE sheet_id = %s AND build_run_id IS DISTINCT FROM %s"
+        f"DELETE FROM beam_lines WHERE sheet_id = %s AND {of_view}"
         f" AND id NOT IN ({kept.format(col='beam_line_id')})",
-        (sheet_id, run_id, sheet_id),
+        (sheet_id, *scope, sheet_id),
     )
     conn.execute(
-        "DELETE FROM support_nodes WHERE sheet_id = %s AND build_run_id IS DISTINCT FROM %s"
+        f"DELETE FROM support_nodes WHERE sheet_id = %s AND {of_view}"
         f" AND id NOT IN ({kept.format(col='start_node_id')})"
         f" AND id NOT IN ({kept.format(col='end_node_id')})",
-        (sheet_id, run_id, sheet_id, sheet_id),
+        (sheet_id, *scope, sheet_id, sheet_id),
     )
     for g in pb.grid_lines:
         b: Bubble | None = g.bubbles[0] if g.bubbles else None
@@ -371,7 +408,7 @@ def store(conn, project_id: str, sheet_id: str, run_id: str, sheet, pb: PageBuil
              Jsonb({"cx": round(b.centre[0], 2), "cy": round(b.centre[1], 2),
                     "r": round(b.radius, 2), "count": len(g.bubbles)}) if b else None),
         )  # fmt: skip
-    existing = _touched_rows(conn, sheet_id)
+    existing = _touched_rows(conn, sheet_id, view)
     touched = [r for r in existing.values() if r["touched"]]
     new_ids: set[str] = set()
     counts = {"kept_edited": 0, "kept_edited_overlap": 0, "created": 0, "updated": 0}
@@ -391,10 +428,10 @@ def store(conn, project_id: str, sheet_id: str, run_id: str, sheet, pb: PageBuil
         cols = list(fields)
         if row is None:
             got = conn.execute(
-                f"INSERT INTO members (project_id, sheet_id, member_id, origin, quantity,"
-                f" {', '.join(cols)}) VALUES (%s, %s, %s, 'extracted', 1,"
+                f"INSERT INTO members (project_id, sheet_id, build_view_id, member_id, origin,"
+                f" quantity, {', '.join(cols)}) VALUES (%s, %s, %s, %s, 'extracted', 1,"
                 f" {', '.join(['%s'] * len(cols))}) RETURNING id",
-                [project_id, sheet_id, member_id, *fields.values()],
+                [project_id, sheet_id, vid, member_id, *fields.values()],
             ).fetchone()
             counts["created"] += 1
             return str(got["id"])
@@ -432,7 +469,7 @@ def store(conn, project_id: str, sheet_id: str, run_id: str, sheet, pb: PageBuil
             "end_resolution_method": "line_first_build",
             "source_bbox": Jsonb(_box(g.box)),
         }
-        mid = upsert(stable_member_id(sheet_id, COLUMN_KIND, g.centre), fields)
+        mid = upsert(stable_member_id(key, COLUMN_KIND, g.centre), fields)
         if mid is not None:
             column_member[k] = mid
     glyph_column = {id(g): column_member.get(k) for k, g in enumerate(pb.columns)}
@@ -466,7 +503,7 @@ def store(conn, project_id: str, sheet_id: str, run_id: str, sheet, pb: PageBuil
             " gaps_bridged, gaps_pt, pen_class, role)"
             " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
             (sheet_id, run_id, *_r(ln.p0), *_r(ln.p1), len(ln.seg_ids), len(ln.gaps),
-             Jsonb(ln.gaps), pb.setup.pen_class, ln.role),
+             Jsonb(ln.gaps), pb.line_pens.get(ln.id, pb.setup.pen_class), ln.role),
         ).fetchone()  # fmt: skip
         line_uuid[ln.id] = str(got["id"])
 
@@ -512,7 +549,7 @@ def store(conn, project_id: str, sheet_id: str, run_id: str, sheet, pb: PageBuil
             "plan_method": "pdf_geometry",
             "source_bbox": Jsonb(_box((*p.a, *p.b))),
         }
-        upsert(stable_member_id(sheet_id, BEAM_KIND, p.a, p.b), fields)
+        upsert(stable_member_id(key, BEAM_KIND, p.a, p.b), fields)
 
     removed = 0
     for mid, row in existing.items():

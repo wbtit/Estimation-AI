@@ -34,25 +34,44 @@ def _pdf(dbp: DbProject) -> tuple[str, str]:
 
 
 def _setup(dbp: DbProject, sheet_id: str, role: str, tos=True, pen=True) -> None:
+    """A person's setup of the page's first view (Phase 11c)."""
+    name = {"column_plan": "Column plan", "framing": "Framing plan"}[role]
     dbp.conn.execute(
-        "UPDATE sheets SET build_role = %s, crop_region = %s, crop_confirmed_by = 'tester',"
-        " crop_confirmed_at = now(), build_scale_ratio = 96, build_scale_text = '1/8\" = 1''-0\"',"
-        " scale_confirmed_by = 'tester', scale_confirmed_at = now() WHERE id = %s",
-        (role, Jsonb(CROP), sheet_id),
+        "UPDATE build_views SET role_name = %s, role_confirmed_by = 'tester', box = %s,"
+        " box_confirmed_by = 'tester', box_confirmed_at = now(), scale_ratio = 96,"
+        " scale_text = '1/8\" = 1''-0\"', scale_confirmed_by = 'tester',"
+        " scale_confirmed_at = now() WHERE sheet_id = %s AND position = 1",
+        (name, Jsonb(CROP), sheet_id),
     )
     if tos:
         dbp.conn.execute(
-            "UPDATE sheets SET tos_mm = 3000, tos_raw = 'T.O.S. 3000', tos_source = 'typed',"
-            " tos_confirmed_by = 'tester', tos_confirmed_at = now() WHERE id = %s",
+            "UPDATE build_views SET tos_mm = 3000, tos_raw = 'T.O.S. 3000', tos_source = 'typed',"
+            " tos_confirmed_by = 'tester', tos_confirmed_at = now()"
+            " WHERE sheet_id = %s AND position = 1",
             (sheet_id,),
         )
     if pen:
-        dbp.conn.execute(
-            "UPDATE sheets SET pen_class = %s, pen_class_source = 'person',"
-            " pen_class_confirmed_by = 'tester', pen_class_confirmed_at = now() WHERE id = %s",
-            (PEN, sheet_id),
-        )
+        set_pens(dbp, sheet_id, [PEN])
     dbp.conn.commit()
+
+
+def first_view_id(dbp: DbProject, sheet_id: str) -> str:
+    return str(
+        dbp.conn.execute(
+            "SELECT id FROM build_views WHERE sheet_id = %s AND position = 1", (sheet_id,)
+        ).fetchone()["id"]
+    )
+
+
+def set_pens(dbp: DbProject, sheet_id: str, pens: list[str], view_id: str | None = None) -> None:
+    vid = view_id or first_view_id(dbp, sheet_id)
+    dbp.conn.execute("DELETE FROM view_pens WHERE view_id = %s", (vid,))
+    for k, pen in enumerate(pens, start=1):
+        dbp.conn.execute(
+            "INSERT INTO view_pens (view_id, position, pen_class, source, confirmed_by,"
+            " confirmed_at) VALUES (%s, %s, %s, 'person', 'tester', now())",
+            (vid, k, pen),
+        )
 
 
 def _run(dbp: DbProject, sheet_id: str, inputs: dict | None = None) -> tuple[str, dict]:
@@ -172,7 +191,7 @@ def test_rebuild_keeps_ids_and_never_touches_an_edited_piece(dbp: DbProject) -> 
 
     # a crop that leaves out the right half: untouched pieces there go, the edited one stays
     dbp.conn.execute(
-        "UPDATE sheets SET crop_region = %s WHERE id = %s",
+        "UPDATE build_views SET box = %s WHERE sheet_id = %s AND position = 1",
         (Jsonb({"x0": 40, "y0": 40, "x1": 520, "y1": 760}), framing_id),
     )
     dbp.conn.commit()

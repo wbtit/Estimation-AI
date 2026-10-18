@@ -2,22 +2,27 @@
 
 Inputs: the page, the person's setup (crop, confirmed scale ratio, T.O.S. in mm, beam pen class,
 page role), the page's text lines, the legend, and for a framing page the built column plan (its
-grid lines, scale and column points). A framing page with no column plan, or whose grids do not
-register, is built from its own glyphs and the girders (notes say so); grids are never required.
+grid lines, scale and column points). Phase 11c person inputs of a view (src/build/inputs.py): the
+crop is the view box, several beam pens (one beam_lines call per pen, lines renumbered in pen
+order), accepted exclude boxes (content inside is taken away first) and deselected lines (pen
+segments on them are not beam candidates; unmatched deselections are counted). A framing page
+with no column plan, or whose grids do not register, is built from its own glyphs and the girders
+(notes say so); grids are never required.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import pymupdf
 
 from src.build import RULES_VERSION
-from src.build.beam_lines import BeamLine, beam_lines
+from src.build.beam_lines import BeamLine, beam_lines, pen_segments
 from src.build.clean import Cleaned, clean
 from src.build.columns import Glyph, column_plan_columns, find_glyphs
 from src.build.geom import Box, Pt, in_box
 from src.build.grids import Bubble, Crossing, GridLine, crossings, find_bubbles, find_grid_lines
+from src.build.inputs import deselect, drop_text, exclude
 from src.build.labels import Attached, Label, attach_to_columns, attach_to_pieces, find_labels
 from src.build.register import Registration, project_columns, register
 from src.build.segments import PageSegments, TextLine, crop, page_text_lines, parse_page
@@ -34,6 +39,15 @@ class Setup:
     pen_class: str | None
     role: str  # column_plan or framing
     crossing_rule: str = "family"  # "direction" only for the reported Phase 11 deviation
+    # Phase 11c person inputs of the view (empty: the page as before views)
+    pens: tuple[str, ...] = ()  # all beam pens in order; empty = (pen_class,) if set
+    excludes: tuple[Box, ...] = ()
+    deselected: tuple[tuple[float, float, float, float], ...] = ()
+
+    def beam_pens(self) -> list[str]:
+        if self.pens:
+            return list(self.pens)
+        return [self.pen_class] if self.pen_class else []
 
 
 @dataclass
@@ -61,6 +75,8 @@ class PageBuild:
     piece_labels: list[Attached]
     labels: list[Label]
     notes: list[str] = field(default_factory=list)
+    line_pens: dict[int, str] = field(default_factory=dict)  # beam line id -> its pen class
+    deselections_unmatched: int = 0
 
     @property
     def lines(self) -> list[BeamLine]:
@@ -84,6 +100,11 @@ class PageBuild:
             "beam_lines": len(self.lines),
             "labels": len(self.labels),
         }
+        if self.setup.excludes or self.setup.deselected or len(self.setup.beam_pens()) > 1:
+            c["beam_pens"] = len(self.setup.beam_pens())
+            c["exclude_boxes"] = len(self.setup.excludes)
+            c["deselections"] = len(self.setup.deselected)
+            c["deselections_unmatched"] = self.deselections_unmatched
         c.update(self.supports.counts)
         for state in ("sized", "inferred", "undefined"):
             c[f"pieces_{state}"] = sum(a.size_state == state for a in self.piece_labels)
@@ -102,6 +123,9 @@ def build_page(
     text = page_text_lines(page) if text is None else text
     text = [t for t in text if in_box(t.centre, setup.crop)]
     ps = crop(parse_page(page), setup.crop)
+    if setup.excludes:
+        ps = exclude(ps, list(setup.excludes))
+        text = drop_text(text, list(setup.excludes))
     cleaned = clean(ps, text)
     bubbles = find_bubbles(ps, text, setup.crop)
     grid, _ = find_grid_lines(ps, cleaned.keep, bubbles)
@@ -112,8 +136,21 @@ def build_page(
     if not grid:
         notes.append("no_grid")
     glyphs = find_glyphs(ps, setup.crop, bubbles, text, cross)
-    lines = beam_lines(ps, cleaned.keep, setup.pen_class) if setup.pen_class else []
-    if setup.role == "framing" and not setup.pen_class:
+    pens = setup.beam_pens()
+    beam_keep = cleaned.keep
+    unmatched = 0
+    if setup.deselected and pens:
+        pen_ids = sorted({i for pen in pens for i in pen_segments(ps, cleaned.keep, pen)})
+        off, unmatched = deselect(ps, pen_ids, list(setup.deselected))
+        beam_keep = cleaned.keep.copy()
+        beam_keep[sorted(off)] = False
+    lines: list[BeamLine] = []
+    line_pens: dict[int, str] = {}
+    for pen in pens:
+        for ln in beam_lines(ps, beam_keep, pen):
+            line_pens[len(lines)] = pen
+            lines.append(replace(ln, id=len(lines)))
+    if setup.role == "framing" and not pens:
         notes.append("no_pen_class")
 
     reg: Registration | None = None
@@ -165,6 +202,8 @@ def build_page(
         piece_labels=piece_labels,
         labels=labels,
         notes=notes,
+        line_pens=line_pens,
+        deselections_unmatched=unmatched,
     )
 
 

@@ -2,7 +2,8 @@
 
 Payload: {"project_id": "<uuid>", "auto_build_id": "<uuid>" (optional), "crossing_rule": ...}.
 For every page of the project it proposes the setup (src/build/propose.py) and stores it as SYSTEM
-values (every *_confirmed_by stays NULL; pen class source 'suggested', T.O.S. source 'read'), then
+values on the page's first view (Phase 11c; every *_confirmed_by stays NULL; pen source
+'suggested', T.O.S. source 'read'), then
 builds the column plan pages and after them the framing pages with `build_sheet` in mode 'auto'.
 A page that cannot be built gets its reasons on its refused run. Last, in one transaction with the
 end of the run, the SYSTEM VERSION is frozen: one build_snapshots row per page (setup values with
@@ -35,6 +36,7 @@ from src.build.propose import (
     propose_tos,
 )
 from src.build.segments import page_text_lines
+from src.build.views import load_views, pick_view, role_name, view_as_sheet
 from src.config import WorkerConfig
 from src.queue import Job
 from src.review.sheet_lines_job import sheet_lines
@@ -71,6 +73,17 @@ def person_actions(conn, project_id: str) -> list[str]:
         ),
         # label-first page edits (page type, takeoff decision, ...) are not build setup and auto
         # mode never touches them
+        "a confirmed view value or a view a person added": (
+            "SELECT 1 FROM build_views v JOIN sheets s ON s.id = v.sheet_id"
+            " WHERE s.project_id = %s AND (v.box_confirmed_by IS NOT NULL"
+            " OR v.scale_confirmed_by IS NOT NULL OR v.tos_confirmed_by IS NOT NULL"
+            " OR v.role_confirmed_by IS NOT NULL OR v.no_beams_by IS NOT NULL"
+            " OR v.column_plan_confirmed_by IS NOT NULL OR v.position > 1"
+            " OR EXISTS (SELECT 1 FROM view_pens p WHERE p.view_id = v.id"
+            "  AND p.confirmed_by IS NOT NULL)"
+            " OR EXISTS (SELECT 1 FROM view_exclusions e WHERE e.view_id = v.id)"
+            " OR EXISTS (SELECT 1 FROM view_deselections d WHERE d.view_id = v.id)) LIMIT 1"
+        ),
         "a page setup edit": (
             "SELECT 1 FROM sheet_edits e JOIN sheets s ON s.id = e.sheet_id"
             " WHERE s.project_id = %s AND e.field_name IN ('build_role', 'crop_region',"
@@ -135,14 +148,23 @@ def propose_sheet(conn, page: pymupdf.Page, sheet: dict[str, Any]) -> dict[str, 
     ratio, scale_text = propose_scale(sheet)
     tos = propose_tos(text, cp.box)
     x0, y0, x1, y1 = (round(v, 2) for v in cp.box)
+    view = pick_view(load_views(conn, str(sheet["id"])))
+    if view is None:
+        raise AutoBuildError("a page has no view")
     conn.execute(
-        "UPDATE sheets SET build_role = %s, crop_region = %s, build_scale_ratio = %s,"
-        " build_scale_text = %s, pen_class = %s, pen_class_source = %s, tos_mm = %s, tos_raw = %s,"
-        " tos_source = %s, column_plan_sheet_id = NULL WHERE id = %s",
-        (role, Jsonb({"x0": x0, "y0": y0, "x1": x1, "y1": y1}), ratio, scale_text, pen,
-         "suggested" if pen else None, tos.mm, tos.raw, "read" if tos.mm is not None else None,
-         sheet["id"]),
+        "UPDATE build_views SET role_name = %s, box = %s, scale_ratio = %s, scale_text = %s,"
+        " tos_mm = %s, tos_raw = %s, tos_source = %s, column_plan_view_id = NULL WHERE id = %s",
+        (role_name(role, sheet["page_type_guess"]),
+         Jsonb({"x0": x0, "y0": y0, "x1": x1, "y1": y1}), ratio, scale_text, tos.mm, tos.raw,
+         "read" if tos.mm is not None else None, view.id),
     )  # fmt: skip
+    conn.execute("DELETE FROM view_pens WHERE view_id = %s", (view.id,))
+    if pen:
+        conn.execute(
+            "INSERT INTO view_pens (view_id, position, pen_class, source)"
+            " VALUES (%s, 1, %s, 'suggested')",
+            (view.id, pen),
+        )
     return {
         "role": role,
         "crop_rule": cp.rule,
@@ -275,7 +297,12 @@ def _run(conn, config, project_id, auto_id, sheets, pdf_path, crossing_rule) -> 
             continue
         plan, rule = choose_column_plan(evidence[sid]["grid_labels"], plans)
         evidence[sid]["column_plan_rule"] = rule
-        conn.execute("UPDATE sheets SET column_plan_sheet_id = %s WHERE id = %s", (plan, sid))
+        conn.execute(
+            "UPDATE build_views SET column_plan_view_id ="
+            " (SELECT id FROM build_views WHERE sheet_id = %s AND position = 1)"
+            " WHERE sheet_id = %s AND position = 1",
+            (plan, sid),
+        )
         choice = {"column_plan_sheet_id": plan} if plan else {"no_column_plan": True}
         build(s, {**base, **choice})
     skipped = sum(1 for s in sheets if roles[str(s["id"])] is None)
@@ -285,10 +312,11 @@ def _run(conn, config, project_id, auto_id, sheets, pdf_path, crossing_rule) -> 
 
     # the SYSTEM VERSION, frozen in the same transaction as the end of the run
     totals = {"pages": len(sheets), "built": 0, "not_built": 0, "skipped": skipped, "pieces": 0}
-    for s in conn.execute(
+    for page in conn.execute(
         "SELECT * FROM sheets WHERE project_id = %s ORDER BY page_index", (project_id,)
     ).fetchall():
-        sid = str(s["id"])
+        sid = str(page["id"])
+        s = view_as_sheet(page, pick_view(load_views(conn, sid)))  # the page's first view
         res = results.get(sid)
         built = res is not None and "refused" not in res and "failed" not in res
         pieces = snapshot_pieces(conn, sid) if built else []
