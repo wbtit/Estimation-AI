@@ -67,6 +67,8 @@ export interface Page {
     column_plan_sheet_id: string | null;
   };
   scales_found: ScaleFound[];
+  /** Phase 11c: the views of the page (the first one is the page's setup above). */
+  views?: PageViewInfo[];
   built_at: string | null;
   reviewed_by: string | null;
   reviewed_at: string | null;
@@ -80,6 +82,54 @@ export interface Page {
     needs_review: number;
     attention: number;
   };
+}
+
+/** Role behaviour: what the engine does with a view. */
+export type Behaviour = "column_plan" | "framing" | "none";
+
+export interface RoleName {
+  name: string;
+  behaviour: Behaviour;
+  built_in: boolean;
+}
+
+export interface Exclusion {
+  id: string;
+  box: Box;
+  status: "suggested" | "accepted";
+  rule: string | null;
+}
+
+/** A view of a page (Phase 11c): a box with its own role, scale, T.O.S., beam pens, exclude
+ * areas and deselected lines. */
+export interface BuildView {
+  id: string;
+  position: number;
+  name: string;
+  box: Box | null;
+  role_name: string | null;
+  behaviour: Behaviour | null;
+  scale_ratio: number | null;
+  scale_text: string | null;
+  tos_mm: number | null;
+  tos_raw: string | null;
+  pens: { pen_class: string; position: number; source: string }[];
+  no_beams: boolean;
+  column_plan_view_id: string | null;
+  column_plan_sheet_id: string | null;
+  exclusions: Exclusion[];
+  deselections: { id: string; line: [number, number, number, number] }[];
+  setup_changed_at: string | null;
+  built_at: string | null;
+  deselections_unmatched?: number;
+}
+
+/** A view as the page list shows it (with its badge and counts). */
+export interface PageViewInfo extends BuildView {
+  badge: Badge;
+  reasons: string[];
+  system_values: string[];
+  counts: Page["counts"];
 }
 
 export interface Box {
@@ -128,6 +178,8 @@ export interface Piece {
   piece_index: number | null;
   scale_ratio: number | null;
   evidence: SizeEvidence | null;
+  /** The view the piece belongs to; null = the page's first view. */
+  build_view_id?: string | null;
 }
 
 export interface GridLine {
@@ -144,6 +196,9 @@ export interface LineFirstPage {
   pen_class: string | null;
   tos_mm: number | null;
   scale_ratio: number | null;
+  /** Phase 11c: the page's views (with the last build's unmatched deselections). */
+  views?: BuildView[];
+  pens?: string[];
   grid_lines: GridLine[];
   pieces: Piece[];
 }
@@ -199,7 +254,8 @@ export interface Layers {
   undefinedBeams: boolean;
   columns: boolean;
   labels: boolean;
-  /** One flag per "needs review" (amber) or "attention" (red) member, at its middle. */
+  /** One flag per "needs review" (amber) or "attention" (red) member, at its middle (optional:
+   * the whole member is drawn in its state colour). */
   flags: boolean;
   /** Only undefined beams (isolate). */
   isolateUndefined: boolean;
@@ -215,7 +271,7 @@ export const ALL_LAYERS: Layers = {
   undefinedBeams: true,
   columns: true,
   labels: true,
-  flags: true,
+  flags: false,
   isolateUndefined: false,
   minMm: null,
   maxMm: null,
@@ -297,12 +353,200 @@ export function linesOfClass(
   return k < 0 ? [] : lines.lines.filter((r) => r[4] === k);
 }
 
+// ---- pen preview (Pick beam) ---------------------------------------------------------------------
+const r2 = (v: number) => Math.round(v * 100) / 100;
+/** A line's key as the server stores a deselection (0.01 pt). */
+export const lineKey = (l: readonly number[]): string =>
+  [l[0]!, l[1]!, l[2]!, l[3]!].map(r2).join(",");
+
+export function insideBox(b: Box, x: number, y: number): boolean {
+  return x >= b.x0 && x <= b.x1 && y >= b.y0 && y <= b.y1;
+}
+
+export interface PenLine {
+  index: number;
+  line: [number, number, number, number];
+  pen: string;
+  deselected: boolean;
+  excluded: boolean;
+}
+
+/** The lines of the view's beam pens inside its box (the "Pen preview"): each marked deselected
+ * (a person clicked it off) or excluded (inside an accepted exclude box). */
+export function penPreview(
+  lines: SheetLines | null,
+  pens: readonly string[],
+  box: Box | null,
+  view: Pick<BuildView, "exclusions" | "deselections"> | null,
+): PenLine[] {
+  if (!lines || pens.length === 0) return [];
+  const want = new Map<number, string>();
+  for (const pen of pens) {
+    const k = lines.classes.indexOf(pen);
+    if (k >= 0) want.set(k, pen);
+  }
+  const off = new Set((view?.deselections ?? []).map((d) => lineKey(d.line)));
+  const ex = (view?.exclusions ?? [])
+    .filter((e) => e.status === "accepted")
+    .map((e) => e.box);
+  const out: PenLine[] = [];
+  lines.lines.forEach((r, index) => {
+    const pen = want.get(r[4]!);
+    if (pen === undefined) return;
+    const mx = (r[0]! + r[2]!) / 2;
+    const my = (r[1]! + r[3]!) / 2;
+    if (box && !insideBox(box, mx, my)) return;
+    const line: [number, number, number, number] = [r[0]!, r[1]!, r[2]!, r[3]!];
+    out.push({
+      index,
+      line,
+      pen,
+      deselected: off.has(lineKey(line)),
+      excluded: ex.some((b) => insideBox(b, mx, my)),
+    });
+  });
+  return out;
+}
+
+/** The pen-preview line nearest a point within `tol` (for the click that deselects it). */
+export function penLineAt(
+  list: readonly PenLine[],
+  p: Pt2,
+  tol: number,
+): PenLine | null {
+  let best: { d: number; l: PenLine } | null = null;
+  for (const l of list) {
+    const d = pointSegDist(p, [l.line[0], l.line[1]], [l.line[2], l.line[3]]);
+    if (d <= tol && (!best || d < best.d)) best = { d, l };
+  }
+  return best?.l ?? null;
+}
+
+/** Highlighted (not yet deselected) pen lines fully inside a box (ctrl + drag). */
+export function penLinesInBox(list: readonly PenLine[], b: Box): PenLine[] {
+  return list.filter(
+    (l) =>
+      !l.deselected &&
+      insideBox(b, l.line[0], l.line[1]) &&
+      insideBox(b, l.line[2], l.line[3]),
+  );
+}
+
+/** The view of a page that is active: the one chosen, else the first. */
+export function activeView<T extends { id: string; position: number }>(
+  views: readonly T[] | undefined,
+  id: string | null,
+): T | null {
+  if (!views || views.length === 0) return null;
+  return (
+    views.find((v) => v.id === id) ??
+    views.find((v) => v.position === 1) ??
+    views[0]!
+  );
+}
+
 /** The flag colour of a piece: red for "attention", amber for "needs review", none when found. */
 export function flagOf(p: Piece): "red" | "amber" | null {
   if (p.ignored) return null;
   if (p.build_state === "attention") return "red";
   if (p.build_state === "needs_review") return "amber";
   return null;
+}
+
+/** The colour of a whole member: its state when it needs attention or review, else its kind
+ * (CSS variables, styles.css). */
+export function markColour(p: Piece): string {
+  if (p.ignored) return "var(--mark-ignored)";
+  if (p.build_state === "attention") return "var(--attention)";
+  if (p.build_state === "needs_review") return "var(--review)";
+  return isColumn(p) ? "var(--column)" : "var(--beam)";
+}
+
+// ---- issue navigator ----------------------------------------------------------------------------
+export type IssueKey = [number, number, number, number, string];
+
+/** The order of the issue navigator: attention before review; within each, by view, then top to
+ * bottom, then left to right (the id breaks a tie). */
+export function issueKey(
+  p: Piece,
+  viewPos: (id: string | null) => number,
+): IssueKey {
+  const a = p.a ?? [0, 0];
+  const b = p.b ?? a;
+  const top = a[1] <= b[1] ? a : b;
+  return [
+    p.build_state === "attention" ? 0 : 1,
+    viewPos(p.build_view_id ?? null),
+    Math.round(top[1] * 100) / 100,
+    Math.round(top[0] * 100) / 100,
+    p.id,
+  ];
+}
+
+export function compareKeys(a: IssueKey, b: IssueKey): number {
+  for (let i = 0; i < 4; i++)
+    if (a[i] !== b[i]) return (a[i] as number) - (b[i] as number);
+  return a[4] < b[4] ? -1 : a[4] > b[4] ? 1 : 0;
+}
+
+/** The members that need attention or review, in navigator order (shown ones only). */
+export function issues(
+  pieces: readonly Piece[],
+  views: readonly { id: string; position: number }[] = [],
+  layers: Layers = ALL_LAYERS,
+): { piece: Piece; key: IssueKey }[] {
+  const pos = new Map(views.map((v) => [v.id, v.position]));
+  const viewPos = (id: string | null) => (id === null ? 1 : (pos.get(id) ?? 1));
+  return pieces
+    .filter(
+      (p) =>
+        p.a &&
+        !p.ignored &&
+        !p.deleted &&
+        (p.build_state === "attention" || p.build_state === "needs_review") &&
+        visible(p, { ...layers, minMm: null, maxMm: null }),
+    )
+    .map((piece) => ({ piece, key: issueKey(piece, viewPos) }))
+    .sort((x, y) => compareKeys(x.key, y.key));
+}
+
+/** The next (dir 1) or previous (dir -1) issue after the last one shown; wraps around. A fixed
+ * member drops out of the list, so Next goes on from where it was. */
+export function nextIssue<T extends { key: IssueKey }>(
+  list: readonly T[],
+  last: IssueKey | null,
+  dir: 1 | -1,
+): T | null {
+  if (list.length === 0) return null;
+  if (last === null) return dir === 1 ? list[0]! : list[list.length - 1]!;
+  if (dir === 1)
+    return list.find((x) => compareKeys(x.key, last) > 0) ?? list[0]!;
+  for (let i = list.length - 1; i >= 0; i--)
+    if (compareKeys(list[i]!.key, last) < 0) return list[i]!;
+  return list[list.length - 1]!;
+}
+
+// ---- drawing fade -------------------------------------------------------------------------------
+export const DEFAULT_FADE = 0.45;
+const fadeKey = (who: string) => `review.fade.${who}`;
+
+/** The drawing fade of a person (0..1), remembered in this browser. */
+export function loadFade(who: string): number {
+  try {
+    const v = window.localStorage.getItem(fadeKey(who));
+    const n = v === null ? NaN : Number(v);
+    return isFinite(n) && n >= 0 && n <= 1 ? n : DEFAULT_FADE;
+  } catch {
+    return DEFAULT_FADE;
+  }
+}
+
+export function saveFade(who: string, fade: number): void {
+  try {
+    window.localStorage.setItem(fadeKey(who), String(fade));
+  } catch {
+    // private window or blocked storage: the fade is not remembered
+  }
 }
 
 /** The size written beside a beam, Steel Genie style: "w18x35 <10>" (studs in angle brackets). */

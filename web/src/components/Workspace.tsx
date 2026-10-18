@@ -3,7 +3,10 @@ import { Download, House, PanelLeft, Save } from "lucide-react";
 import { api, ApiError, send } from "../lib/api";
 import { formatFtIn } from "../lib/ftin";
 import {
+  activeView,
   ALL_LAYERS,
+  loadFade,
+  saveFade,
   type Bom,
   type Box,
   type Layers,
@@ -18,7 +21,7 @@ import {
 } from "../lib/lf";
 import { usePdf } from "../lib/usePdf";
 import { BomTab } from "./BomTab";
-import { Canvas } from "./Canvas";
+import { Canvas, type PickMode, type Tool } from "./Canvas";
 import { PageCard, type PageActions } from "./PageCard";
 import { PropertiesPanel, type Kind, type PieceEdit } from "./PropertiesPanel";
 import { ReportTab } from "./ReportTab";
@@ -53,7 +56,17 @@ export const Workspace: React.FC<{
   const [toast, setToast] = useState<string | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
   const [memberFilter, setMemberFilter] = useState("");
-  const [cropAsk, setCropAsk] = useState(0);
+  const [toolAsk, setToolAsk] = useState<
+    { tool: Tool; n: number } | undefined
+  >();
+  const askTool = (tool: Tool) =>
+    setToolAsk((t) => ({ tool, n: (t?.n ?? 0) + 1 }));
+  const [fade, setFadeState] = useState(() => loadFade(who));
+  const setFade = (f: number) => {
+    setFadeState(f);
+    saveFade(who, f);
+  };
+  const [viewId, setViewId] = useState<string | null>(null);
 
   const sheetId =
     route.sheetId ??
@@ -111,6 +124,7 @@ export const Workspace: React.FC<{
     setSelected(new Set());
     setData(null);
     setLines(null);
+    setViewId(null);
     if (!sheetId) return;
     void loadData();
     api<SheetLines>(`/api/projects/${projectId}/sheets/${sheetId}/lines`).then(
@@ -185,6 +199,11 @@ export const Workspace: React.FC<{
         ),
       ),
   };
+
+  const view = activeView(data?.views, viewId);
+  const viewBody = view ? { view_id: view.id } : {};
+  const viewUrl = (rest: string) =>
+    `/api/projects/${projectId}/sheets/${sheetId}/build-views/${view?.id}/${rest}`;
 
   const pieces = data?.pieces ?? [];
   const selectedPieces = pieces.filter((p) => selected.has(p.id));
@@ -402,22 +421,96 @@ export const Workspace: React.FC<{
                 void act(
                   send("POST", sheetUrl(page, "build-setup/crop"), {
                     box,
+                    ...viewBody,
                     who,
                   }),
                 )
               }
-              onPick={(p: Pt2) =>
+              onPick={(p: Pt2, mode: PickMode) =>
                 void act(
                   send<{ pen_class: string }>(
                     "POST",
                     sheetUrl(page, "build-setup/pick-pen"),
-                    {
-                      x: p[0],
-                      y: p[1],
-                      who,
-                    },
+                    { x: p[0], y: p[1], mode, ...viewBody, who },
                   ),
-                  "Beam pen picked",
+                  mode === "add" ? "Beam pen added" : "Beam pen picked",
+                )
+              }
+              fade={fade}
+              onFade={setFade}
+              activeViewId={view?.id ?? null}
+              onActiveView={setViewId}
+              onRemovePen={(pen) =>
+                void act(
+                  send("POST", sheetUrl(page, "build-setup/remove-pen"), {
+                    pen_class: pen,
+                    ...viewBody,
+                    who,
+                  }),
+                )
+              }
+              onToggleDeselect={(line, index) =>
+                void act(
+                  send("POST", viewUrl("deselections/toggle"), {
+                    line,
+                    line_index: index,
+                    who,
+                  }),
+                )
+              }
+              onBoxDeselect={(ls) =>
+                void act(
+                  send("POST", viewUrl("deselections/box"), {
+                    lines: ls.map((l) => ({
+                      line: l.line,
+                      line_index: l.index,
+                    })),
+                    who,
+                  }),
+                  `${ls.length} lines deselected`,
+                )
+              }
+              onResetDeselect={() =>
+                void act(send("POST", viewUrl("deselections/reset"), { who }))
+              }
+              onExclude={(box) =>
+                void act(send("POST", viewUrl("exclusions"), { box, who }))
+              }
+              onDeleteExclusion={(id) =>
+                void act(send("DELETE", viewUrl(`exclusions/${id}`), { who }))
+              }
+              onAcceptExclusions={(ids) =>
+                void act(
+                  send(
+                    "POST",
+                    viewUrl("exclusions/accept"),
+                    ids === "all" ? { all: true, who } : { ids, who },
+                  ),
+                )
+              }
+              onSuggestExcludes={() =>
+                void act(
+                  send<{ suggested: number }>(
+                    "POST",
+                    viewUrl("exclusions/suggest"),
+                    { who },
+                  ).then((r) => {
+                    say(
+                      r.suggested
+                        ? `${r.suggested} suggested: accept all or one by one`
+                        : "Nothing to suggest",
+                    );
+                  }),
+                )
+              }
+              onAddView={(box) =>
+                void act(
+                  send<{ id: string }>(
+                    "POST",
+                    `/api/projects/${projectId}/sheets/${page.id}/build-views`,
+                    { box, who },
+                  ).then((v) => setViewId(v.id)),
+                  "View added: set its role and scale",
                 )
               }
               onDraw={(kind, a, b) =>
@@ -446,7 +539,7 @@ export const Workspace: React.FC<{
                 )
               }
               onDeleteSelected={deleteSelected}
-              cropAsk={cropAsk}
+              toolAsk={toolAsk}
             />
           ) : (
             <div className="center">
@@ -461,7 +554,7 @@ export const Workspace: React.FC<{
             crop={data?.crop ?? page?.setup.crop ?? null}
             onEdit={(e) => void editSelected(e)}
             onDelete={deleteSelected}
-            onCropTool={() => setCropAsk((n) => n + 1)}
+            onCropTool={() => askTool("crop")}
           />
         </div>
       )}

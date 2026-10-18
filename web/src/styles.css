@@ -23,14 +23,19 @@
   --accent: #3d6bf5;
   --accent-soft: #e8eeff;
   --active: #dfe7ff;
-  /* overlays */
-  --beam: #5a1a82;
-  --beam-label: #4a1470;
-  --beam-undef: #8a55b8;
-  --beam-ignored: #9aa1b2;
-  --column: #1d3561;
-  --column-id: #6b7280;
-  --pick: #ff7a00;
+  /* marks on the drawing (Phase 11c): saturated, full strength, each with a white halo. A member
+     is drawn whole in its state colour (attention, review) or else its kind colour. */
+  --beam: #d500f9;
+  --column: #2979ff;
+  --review: #ff9100;
+  --attention: #ff1744;
+  --ok: #00c853;
+  --mark-ignored: #9aa1b2;
+  --beam-label: #6a007f;
+  --beam-undef: var(--attention);
+  --beam-ignored: var(--mark-ignored);
+  --column-id: #1b3f8f;
+  --pick: #00b8d4;
   --crop: #3d6bf5;
   --grid: #2b8a3e;
   --select: #ffcf33;
@@ -826,11 +831,142 @@ h4 {
   color: var(--icon);
 }
 
-.zoom-card span {
-  min-width: 44px;
+.zoom-card .zoom-box {
+  width: 56px;
   text-align: center;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 3px 4px;
+  background: transparent;
+}
+
+.zoom-card .zoom-box:focus {
+  border-color: var(--accent);
+  color: var(--text);
+  outline: none;
+}
+
+/* the issue navigator: a pill at the top centre of the canvas */
+.navigator {
+  position: absolute;
+  top: 54px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 16;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--shell);
+  color: #fff;
+  border-radius: 999px;
+  padding: 4px 6px;
+  box-shadow: 0 4px 16px rgba(15, 26, 46, 0.3);
+  white-space: nowrap;
+}
+
+.navigator button {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  border: none;
+  border-radius: 999px;
+  background: var(--shell-3);
+  color: #fff;
+  padding: 4px 10px;
+}
+
+.navigator button:hover {
+  background: var(--shell-on);
+}
+
+.navigator .n-attention {
+  color: var(--attention);
+}
+
+.navigator .n-review {
+  color: var(--review);
+}
+
+/* the bar of a tool (Pick beam, Exclude area) under the page chip */
+.tool-bar {
+  position: absolute;
+  top: 54px;
+  left: 64px;
+  z-index: 16;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 5px 8px;
+  box-shadow: 0 2px 10px rgba(15, 26, 46, 0.12);
+  flex-wrap: wrap;
+  max-width: 46%;
+}
+
+.tool-bar .seg.light {
+  display: flex;
+  background: #eef0f5;
+  border-radius: 8px;
+  padding: 2px;
+}
+
+.tool-bar .seg.light button {
+  border: none;
+  background: transparent;
+  padding: 3px 9px;
+  border-radius: 6px;
+}
+
+.tool-bar .seg.light button.on {
+  background: #fff;
+  color: var(--accent);
+  box-shadow: 0 1px 3px rgba(15, 26, 46, 0.15);
+}
+
+.pen-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: #e0f7fa;
+  color: #006064;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 12px;
+}
+
+.pen-chip button {
+  border: none;
+  background: transparent;
+  padding: 0;
+  display: grid;
+  place-items: center;
+}
+
+button.link {
+  border: none;
+  background: transparent;
+  color: var(--accent);
+  padding: 2px 4px;
+  text-decoration: underline;
+}
+
+.warn {
+  color: #b42318;
+  font-weight: 600;
+}
+
+.layers .fade {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 2px;
+}
+
+.layers .fade input[type="range"] {
+  width: 100%;
 }
 
 .toolbar {
@@ -1262,17 +1398,44 @@ table.grid tr.total td {
 }
 
 .dot.found {
-  background: var(--found);
+  background: var(--ok);
 }
 
 .dot.needs_review {
-  background: var(--amber);
+  background: var(--review);
 }
 
 .dot.attention {
-  background: var(--red);
+  background: var(--attention);
 }
 
 .dot.none {
   background: #c5cad6;
+}
+
+/* red / orange issue counts on a page card's thumbnail */
+.thumb .issue-counts {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  display: flex;
+  gap: 4px;
+}
+
+.thumb .issue-counts b {
+  min-width: 20px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  color: #fff;
+  font-size: 11px;
+  text-align: center;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+}
+
+.thumb .issue-counts .n-attention {
+  background: var(--attention);
+}
+
+.thumb .issue-counts .n-review {
+  background: var(--review);
 }

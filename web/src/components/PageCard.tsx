@@ -209,6 +209,20 @@ export const PageCard: React.FC<{
           </span>
         )}
         <span className={`tag bottom ${second}`}>{second}</span>
+        {(page.counts.attention > 0 || page.counts.needs_review > 0) && (
+          <span className="issue-counts" data-testid="issue-counts">
+            {page.counts.attention > 0 && (
+              <b className="n-attention" title="need attention">
+                {page.counts.attention}
+              </b>
+            )}
+            {page.counts.needs_review > 0 && (
+              <b className="n-review" title="to review">
+                {page.counts.needs_review}
+              </b>
+            )}
+          </span>
+        )}
       </div>
       {selected && role && (
         <>

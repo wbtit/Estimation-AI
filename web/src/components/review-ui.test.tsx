@@ -637,7 +637,7 @@ describe("report tab", () => {
 });
 
 describe("canvas", () => {
-  it("draws a beam with its size, and one amber flag and a tooltip for one that needs review", () => {
+  it("draws a beam with its size, and (Show flags on) one orange flag and a tooltip for one that needs review", () => {
     const { container } = render(
       <svg>
         <PieceMark
@@ -645,6 +645,7 @@ describe("canvas", () => {
           px={1}
           on={false}
           labels
+          flags
         />
       </svg>,
     );
@@ -656,7 +657,7 @@ describe("canvas", () => {
     );
     expect(container.querySelectorAll("[data-testid=flag]")).toHaveLength(1);
     expect(container.querySelector("path")!.getAttribute("fill")).toBe(
-      "var(--amber)",
+      "var(--review)",
     );
     expect(container.textContent).toContain("w16x26 <12>");
   });
@@ -708,6 +709,8 @@ describe("canvas", () => {
       "Fit",
       "Crop",
       "Pick beam",
+      "Exclude area",
+      "Add view",
       "Draw beam",
       "Draw column",
       "Measure",
@@ -724,5 +727,137 @@ describe("canvas", () => {
       "Undefined Beams",
     );
     expect(screen.getByTestId("layers").textContent).toContain("Show flags");
+  });
+
+  it("the issue navigator counts attention and review, and Next / N select in order", () => {
+    const onSelect = vi.fn();
+    const noop = () => undefined;
+    const data = {
+      sheet_id: "s1",
+      crop: null,
+      pen_class: null,
+      tos_mm: null,
+      scale_ratio: 96,
+      grid_lines: [],
+      pieces: [
+        piece({
+          id: "r",
+          build_state: "needs_review",
+          a: [10, 10],
+          b: [50, 10],
+        }),
+        piece({
+          id: "a2",
+          build_state: "attention",
+          a: [10, 300],
+          b: [50, 300],
+        }),
+        piece({
+          id: "a1",
+          build_state: "attention",
+          a: [10, 100],
+          b: [50, 100],
+        }),
+        piece({ id: "ok" }),
+      ],
+    };
+    render(
+      <Canvas
+        pdf={null}
+        page={page()}
+        data={data}
+        lines={null}
+        layers={ALL_LAYERS}
+        onLayers={noop}
+        selected={new Set()}
+        onSelect={onSelect}
+        pendingEdits={0}
+        onCrop={noop}
+        onPick={noop}
+        onDraw={noop}
+        onEnds={noop}
+        onUndo={noop}
+        onDeleteSelected={noop}
+      />,
+    );
+    expect(screen.getByTestId("navigator").textContent).toContain(
+      "2 need attention · 1 to review",
+    );
+    fireEvent.click(screen.getByLabelText("next issue"));
+    expect(onSelect).toHaveBeenLastCalledWith(["a1"], false);
+    fireEvent.keyDown(window, { key: "n" });
+    expect(onSelect).toHaveBeenLastCalledWith(["a2"], false);
+    fireEvent.keyDown(window, { key: "N", shiftKey: true });
+    expect(onSelect).toHaveBeenLastCalledWith(["a1"], false);
+  });
+
+  it("Pick beam shows Replace / Add pen, the reset link and unmatched deselections", () => {
+    const noop = () => undefined;
+    const onReset = vi.fn();
+    const view = {
+      id: "v1",
+      position: 1,
+      name: "View 1",
+      box: { x0: 0, y0: 0, x1: 900, y1: 700 },
+      role_name: "Framing plan",
+      behaviour: "framing" as const,
+      scale_ratio: 96,
+      scale_text: null,
+      tos_mm: null,
+      tos_raw: null,
+      pens: [
+        { pen_class: "1.5-2.5|black|solid", position: 1, source: "person" },
+        { pen_class: "0.5-1|black|solid", position: 2, source: "person" },
+      ],
+      no_beams: false,
+      column_plan_view_id: null,
+      column_plan_sheet_id: null,
+      exclusions: [],
+      deselections: [
+        { id: "d1", line: [1, 1, 2, 2] as [number, number, number, number] },
+        { id: "d2", line: [3, 3, 4, 4] as [number, number, number, number] },
+      ],
+      setup_changed_at: null,
+      built_at: null,
+      deselections_unmatched: 2,
+    };
+    render(
+      <Canvas
+        pdf={null}
+        page={page()}
+        data={{
+          sheet_id: "s1",
+          crop: null,
+          pen_class: null,
+          tos_mm: null,
+          scale_ratio: 96,
+          grid_lines: [],
+          pieces: [],
+          views: [view],
+        }}
+        lines={null}
+        layers={ALL_LAYERS}
+        onLayers={noop}
+        selected={new Set()}
+        onSelect={noop}
+        pendingEdits={0}
+        onCrop={noop}
+        onPick={noop}
+        onDraw={noop}
+        onEnds={noop}
+        onUndo={noop}
+        onDeleteSelected={noop}
+        onResetDeselect={onReset}
+      />,
+    );
+    fireEvent.click(screen.getByLabelText("Pick beam"));
+    const bar = screen.getByTestId("pick-bar");
+    expect(bar.textContent).toContain("Replace pen");
+    expect(bar.textContent).toContain("Add pen");
+    expect(screen.getByTestId("unmatched").textContent).toBe(
+      "2 deselected lines not found",
+    );
+    fireEvent.click(screen.getByText("Reset deselections (2)"));
+    expect(onReset).toHaveBeenCalled();
   });
 });
