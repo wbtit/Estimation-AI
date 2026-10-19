@@ -41,6 +41,7 @@ import { counted, effectiveState, loadPieces, toBuiltPiece } from '../review/lin
 import { logCountAction } from '../review/count-log.js';
 import { feetAndInches } from '../review/answer-key.js';
 import { parseScaleExact } from '../scale/index.js';
+import { boxSnapshot, recordViewUndo } from '../review/view-undo.js';
 import { HttpError } from './http-error.js';
 
 export { effectiveState };
@@ -315,6 +316,17 @@ export const buildRoutes: FastifyPluginAsync<BuildRouteOptions> = async (app, op
         b,
         { box: JSON.stringify(b), box_confirmed_by: editor, box_confirmed_at: new Date() },
         editor,
+        'setup',
+        // a box change is on the person's Undo stack (Phase 11c polish round)
+        (trx) =>
+          recordViewUndo(trx, {
+            projectId: s.project_id,
+            sheetId: s.id,
+            viewId: v.row.id,
+            kind: 'box',
+            who: editor,
+            snapshot: boxSnapshot(v.row as unknown as Record<string, unknown>),
+          }),
       );
       return { ok: true, crop: b };
     },

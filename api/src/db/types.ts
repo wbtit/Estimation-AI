@@ -722,6 +722,19 @@ export interface ViewDeselectionsTable {
   created_at: Generated<Date>;
 }
 
+export interface ViewUndoTable {
+  id: Generated<string>;
+  project_id: string;
+  sheet_id: string;
+  view_id: string;
+  kind: 'add' | 'delete' | 'box';
+  snapshot: ColumnType<unknown, string | undefined, string>;
+  who: string;
+  created_at: Generated<Timestamp>;
+  undone_at: Timestamp | null;
+  undone_by: string | null;
+}
+
 export interface Database {
   projects: ProjectsTable;
   sheets: SheetsTable;
@@ -753,4 +766,5 @@ export interface Database {
   view_pens: ViewPensTable;
   view_exclusions: ViewExclusionsTable;
   view_deselections: ViewDeselectionsTable;
+  view_undo: ViewUndoTable;
 }

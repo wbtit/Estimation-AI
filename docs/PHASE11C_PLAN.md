@@ -148,3 +148,69 @@ I'll commit after each step, with no trailers and no push.
 - Deselections are stored as geometry and matched with 1° / 1.0 pt / 50% overlap.
 - The suggestion thresholds in section 3.
 - Visible-area rendering at high zoom.
+
+---
+
+# Polish round (2026-10-19)
+
+Same rules: no engine or rule change, phase11-job-018 untouched, test on dryrun-job-018, every new
+person action logged (ids and counts only), no port 3000.
+
+## P1. Pan and the Hand tool
+- Hand tool (H) right under Select: drag pans, cursor grab / grabbing. Hold Space: temporary hand in
+  any tool (the toolbar shows Hand while held; release goes back). Middle drag always pans.
+- Wheel: plain = vertical pan, Shift = horizontal, Ctrl / pinch = zoom at the pointer (already in
+  place; checked in Firefox. Only Firefox is installed here, so Chrome is checked by code only).
+- The canvas scrollbars are hidden (`scrollbar-width: none` and the WebKit rule).
+- The tool state (effective tool, cursor, what a button press does) is a pure function in
+  `web/src/lib/tools.ts`, so it is unit-tested.
+
+## P2. Views: undo, cancel, delete, edit
+- Esc cancels a view box (or Edit box) drag in progress.
+- New table `view_undo` (migration 021, backup first, `_test` first): one row per undoable view
+  change, with the state before it (`add`, `delete`, `box`). For a delete, the snapshot holds the
+  view row, its pens, exclude boxes and deselections, the untouched pieces' member rows, and their
+  support-node links, so undo puts the view back with its pieces. It doesn't rebuild.
+- `POST /undo` undoes this person's latest action, which is a piece edit or a view change, whichever came last. A
+  view undo is logged as `undo` with the view id. View adds, deletes and box changes count in
+  pending edits, so the Undo button and Ctrl+Z work for them. Redo stays for piece edits only.
+- Delete: untouched pieces are removed, and pieces a person edited or drew move to View 1 (this
+  replaces the old refusal). The answer says how many of each, and the UI asks first when the view
+  has built pieces.
+- View chip menu: Rename, Edit box (drag the corner and edge handles on the canvas; release saves
+  through the crop route, so it can be undone), Delete.
+- **View 1 can never be deleted**, even when others exist: the build keys first-view pieces by
+  position 1 (`members.build_view_id` NULL, stable ids without a view suffix), and changing that
+  would be an engine change. Its menu has **Reset box to page crop** (the page's own crop from
+  before views, else the whole page) instead. With one view left, this is your "last view" rule.
+
+## P3. Less noise
+- Glow only on attention. Review is a plain orange line, and found members use the kind colour.
+- Mark width follows zoom: 2 pt on paper, kept between 1.25 and 4 px on screen, 6 px when hovered
+  or selected. Dashes scale with the width.
+- Columns are a fixed 14 px on screen, with a red ring only for attention.
+- The read-size label shows only when it differs from the drawing's own label text
+  (`profile_raw`; see `labelDiffers` in lf.ts), or on the hovered or selected member. The Layers
+  toggle **Show all read sizes** brings back the old behaviour.
+- The Layers toggle **Only problems** hides found and ignored members.
+
+## P4. Layout
+- A slim bar above the canvas holds the page title, the tool hint or measure result, the navigator,
+  and on the right − zoom % +, Fit and a "Building…" spinner. Fit leaves the side toolbar.
+- The page card's status sentence becomes chips: Role, Crop, Scale, Pen, Column plan, T.O.S. Each
+  is green ✓ when confirmed, grey when set by the system, red when missing. Pen, Column plan and
+  T.O.S. show only for framing. The reasons go in the chip tooltips.
+- Tooltips show the key (V, H, C, P, X, B, K, M, N). **?** opens a shortcut sheet.
+- While a view builds, its chip and the card show a spinner, and ▶ is disabled. ▶ still builds the
+  whole page, so it is disabled while any view of the page builds.
+- Toast after Save page: "Page 16 saved · N issues left" (attention + review).
+
+## P5. Checks
+- Tests: the hand tool and Space state, view undo (add, delete with pieces, box) and cancel, delete
+  keeping edited pieces, glow only on attention, the label-differs rule, Only problems, the chips.
+- Screenshots on dryrun-job-018 at 1920x1080: page 16 at fit and at 120%, page 18, and page 21 with
+  two views and the view menu open. Then I clean the view-log rows and stop the servers by PID.
+- REVIEW_GUIDE.md: hand tool, Space, view menu, Only problems, shortcuts.
+
+New input the build reads: none. Order: P2 server side, then web libs and tests, then the canvas,
+card and workspace, then the guide, then screenshots and stop.

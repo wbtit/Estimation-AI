@@ -4,7 +4,7 @@
 //   PATCH  /api/role-names/:name                 { name?, behaviour?, who, project_id, sheet_id? }
 //   POST   /api/projects/:projectId/sheets/:sheetId/build-views                    { box, name?, who }
 //   PATCH  /api/projects/:projectId/sheets/:sheetId/build-views/:viewId            { name, who }
-//   DELETE /api/projects/:projectId/sheets/:sheetId/build-views/:viewId            { who }
+//   DELETE /api/projects/:projectId/sheets/:sheetId/build-views/:viewId            { who } (undoable)
 //   POST   .../build-views/:viewId/exclusions                                      { box, who }
 //   POST   .../build-views/:viewId/exclusions/suggest                              { who }
 //   POST   .../build-views/:viewId/exclusions/accept                               { ids | all, who }
@@ -22,6 +22,7 @@ import type { Database, RoleBehaviour } from '../db/types.js';
 import { pickView, viewJson, viewsOf, type Box, type LoadedView } from '../review/build-views.js';
 import { logCountAction } from '../review/count-log.js';
 import { overlapShare, suggestExcludes } from '../review/excludes.js';
+import { deleteView, recordViewUndo } from '../review/view-undo.js';
 import { HttpError } from './http-error.js';
 import { boxSchema, checkBox, firstId } from './build.js';
 
@@ -352,6 +353,13 @@ export const buildViewRoutes: FastifyPluginAsync<BuildViewRouteOptions> = async 
             who: editor,
             detail: { field: 'view_add', view_id: row.id, position },
           });
+          await recordViewUndo(trx, {
+            projectId: s.project_id,
+            sheetId: s.id,
+            viewId: row.id,
+            kind: 'add',
+            who: editor,
+          });
           return row.id;
         });
       return reply.status(201).send(await fresh(s.id, id));
@@ -390,8 +398,8 @@ export const buildViewRoutes: FastifyPluginAsync<BuildViewRouteOptions> = async 
     },
   );
 
-  // Delete a view (not the first). Its untouched built pieces go with it; a view with pieces a
-  // person touched is refused (those pieces would otherwise move to the first view).
+  // Delete a view (not the first). Its untouched built pieces go with it; pieces a person edited or
+  // drew move to the first view. On the person's Undo stack (view_undo), with every removed row.
   app.delete<{ Params: ViewParams; Body: { who: string } }>(
     '/api/projects/:projectId/sheets/:sheetId/build-views/:viewId',
     { schema: { params: viewParams, body: whoBody } },
@@ -399,59 +407,33 @@ export const buildViewRoutes: FastifyPluginAsync<BuildViewRouteOptions> = async 
       const { s, v } = await target(request.params);
       const editor = trimWho(request.body.who);
       if (v.row.position === 1) throw new HttpError(400, { error: 'the first view stays' });
-      const pieces = await db()
-        .selectFrom('members as m')
-        .select([
-          'm.id',
-          'm.review_status',
-          'm.count_state',
-          'm.added_by',
-          (eb) =>
-            eb
-              .exists(
-                eb
-                  .selectFrom('member_edits as e')
-                  .select('e.id')
-                  .whereRef('e.member_id', '=', 'm.id'),
-              )
-              .as('has_edit'),
-        ])
-        .where('m.build_view_id', '=', v.row.id)
-        .execute();
-      const touched = pieces.filter(
-        (p) =>
-          p.has_edit ||
-          p.review_status !== 'unreviewed' ||
-          p.count_state !== 'suggested' ||
-          p.added_by !== null,
-      );
-      if (touched.length)
-        throw new HttpError(409, {
-          error: 'this view has pieces a person edited or drew: delete or move them first',
-          touched: touched.length,
-        });
-      await db()
+      const r = await db()
         .transaction()
         .execute(async (trx) => {
-          if (pieces.length)
-            await trx
-              .deleteFrom('members')
-              .where(
-                'id',
-                'in',
-                pieces.map((p) => p.id),
-              )
-              .execute();
-          await trx.deleteFrom('build_views').where('id', '=', v.row.id).execute();
+          const d = await deleteView(trx, v.row.id);
+          await recordViewUndo(trx, {
+            projectId: s.project_id,
+            sheetId: s.id,
+            viewId: v.row.id,
+            kind: 'delete',
+            who: editor,
+            snapshot: d.snapshot,
+          });
           await logCountAction(trx, {
             projectId: s.project_id,
             sheetId: s.id,
             action: 'setup',
             who: editor,
-            detail: { field: 'view_delete', view_id: v.row.id, pieces_removed: pieces.length },
+            detail: {
+              field: 'view_delete',
+              view_id: v.row.id,
+              pieces_removed: d.pieces_removed,
+              pieces_kept: d.pieces_kept,
+            },
           });
+          return d;
         });
-      return { ok: true, pieces_removed: pieces.length };
+      return { ok: true, pieces_removed: r.pieces_removed, pieces_kept: r.pieces_kept };
     },
   );
 

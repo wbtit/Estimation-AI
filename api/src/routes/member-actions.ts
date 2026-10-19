@@ -10,6 +10,7 @@
 //   POST  /api/projects/:projectId/members/:memberId/existing   { value: true|false }  existing steel (listed, not counted)
 //   POST  /api/projects/:projectId/members/:memberId/not-member { reason: existing|misc_steel|detail|other|null }
 //   POST  /api/projects/:projectId/undo                       undo the last action of this person
+//                                                             (a piece edit or a view change)
 //   GET   /api/projects/:projectId/legend?mark=               legend rows
 //   GET   /api/projects/:projectId/views/:viewId/lines        structural lines of a view (click targets)
 //   GET   /api/projects/:projectId/corrections.jsonl          all corrections as JSON lines
@@ -38,6 +39,7 @@ import {
   patchEntries,
   kindEntries,
   sameTagMembers,
+  lastUndoableAction,
   undoLastAction,
   redoLastUndo,
   type LegendChoice,
@@ -49,6 +51,7 @@ import { loadKinds } from '../review/kinds.js';
 import { tagPool } from '../review/tag-scope.js';
 import { correctionLines } from '../review/corrections.js';
 import { loadMemberViews } from './members.js';
+import { lastViewChange, undoViewChange } from '../review/view-undo.js';
 import { HttpError } from './http-error.js';
 
 export interface MemberActionOptions {
@@ -652,6 +655,13 @@ export const memberActionRoutes: FastifyPluginAsync<MemberActionOptions> = async
       const { projectId } = request.params;
       const who = request.body.who.trim();
       if (who === '') throw new HttpError(400, { error: 'who must not be blank' });
+      // the latest of a piece edit and a view change (add, delete, box) is undone
+      const view = await lastViewChange(db(), projectId, who);
+      if (view) {
+        const member = await lastUndoableAction(db(), projectId, who);
+        if (!member || new Date(view.created_at as unknown as Date) >= new Date(member.at))
+          return { undone: null, rows: 0, view: await undoViewChange(db(), view, who) };
+      }
       const result = await undoLastAction(db(), projectId, who, async (id) => {
         const [m] = await loadMemberViews(db(), projectId, { memberIds: [id] });
         return m ?? null;

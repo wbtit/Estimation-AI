@@ -271,21 +271,30 @@ export function markRefEntries(m: MemberView, choice: LegendChoice): EditEntry[]
 }
 
 /** The inverse of an action's rows (an undo appends them; nothing is deleted). */
-export async function undoLastAction(
-  db: Kysely<Database>,
+/** The last member action of this person that is not undone (its id and time), or null. */
+export async function lastUndoableAction(
+  db: Db,
   projectId: string,
   who: string,
-  states: (memberId: string) => Promise<MemberView | null>,
-): Promise<{ undone: string | null; rows: number }> {
-  const last = await sql<{ action_id: string }>`
-    SELECT e.action_id FROM member_edits e JOIN members m ON m.id = e.member_id
+): Promise<{ action_id: string; at: Date } | null> {
+  const last = await sql<{ action_id: string; at: Date }>`
+    SELECT e.action_id, max(e.created_at) AS at FROM member_edits e JOIN members m ON m.id = e.member_id
     WHERE m.project_id = ${projectId} AND e.reviewer = ${who}
       AND e.action_id IS NOT NULL AND e.undo_of_action_id IS NULL
       AND NOT EXISTS (
         SELECT 1 FROM member_edits u WHERE u.undo_of_action_id = e.action_id
           AND NOT EXISTS (SELECT 1 FROM member_edits r WHERE r.undo_of_action_id = u.action_id))
     GROUP BY e.action_id ORDER BY max(e.created_at) DESC, e.action_id DESC LIMIT 1`.execute(db);
-  const actionId = last.rows[0]?.action_id;
+  return last.rows[0] ?? null;
+}
+
+export async function undoLastAction(
+  db: Kysely<Database>,
+  projectId: string,
+  who: string,
+  states: (memberId: string) => Promise<MemberView | null>,
+): Promise<{ undone: string | null; rows: number }> {
+  const actionId = (await lastUndoableAction(db, projectId, who))?.action_id;
   if (!actionId) return { undone: null, rows: 0 };
   const rows = await db
     .selectFrom('member_edits')

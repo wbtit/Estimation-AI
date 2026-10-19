@@ -126,6 +126,12 @@ describe('view routes (test database)', () => {
     app.inject({ method: 'DELETE', url: `/api/projects/${projectId}${url}`, payload });
   const get = (url: string) =>
     app.inject({ method: 'GET', url: `/api/projects/${projectId}${url}` });
+  const firstViewOrNull = async (id: string) =>
+    (await db
+      .selectFrom('build_views')
+      .select(['id', 'position', 'box'])
+      .where('id', '=', id)
+      .executeTakeFirst()) ?? null;
   const log = async () =>
     db
       .selectFrom('count_actions')
@@ -501,7 +507,7 @@ describe('view routes (test database)', () => {
       canvas.views.map((v: { deselections_unmatched: number }) => v.deselections_unmatched),
     ).toEqual([2, 2, 0]);
     const del3 = await del(`/sheets/${sheetId}/build-views/${v3}`, { who: WHO });
-    expect(del3.json()).toEqual({ ok: true, pieces_removed: 0 });
+    expect(del3.json()).toEqual({ ok: true, pieces_removed: 0, pieces_kept: 0 });
     expect((await del(`/sheets/${sheetId}/build-views/${v1}`, { who: WHO })).statusCode).toBe(400);
   });
 
@@ -572,9 +578,188 @@ describe('view routes (test database)', () => {
       .json()
       .pieces.filter((p: { id: string }) => ids.includes(p.id));
     expect(back.map((p: { profile: string | null }) => p.profile)).toEqual([null, null, null]);
-    // a view with built pieces only a person did not touch can go, with its pieces
-    const v2del = await del(`/sheets/${sheetId}/build-views/${v2}`, { who: WHO });
-    expect(v2del.statusCode).toBe(409); // the undo left edit rows: touched
+  });
+
+  it('deleting a view removes its untouched pieces, keeps edited ones on View 1; undo puts it back', async () => {
+    const run = await db
+      .selectFrom('build_runs')
+      .select('id')
+      .where('view_id', '=', v2)
+      .executeTakeFirstOrThrow();
+    // one untouched built piece of view 2 (the three of the test before carry edit rows: touched)
+    const loose = await db
+      .insertInto('members')
+      .values({
+        project_id: projectId,
+        sheet_id: sheetId,
+        build_view_id: v2,
+        member_id: 'LF-B-loose',
+        origin: 'extracted',
+        type: 'beam',
+        kind: 'Beams',
+        build_run_id: run.id,
+        size_state: 'undefined',
+        build_state: 'attention',
+        support_state: 'both',
+        page_x0: 560,
+        page_y0: 350,
+        page_x1: 840,
+        page_y1: 350,
+        plan_scale_ratio: 48,
+      } as never)
+      .returning('id')
+      .executeTakeFirstOrThrow();
+    const node = await db
+      .insertInto('support_nodes')
+      .values({
+        project_id: projectId,
+        sheet_id: sheetId,
+        build_run_id: run.id,
+        x_pt: 560,
+        y_pt: 350,
+        source: 'glyph',
+        column_member_id: loose.id,
+      } as never)
+      .returning('id')
+      .executeTakeFirstOrThrow();
+    const pagesBefore = (await get('/pages'))
+      .json()
+      .pages.find((p: { id: string }) => p.id === sheetId);
+    const res = await del(`/sheets/${sheetId}/build-views/${v2}`, { who: WHO });
+    expect(res.json()).toEqual({ ok: true, pieces_removed: 1, pieces_kept: 3 });
+    expect((await log()).at(-1)).toMatchObject({
+      action: 'setup',
+      detail: { field: 'view_delete', view_id: v2, pieces_removed: 1, pieces_kept: 3 },
+    });
+    const kept = await db
+      .selectFrom('members')
+      .select(['id', 'build_view_id'])
+      .where('sheet_id', '=', sheetId)
+      .where('member_id', 'like', 'LF-B-sz%')
+      .execute();
+    expect(kept.map((k) => k.build_view_id)).toEqual([null, null, null]);
+    expect(
+      await db.selectFrom('members').select('id').where('id', '=', loose.id).executeTakeFirst(),
+    ).toBeUndefined();
+    // the delete counts as a pending edit, so the Undo button is on
+    const pagesAfter = (await get('/pages'))
+      .json()
+      .pages.find((p: { id: string }) => p.id === sheetId);
+    expect(pagesAfter.pending_edits).toBe(pagesBefore.pending_edits + 1);
+
+    const undo = await post('/undo', { who: WHO });
+    expect(undo.statusCode).toBe(200);
+    expect(undo.json().view).toMatchObject({
+      kind: 'delete',
+      view_id: v2,
+      applied: true,
+      pieces_restored: 1,
+    });
+    const back = await firstViewOrNull(v2);
+    expect(back).toMatchObject({ id: v2, position: 2 });
+    const pens = await db.selectFrom('view_pens').select('id').where('view_id', '=', v2).execute();
+    expect(pens.length).toBeGreaterThan(0);
+    expect(
+      (
+        await db
+          .selectFrom('members')
+          .select('build_view_id')
+          .where('id', '=', loose.id)
+          .executeTakeFirstOrThrow()
+      ).build_view_id,
+    ).toBe(v2);
+    expect(
+      (
+        await db
+          .selectFrom('support_nodes')
+          .select('column_member_id')
+          .where('id', '=', node.id)
+          .executeTakeFirstOrThrow()
+      ).column_member_id,
+    ).toBe(loose.id);
+    const kept2 = await db
+      .selectFrom('members')
+      .select('build_view_id')
+      .where('sheet_id', '=', sheetId)
+      .where('member_id', 'like', 'LF-B-sz%')
+      .execute();
+    expect(kept2.map((k) => k.build_view_id)).toEqual([v2, v2, v2]);
+    expect(
+      (
+        await db
+          .selectFrom('build_runs')
+          .select('view_id')
+          .where('id', '=', run.id)
+          .executeTakeFirstOrThrow()
+      ).view_id,
+    ).toBe(v2);
+    expect((await log()).at(-1)).toMatchObject({
+      action: 'undo',
+      sheet_id: sheetId,
+      detail: { view_change: 'delete', view_id: v2, applied: true, pieces_restored: 1 },
+    });
+    const pagesUndone = (await get('/pages'))
+      .json()
+      .pages.find((p: { id: string }) => p.id === sheetId);
+    expect(pagesUndone.pending_edits).toBe(pagesBefore.pending_edits);
+  });
+
+  it('undo takes back a box change and a view add, newest first, after newer piece edits', async () => {
+    const box0 = (await firstViewOrNull(v2))!.box;
+    const moved = { x0: 520, y0: 10, x1: 880, y1: 390 };
+    expect(
+      (await post(`/sheets/${sheetId}/build-setup/crop`, { box: moved, view_id: v2, who: WHO }))
+        .statusCode,
+    ).toBe(200);
+    const added = await post(`/sheets/${sheetId}/build-views`, {
+      box: { x0: 20, y0: 500, x1: 300, y1: 780 },
+      who: WHO,
+    });
+    const v4 = added.json().id as string;
+    // newest first: the add, then the box
+    const u1 = await post('/undo', { who: WHO });
+    expect(u1.json().view).toMatchObject({ kind: 'add', view_id: v4, applied: true });
+    expect(await firstViewOrNull(v4)).toBeNull();
+    const u2 = await post('/undo', { who: WHO });
+    expect(u2.json().view).toMatchObject({ kind: 'box', view_id: v2, applied: true });
+    expect((await firstViewOrNull(v2))!.box).toEqual(box0);
+    // a piece edit newer than any open view change is undone first
+    const crop2 = await post(`/sheets/${sheetId}/build-setup/crop`, {
+      box: moved,
+      view_id: v2,
+      who: WHO,
+    });
+    expect(crop2.statusCode).toBe(200);
+    const piece = await db
+      .selectFrom('members')
+      .select('id')
+      .where('sheet_id', '=', sheetId)
+      .where('member_id', '=', 'LF-B-sz50')
+      .executeTakeFirstOrThrow();
+    await post('/line-first/pieces/edit', {
+      who: WHO,
+      member_ids: [piece.id],
+      profile_text: 'W12X19',
+    });
+    const u3 = await post('/undo', { who: WHO });
+    expect(u3.json().view).toBeUndefined();
+    expect(u3.json().undone).toBeTruthy();
+    const u4 = await post('/undo', { who: WHO });
+    expect(u4.json().view).toMatchObject({ kind: 'box', view_id: v2 });
+    // another person's view changes are not on this person's stack
+    await post(`/sheets/${sheetId}/build-setup/crop`, {
+      box: moved,
+      view_id: v2,
+      who: 'someone else',
+    });
+    await post('/undo', { who: WHO });
+    const theirs = await db
+      .selectFrom('view_undo')
+      .select('undone_at')
+      .where('who', '=', 'someone else')
+      .execute();
+    expect(theirs.map((r) => r.undone_at)).toEqual([null]);
+    await db.deleteFrom('count_actions').where('who', '=', 'someone else').execute();
   });
 
   it('the setup and role log rows hold ids and counts only, never page text', async () => {

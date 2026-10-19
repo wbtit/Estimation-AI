@@ -311,11 +311,18 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
       );
       const log = await db()
         .selectFrom('count_actions')
-        .select(['sheet_id', 'action', 'created_at'])
+        .select(['sheet_id', 'action', 'created_at', 'detail'])
         .where('project_id', '=', projectId)
         .where('sheet_id', 'is not', null)
         .where('action', 'not in', [...NOT_EDITS, 'setup', 'pick_pen', 'rebuild', 'role'])
         .orderBy('created_at')
+        .execute();
+      // view adds, deletes and box changes not undone count as pending edits too
+      const viewChanges = await db()
+        .selectFrom('view_undo')
+        .select(['sheet_id', 'created_at'])
+        .where('project_id', '=', projectId)
+        .where('undone_at', 'is', null)
         .execute();
       const pieces = await loadPieces(db(), projectId);
       const piecesOf = new Map<string, PieceView[]>();
@@ -330,11 +337,18 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
           const lastEdit = own.length ? own[own.length - 1]!.created_at : null;
           const since = s.reviewed_at ? new Date(s.reviewed_at as Date).getTime() : -Infinity;
           const recent = own.filter((l) => new Date(l.created_at).getTime() > since);
-          const pending = Math.max(
-            0,
-            recent.filter((l) => (EDIT_ACTIONS as readonly string[]).includes(l.action)).length -
-              recent.filter((l) => l.action === 'undo').length,
-          );
+          const isViewUndo = (l: { detail: unknown }) =>
+            Boolean((l.detail as { view_change?: string } | null)?.view_change);
+          const pending =
+            Math.max(
+              0,
+              recent.filter((l) => (EDIT_ACTIONS as readonly string[]).includes(l.action)).length -
+                recent.filter((l) => l.action === 'undo' && !isViewUndo(l)).length,
+            ) +
+            viewChanges.filter(
+              (c) =>
+                c.sheet_id === s.id && new Date(c.created_at as unknown as Date).getTime() > since,
+            ).length;
           const firstViewId = first?.row.id;
           const runOf = (v: LoadedView) =>
             runs.find((r) => r.sheet_id === page.id && (r.view_id ?? firstViewId) === v.row.id) ??
@@ -427,6 +441,8 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
               column_plan_sheet_id: s.column_plan_sheet_id,
             },
             views: perView.map((x) => x.json),
+            /** The page's own crop from before views (View 1's "Reset box to page crop"). */
+            page_crop: page.crop_region,
             scales_found: s.scales,
             built_at: s.built_at,
             reviewed_by: s.reviewed_by,
