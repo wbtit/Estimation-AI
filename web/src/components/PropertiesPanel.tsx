@@ -214,6 +214,9 @@ export const PropertiesPanel: React.FC<{
 };
 
 const lbs = (n: number) => Math.round(n).toLocaleString("en-US");
+/** A total length in whole feet (the panel is narrow); the exact ft-in is its tooltip. */
+const feet = (mm: number) =>
+  mm > 0 ? `${Math.round(mm / 304.8).toLocaleString("en-US")}'` : "—";
 
 /** Members by size (Sheet = this page, all its views; Project = every page): per kind, one row per
  * section with Qty, total length, weight (lb) and approved / pieces, a "No size" row, a total per
@@ -278,7 +281,9 @@ export const MembersBySize: React.FC<{
                       {r.section ?? "No size"}
                     </td>
                     <td>{r.qty}</td>
-                    <td>{r.length_mm > 0 ? formatFtIn(r.length_mm) : "—"}</td>
+                    <td title={r.length_mm > 0 ? formatFtIn(r.length_mm) : ""}>
+                      {feet(r.length_mm)}
+                    </td>
                     <td
                       title={
                         r.no_weight ? `${r.no_weight} without a weight` : ""
@@ -313,8 +318,12 @@ export const MembersBySize: React.FC<{
             <tr className="total">
               <td>Total</td>
               <td>{g.total.qty}</td>
-              <td>
-                {g.total.length_mm > 0 ? formatFtIn(g.total.length_mm) : "—"}
+              <td
+                title={
+                  g.total.length_mm > 0 ? formatFtIn(g.total.length_mm) : ""
+                }
+              >
+                {feet(g.total.length_mm)}
               </td>
               <td>{g.total.weight_lb > 0 ? lbs(g.total.weight_lb) : "—"}</td>
               <td>

@@ -1934,3 +1934,15 @@ table.grid tr.total td {
   gap: 10px;
   box-shadow: 0 16px 48px rgba(15, 26, 46, 0.35);
 }
+
+.size-table td:first-child {
+  max-width: 104px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.size-table td,
+.size-table th {
+  padding-left: 3px;
+  padding-right: 3px;
+}
