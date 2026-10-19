@@ -99,7 +99,7 @@ cancels it.
   Everything inside it is ignored by the build. Click a box to select it, then **Delete box** (or
   press Delete).
 - **Suggest excludes** proposes boxes for the sheet frame, the title block and tables. They show
-  dashed and marked **suggested**. **Accept all**, or click one box and **Accept**. Only accepted
+  outlined in orange and marked **suggested**. **Accept all**, or click one box and **Accept**. Only accepted
   boxes count. The system never suggests a box over the plan's grid.
 
 After a build, if a deselected line was not found among the build's lines, the bar says
@@ -120,7 +120,7 @@ Each member is drawn in one colour:
 | **Magenta** line | a beam |
 | **Blue I** | a column |
 | **Orange** | needs review: size taken from a nearby label, or one end not supported |
-| **Red**, with a soft glow (a red ring on a column) | needs attention: no size, or no support (dashed = a beam with no size) |
+| **Red**, with a soft glow (a red ring on a column) | needs attention: no size, or no support (a beam with no size is solid red with a **?** at its middle) |
 | **Solid blue** | approved: you confirmed it |
 | **Grey** | ignored (not ours) |
 

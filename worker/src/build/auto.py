@@ -3,7 +3,7 @@
 Payload: {"project_id": "<uuid>", "auto_build_id": "<uuid>" (optional), "crossing_rule": ...}.
 For every page of the project it proposes the setup (src/build/propose.py) and stores it as SYSTEM
 values on the page's first view (Phase 11c; every *_confirmed_by stays NULL; pen source
-'suggested', T.O.S. source 'read'), then
+'suggested', T.O.S. source 'read'; Phase 12a: no beam pen on a column plan page), then
 builds the column plan pages and after them the framing pages with `build_sheet` in mode 'auto'.
 A page that cannot be built gets its reasons on its refused run. Last, in one transaction with the
 end of the run, the SYSTEM VERSION is frozen: one build_snapshots row per page (setup values with
@@ -144,7 +144,9 @@ def propose_sheet(conn, page: pymupdf.Page, sheet: dict[str, Any]) -> dict[str, 
     text = _text_lines(conn, str(sheet["id"])) or page_text_lines(page)
     role = propose_role(sheet["page_type_guess"])
     cp = propose_crop(page, text)
-    pen, _ = propose_pen(page, cp.box)
+    # Phase 12a (a proposal default, a reported deviation): a column plan page gets beam pen = none
+    # (a system value, no view_pens row), so its build makes columns and no beams
+    pen = None if role == "column_plan" else propose_pen(page, cp.box)[0]
     ratio, scale_text = propose_scale(sheet)
     tos = propose_tos(text, cp.box)
     x0, y0, x1, y1 = (round(v, 2) for v in cp.box)
@@ -172,6 +174,7 @@ def propose_sheet(conn, page: pymupdf.Page, sheet: dict[str, Any]) -> dict[str, 
         "grid_lines": len(cp.grid),
         "bubbles": len(cp.bubbles),
         "tos_rule": tos.rule,
+        "pen_rule": "column_plan_no_beams" if role == "column_plan" else "proposed",
         "tos_notes": tos.notes,
     }
 

@@ -159,6 +159,8 @@ def test_auto_mode_proposes_builds_with_system_values_and_freezes_the_system_ver
         assert s["role_confirmed_by"] is None and s["build_status"] == "built"
     assert framing["pen_class"] and framing["pen_class_source"] == "suggested"
     assert framing["pen_class_confirmed_by"] is None
+    # Phase 12a: a column plan page gets beam pen = none (system), so it builds no beams
+    assert plan["pen_class"] is None and plan["pen_class_confirmed_by"] is None
     assert float(framing["tos_mm"]) == pytest.approx(3810.0) and framing["tos_source"] == "read"
     assert framing["tos_confirmed_by"] is None
     assert str(framing["column_plan_sheet_id"]) == plan_id
@@ -183,6 +185,9 @@ def test_auto_mode_proposes_builds_with_system_values_and_freezes_the_system_ver
     ).fetchone()["n"]
     assert len(snaps[framing_id]["pieces"]) == built > 0
     assert len(snaps[plan_id]["pieces"]) == 9 and snaps[notes_id]["pieces"] == []
+    assert {p["kind"] for p in snaps[plan_id]["pieces"]} == {"Column"}
+    assert snaps[plan_id]["setup"]["evidence"]["pen_rule"] == "column_plan_no_beams"
+    assert snaps[plan_id]["setup"]["pen_class"]["value"] is None
     setup = snaps[framing_id]["setup"]
     assert setup["crop"]["source"] == "system" and setup["pen_class"]["source"] == "system"
     assert setup["tos"]["value_mm"] == pytest.approx(3810.0)

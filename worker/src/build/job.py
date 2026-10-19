@@ -445,12 +445,15 @@ def store(
     # columns of the column plan: members first, so their nodes can point at them
     column_member: dict[int, str] = {}
     for k, (g, att) in enumerate(zip(pb.columns, pb.column_labels, strict=True)):
+        info = pb.column_info(k)
+        # Phase 12a: a base-plate column with no grid crossing near it is kept for review
+        sized = "found" if not info.get("off_grid") else "needs_review"
         x, y = plan_mm(g.centre, ratio)
         grid = [g.grid.n_label, g.grid.a_label] if g.grid else [None, None]
         fields = {
             "type": "column",
             "kind": COLUMN_KIND,
-            "kind_evidence": Jsonb({"source": "line_first_build", "rule": pb.column_rule}),
+            "kind_evidence": Jsonb({"source": "line_first_build", **info}),
             **_size_fields(att),
             "build_run_id": run_id,
             "page_x0": round(g.centre[0], 2),
@@ -458,7 +461,7 @@ def store(
             "page_x1": None,
             "page_y1": None,
             "support_state": None,
-            "build_state": "found" if att.size_state == "sized" else "attention",
+            "build_state": sized if att.size_state == "sized" else "attention",
             "start_grid_x": grid[0],
             "start_grid_y": grid[1],
             "start_x_mm": round(x, 1),

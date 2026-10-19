@@ -836,6 +836,28 @@ describe("canvas", () => {
     expect(container.textContent).toContain("w16x26 <12>");
   });
 
+  it("an undefined beam is a solid red line with a ? badge, never dashed", () => {
+    const { container } = render(
+      <svg>
+        <PieceMark
+          p={piece({ profile: null, profile_raw: null, build_state: "found" })}
+          px={1}
+          on={false}
+          labels
+        />
+        <PieceMark p={piece({ id: "ok" })} px={1} on={false} labels />
+      </svg>,
+    );
+    expect(container.querySelectorAll("[stroke-dasharray]")).toHaveLength(0);
+    expect(
+      container.querySelectorAll("[data-testid=undefined-badge]"),
+    ).toHaveLength(1);
+    const red = [...container.querySelectorAll("line")].filter(
+      (l) => l.getAttribute("stroke") === "var(--attention)",
+    );
+    expect(red.length).toBeGreaterThan(0);
+  });
+
   it("no flag on a found member, nor with Show flags off", () => {
     const { container } = render(
       <svg>

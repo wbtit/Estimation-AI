@@ -491,6 +491,8 @@ export function flagOf(p: Piece): "red" | "amber" | null {
 export function markColour(p: Piece): string {
   if (p.ignored) return "var(--mark-ignored)";
   if (p.approved) return "var(--approved)";
+  // a beam without a size is solid red (with a "?" badge), never dashed
+  if (isUndefinedBeam(p)) return "var(--attention)";
   if (p.build_state === "attention") return "var(--attention)";
   if (p.build_state === "needs_review") return "var(--review)";
   return isColumn(p) ? "var(--column)" : "var(--beam)";
@@ -516,11 +518,6 @@ export function hasGlow(p: Piece): boolean {
 export function markWidthPx(zoom: number, wide = false): number {
   if (wide) return MARK_ON_PX;
   return Math.min(MARK_MAX_PX, Math.max(MARK_MIN_PX, MARK_PT * zoom));
-}
-
-/** Dash and gap of an undefined beam, scaled with its width (CSS px). */
-export function dashPx(widthPx: number): [number, number] {
-  return [widthPx * 3, widthPx * 2];
 }
 
 const normSize = (s: string) =>

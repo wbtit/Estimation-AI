@@ -8,7 +8,6 @@ import {
   remainingIssues,
   sizeGroups,
   type BomRow,
-  dashPx,
   hasGlow,
   labelDiffers,
   MARK_MAX_PX,
@@ -67,7 +66,6 @@ describe("less noise", () => {
     expect(markWidthPx(1.2)).toBeCloseTo(2.4);
     expect(markWidthPx(8)).toBe(MARK_MAX_PX);
     expect(markWidthPx(0.2, true)).toBe(MARK_ON_PX);
-    expect(dashPx(2)).toEqual([6, 4]);
   });
 
   it("the read size shows only where it differs from the drawing's label", () => {
@@ -179,6 +177,10 @@ describe("approve", () => {
   it("approved is a calm blue with no glow and no flag; ignored stays grey", () => {
     const a = piece({ build_state: "attention", approved: true });
     expect(markColour(a)).toBe("var(--approved)");
+    // Phase 12a: a beam without a size is red whatever its state (solid, with a "?" badge)
+    expect(markColour(piece({ profile: null, build_state: "found" }))).toBe(
+      "var(--attention)",
+    );
     expect(hasGlow(a)).toBe(false);
     expect(flagOf(a)).toBeNull();
     expect(isProblem(a)).toBe(false);

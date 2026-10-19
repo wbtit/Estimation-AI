@@ -7,4 +7,4 @@ threshold is a named module constant. Ported from the Phase 7 grammar prototype
 (tools/takeoff/phase7_parse.py, phase7_grammar.py) and src/linking/lines.py.
 """
 
-RULES_VERSION = "phase11-build-v1"
+RULES_VERSION = "phase12a-build-v1"

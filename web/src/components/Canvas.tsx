@@ -34,7 +34,6 @@ import {
   activeView,
   beamLabel,
   COLUMN_PX,
-  dashPx,
   evidenceText,
   flagOf,
   hasGlow,
@@ -1075,7 +1074,6 @@ export const Canvas: React.FC<CanvasProps> = (props) => {
                     y2={g.b[1]}
                     stroke="var(--grid)"
                     strokeWidth={1 * px}
-                    strokeDasharray={`${10 * px} ${3 * px} ${2 * px} ${3 * px}`}
                     opacity={0.8}
                   />
                   {g.bubble && g.label && (
@@ -1155,7 +1153,6 @@ export const Canvas: React.FC<CanvasProps> = (props) => {
                 y2={hover[1]}
                 stroke={tool === "beam" ? "var(--beam)" : "#111"}
                 strokeWidth={2 * px}
-                strokeDasharray={`${4 * px} ${3 * px}`}
                 pointerEvents="none"
               />
             )}
@@ -1256,7 +1253,7 @@ const ViewBox: React.FC<{
   );
 };
 
-/** An exclude area: accepted = grey hatched box; suggested = dashed box marked "suggested". */
+/** An exclude area: accepted = grey hatched box; suggested = orange box marked "suggested". */
 const ExclusionBox: React.FC<{
   e: { id: string; box: Box; status: string; rule: string | null };
   px: number;
@@ -1279,7 +1276,6 @@ const ExclusionBox: React.FC<{
         fillOpacity={sug ? 1 : strong ? 0.9 : 0.45}
         stroke={on ? "var(--accent)" : sug ? "var(--review)" : "#6b7280"}
         strokeWidth={(on ? 2.5 : 1.5) * px}
-        strokeDasharray={sug ? `${7 * px} ${4 * px}` : undefined}
       />
       {sug && (
         <text
@@ -1321,7 +1317,6 @@ const PreviewLine: React.FC<{ l: PenLine; px: number }> = ({ l, px }) => {
         y2={y1}
         stroke={off ? "#9aa1b2" : "var(--pick)"}
         strokeWidth={(off ? 2 : 4) * px}
-        strokeDasharray={off ? `${4 * px} ${3 * px}` : undefined}
         strokeLinecap="round"
       />
       {l.deselected && (
@@ -1339,7 +1334,7 @@ const PreviewLine: React.FC<{ l: PenLine; px: number }> = ({ l, px }) => {
  * else the kind colour: beams magenta, columns blue) with a thin white halo so it reads over any
  * linework. Only attention glows (a soft red band; a red ring on a column). The width follows the
  * zoom (MARK_PT on paper, MARK_MIN_PX..MARK_MAX_PX on screen, MARK_ON_PX hovered or selected);
- * undefined beams are dashed with dashes scaled to the width; a column is an I of COLUMN_PX on
+ * undefined beams are solid red with a "?" badge at the middle (Phase 12a); a column is an I of COLUMN_PX on
  * screen at every zoom. The read size is written along the beam only where it differs from the
  * drawing's label, on hover or selection, or with "Show all read sizes". */
 export const PieceMark: React.FC<{
@@ -1466,7 +1461,6 @@ export const PieceMark: React.FC<{
     );
   }
   const seg = { x1: p.a[0], y1: p.a[1], x2: p.b![0], y2: p.b![1] };
-  const [dash, gap] = dashPx(swPx);
   const label =
     labels && showSizeLabel(p, { hover, on, allSizes }) ? beamLabel(p) : "";
   return (
@@ -1497,15 +1491,7 @@ export const PieceMark: React.FC<{
         />
       )}
       <line {...seg} stroke="#fff" strokeWidth={halo} strokeLinecap="round" />
-      <line
-        {...seg}
-        stroke={colour}
-        strokeWidth={sw}
-        strokeDasharray={
-          isUndefinedBeam(p) ? `${dash * px} ${gap * px}` : undefined
-        }
-        strokeLinecap="round"
-      />
+      <line {...seg} stroke={colour} strokeWidth={sw} strokeLinecap="round" />
       {/* a wide transparent line makes the beam easy to hover */}
       <line {...seg} stroke="transparent" strokeWidth={12 * px} />
       {label && (
@@ -1524,10 +1510,35 @@ export const PieceMark: React.FC<{
           {label}
         </text>
       )}
+      {isUndefinedBeam(p) && !p.ignored && <UndefinedBadge at={mid} px={px} />}
       {flag && <FlagMark at={mid} px={px} colour={flag} />}
     </g>
   );
 };
+
+/** The "?" badge at the middle of a beam without a size (Phase 12a: never a dashed line). */
+const UndefinedBadge: React.FC<{ at: Pt2; px: number }> = ({ at, px }) => (
+  <g pointerEvents="none" data-testid="undefined-badge">
+    <circle
+      cx={at[0]}
+      cy={at[1]}
+      r={6 * px}
+      fill="#fff"
+      stroke="var(--attention)"
+      strokeWidth={1.5 * px}
+    />
+    <text
+      x={at[0]}
+      y={at[1] + 3.5 * px}
+      fontSize={9.5 * px}
+      fontWeight={700}
+      textAnchor="middle"
+      fill="var(--attention)"
+    >
+      ?
+    </text>
+  </g>
+);
 
 /** A small flag standing on a point: a pole and a pennant, red or amber (optional layer). */
 const FlagMark: React.FC<{

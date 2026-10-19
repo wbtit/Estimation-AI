@@ -17,6 +17,7 @@ from dataclasses import dataclass, field, replace
 import pymupdf
 
 from src.build import RULES_VERSION
+from src.build.base_plates import BasePlate, find_base_plates, in_plate, is_grid_marker, plate_glyph
 from src.build.beam_lines import BeamLine, beam_lines, pen_segments
 from src.build.clean import Cleaned, clean
 from src.build.columns import Glyph, column_plan_columns, find_glyphs
@@ -24,6 +25,7 @@ from src.build.geom import Box, Pt, in_box
 from src.build.grids import Bubble, Crossing, GridLine, crossings, find_bubbles, find_grid_lines
 from src.build.inputs import deselect, drop_text, exclude
 from src.build.labels import Attached, Label, attach_to_columns, attach_to_pieces, find_labels
+from src.build.not_beams import not_beams
 from src.build.register import Registration, project_columns, register
 from src.build.segments import PageSegments, TextLine, crop, page_text_lines, parse_page
 from src.build.supports import SupportResult, build
@@ -77,6 +79,22 @@ class PageBuild:
     notes: list[str] = field(default_factory=list)
     line_pens: dict[int, str] = field(default_factory=dict)  # beam line id -> its pen class
     deselections_unmatched: int = 0
+    # Phase 12a rules: what each took away (dash_pattern runs and segments, wall and column-shape
+    # beam lines)
+    removed: dict[str, int] = field(default_factory=dict)
+    plates: list[BasePlate] = field(default_factory=list)
+
+    def column_info(self, k: int) -> dict:
+        """How column k was found: the rule, and for a base plate its section type and grid."""
+        g = self.columns[k]
+        p = (
+            next((p for p in self.plates if p.centre == g.centre), None)
+            if not g.shape_ids
+            else None
+        )
+        if p is None:
+            return {"rule": self.column_rule}
+        return {"rule": "base_plate", "section_type": p.section_type, "off_grid": p.off_grid}
 
     @property
     def lines(self) -> list[BeamLine]:
@@ -99,6 +117,15 @@ class PageBuild:
             "columns": len(self.columns),
             "beam_lines": len(self.lines),
             "labels": len(self.labels),
+            "removed_dash_pattern_runs": self.removed.get("dash_pattern_runs", 0),
+            "removed_dash_pattern_segments": self.removed.get("dash_pattern_segments", 0),
+            "removed_wall_lines": self.removed.get("wall_lines", 0),
+            "removed_base_plate_lines": self.removed.get("base_plate_lines", 0),
+            "removed_grid_markers": self.removed.get("grid_markers", 0),
+            "base_plates": len(self.plates),
+            "base_plates_off_grid": sum(p.off_grid for p in self.plates),
+            "base_plate_columns": sum(1 for g in self.columns if not g.shape_ids),
+            "removed_column_shape_lines": self.removed.get("column_shape_lines", 0),
         }
         if self.setup.excludes or self.setup.deselected or len(self.setup.beam_pens()) > 1:
             c["beam_pens"] = len(self.setup.beam_pens())
@@ -136,6 +163,14 @@ def build_page(
     if not grid:
         notes.append("no_grid")
     glyphs = find_glyphs(ps, setup.crop, bubbles, text, cross)
+    # Phase 12a rule "grid_marker": bow-tie end / break markers on grid lines are not glyphs
+    removed: dict[str, int] = {}
+    markers = [g for g in glyphs if is_grid_marker(g, ps, grid)]
+    if markers:
+        glyphs = [g for g in glyphs if not is_grid_marker(g, ps, grid)]
+    removed["grid_markers"] = len(markers)
+    # Phase 12a rule "base_plate": four anchor bolts at a rectangle's corners mark one column
+    plates = find_base_plates(ps, setup.ratio, cross)
     pens = setup.beam_pens()
     beam_keep = cleaned.keep
     unmatched = 0
@@ -147,7 +182,7 @@ def build_page(
     lines: list[BeamLine] = []
     line_pens: dict[int, str] = {}
     for pen in pens:
-        for ln in beam_lines(ps, beam_keep, pen):
+        for ln in beam_lines(ps, beam_keep, pen, removed):
             line_pens[len(lines)] = pen
             lines.append(replace(ln, id=len(lines)))
     if setup.role == "framing" and not pens:
@@ -159,6 +194,13 @@ def build_page(
     column_rule: str | None = None
     if setup.role == "column_plan":
         columns, column_rule = column_plan_columns(glyphs, has_grid)
+        if plates:
+            # one column per base plate at its centre; a glyph column inside a plate is that column
+            columns = [g for g in columns if not in_plate(plates, g.centre)] + [
+                plate_glyph(p) for p in plates
+            ]
+            columns.sort(key=lambda g: (round(g.centre[1], 1), round(g.centre[0], 1)))
+            column_rule = f"{column_rule}+base_plate" if column_rule != "none" else "base_plate"
         notes.append(f"columns_by_{column_rule}")
     elif column_plan is None:
         notes.append("no_column_plan")
@@ -175,6 +217,22 @@ def build_page(
             ]
         else:
             notes.append(f"no_registration:{reg.reason}")
+
+    # Phase 12a: wall faces and column-shape edges are not beams (src/build/not_beams.py)
+    nb = not_beams(
+        lines,
+        ps,
+        cleaned,
+        setup.ratio,
+        [g.centre for g in glyphs] + [p for p, _ in projected] + [p.centre for p in plates],
+        plates,
+    )
+    removed["wall_lines"] = len(nb.wall)
+    removed["base_plate_lines"] = len(nb.base_plate)
+    removed["column_shape_lines"] = len(nb.column_shape)
+    if len(nb.lines) != len(lines):
+        line_pens = {k: line_pens[ln.id] for k, ln in enumerate(nb.lines)}
+        lines = [replace(ln, id=k) for k, ln in enumerate(nb.lines)]
 
     # on the column plan, the columns found there are the column supports
     support_glyphs = glyphs
@@ -204,6 +262,8 @@ def build_page(
         notes=notes,
         line_pens=line_pens,
         deselections_unmatched=unmatched,
+        removed=removed,
+        plates=plates,
     )
 
 
