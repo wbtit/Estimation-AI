@@ -205,6 +205,21 @@ page:
 
 ## 6. job-018 run (replaces Part C's JSON step)
 
+> **2026-10-19: the review project is now `phase11r-job-018`.** `phase11-job-018` is retired from
+> the measurement because it holds owner test actions made after its auto run: page views, pen
+> picks, crop changes, rebuilds, added, deleted and ignored pieces, and member edits, by two people.
+> It is archived and nothing in it was changed. `phase11r-job-018` is a fresh copy of job-018
+> (previewed, then copied; the source is unchanged by its content hash) with auto mode run once.
+> Its snapshot matches the frozen one on every page:
+> - pages built and skipped (13 and 10), the setup of every page, and the 880 pieces;
+> - piece counts per page, per kind, per size and per state;
+> - each piece's page geometry, end points, size and length.
+>
+> Only 72 tags differ, all permuted among the same numbers on the same page. Tags are numbered in
+> reading order, and pieces that share a top-left point are ordered by `member_id`, which hashes
+> the page id, so two copies break those ties differently. Everything below that names
+> `phase11-job-018` now means `phase11r-job-018`.
+
 1. Run `auto_build` on the existing copy `phase11-job-018`. The snapshot is written. A count-only
    summary is reported.
 2. **STOP.** I tell you how to start the app: API and web. Port 3000 is not touched without asking
