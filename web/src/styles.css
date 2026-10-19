@@ -1585,7 +1585,11 @@ table.grid tr.total td {
   background: transparent;
 }
 
-/* setup of the active view as chips: green confirmed, grey system, red missing */
+/* setup of the active view as chips: green confirmed, grey system, red missing (full width) */
+.page-card .field.setup {
+  grid-template-columns: 1fr;
+}
+
 .page-card .chips {
   display: flex;
   flex-wrap: wrap;
@@ -1625,7 +1629,6 @@ table.grid tr.total td {
 .page-card .card-note {
   font-size: 11px;
   color: var(--shell-muted);
-  padding: 0 10px 2px 86px;
 }
 
 .page-card .building-spin {

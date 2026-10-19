@@ -509,8 +509,7 @@ export const PageCard: React.FC<{
               </div>
             </>
           )}
-          <div className="field">
-            <span>Setup</span>
+          <div className="field setup">
             <span className="chips" data-testid="setup-chips">
               {chips.map((c) => (
                 <span

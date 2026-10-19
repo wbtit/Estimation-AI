@@ -323,7 +323,6 @@ describe("page card", () => {
       />,
     );
     expect(screen.getByLabelText("top of steel")).toBeTruthy();
-    expect(screen.getByText("Setup")).toBeTruthy();
     expect(screen.getByTestId("setup-chips")).toBeTruthy();
   });
 

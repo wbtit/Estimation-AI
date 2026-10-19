@@ -1033,15 +1033,18 @@ export const Canvas: React.FC<CanvasProps> = (props) => {
                 ) : null,
               )}
             {editing && <EditBox b={editing} px={px} />}
-            {(view?.exclusions ?? []).map((e) => (
-              <ExclusionBox
-                key={e.id}
-                e={e}
-                px={px}
-                on={e.id === exclusionOn}
-                strong={tool === "exclude" || tool === "pick"}
-              />
-            ))}
+            {/* suggestions show only while the Exclude tool is on; accepted boxes always */}
+            {(view?.exclusions ?? [])
+              .filter((e) => e.status === "accepted" || tool === "exclude")
+              .map((e) => (
+                <ExclusionBox
+                  key={e.id}
+                  e={e}
+                  px={px}
+                  on={e.id === exclusionOn}
+                  strong={tool === "exclude" || tool === "pick"}
+                />
+              ))}
             {layers.grids &&
               data?.grid_lines.map((g, i) => (
                 <g key={i} pointerEvents="none">
@@ -1381,11 +1384,11 @@ export const PieceMark: React.FC<{
             data-testid="glow"
             cx={p.a[0]}
             cy={p.a[1]}
-            r={t * 1.9}
+            r={t * 1.75}
             fill="none"
             stroke="var(--attention)"
-            strokeWidth={2 * px}
-            opacity={0.85}
+            strokeWidth={1.5 * px}
+            opacity={0.75}
           />
         )}
         {on && (
@@ -1456,7 +1459,7 @@ export const PieceMark: React.FC<{
           {...seg}
           stroke="var(--attention)"
           strokeOpacity={0.22}
-          strokeWidth={sw + 7 * px}
+          strokeWidth={sw + 5 * px}
           strokeLinecap="round"
         />
       )}
