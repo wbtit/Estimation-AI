@@ -121,6 +121,7 @@ Each member is drawn in one colour:
 | **Blue I** | a column |
 | **Orange** | needs review: size taken from a nearby label, or one end not supported |
 | **Red**, with a soft glow (a red ring on a column) | needs attention: no size, or no support (dashed = a beam with no size) |
+| **Solid blue** | approved: you confirmed it |
 | **Grey** | ignored (not ours) |
 
 Only red glows, so real problems stand out. Lines are thin when you are zoomed out and get
@@ -135,7 +136,8 @@ Column marks show the same way.
 Layers (funnel icon):
 
 - **Show all read sizes**: writes every size and column mark, as before.
-- **Only problems**: hides the members that are fine, so only orange and red remain.
+- **Only problems**: hides the members that are fine or approved, so only orange and red remain.
+- **Hide approved**: hides the members you approved.
 - **Show flags**: adds the old small flags.
 
 Hover a member to see what the system read.
@@ -148,6 +150,18 @@ key to jump to the next one. **◂** or **Shift+N** goes back.
 The navigator zooms to the member and selects it, so the Member panel opens. It goes through
 attention members first, then review members. Once you fix a member, it drops out of the list and
 **Next** goes on from there.
+
+### Approving members
+
+When a member matches the drawing, **approve** it: it turns solid blue and drops out of the red and
+orange counts and the navigator.
+
+- **One**: click it and press **A**, or **✓ Approve** at the top of the Member panel.
+- **Many**: Shift+click or drag a box, then **A** or **✓ Approve**. They are approved in one step,
+  and one **Undo** takes them all back.
+- **Unapprove** (Member panel) or **Undo** takes an approval back.
+- Changing an approved member (size, type, studs, camber, ends) keeps it approved.
+- A rebuild (▶) never changes an approved member.
 
 ### Fixing members
 
@@ -182,14 +196,34 @@ Press **?** (or the **?** button in the bar) for this list:
 | **C** / **P** / **X** | Crop / Pick beam / Exclude area |
 | **B** / **K** / **M** | Draw beam / Draw column / Measure |
 | **N** / **Shift+N** | Next / previous issue |
+| **A** | Approve the selected members |
 | **Ctrl+Z** | Undo |
 | **Delete** | Delete the selection (or the selected exclude box) |
 | **Esc** | Cancel what you are drawing, back to Select |
 
+### Members by size
+
+**Summary → Members by size** lists the members by kind (Beams, Columns, Braces), then by section:
+**Qty**, total **Length**, **lbs**, and **✓** (approved / pieces). A **No size** row shows the
+members with no size, and each kind has a **Total**. The numbers are the BOM's; ignored and deleted
+members are left out.
+
+- **Sheet** (this page, all its views): click a row to select every member of that size on the
+  page. Press **A** to approve them all, or change **Section Size** in the Member panel to change
+  them all at once (one Undo).
+- **Project** (every page): click a row to see the pages with that size and how many on each.
+  Click a page to open it with those members selected.
+
 ## 6. Save the page
 
 When the page matches the drawing, press **Save page** (top right) and the badge turns
-**Reviewed**. A message says how many issues are left on the page, for example
+**Reviewed**. If red or orange members are left, you are asked first:
+
+- **Approve all and save** approves every red and orange member left on the page (all its views),
+  then saves.
+- **Save only** saves with them left.
+- **Cancel** goes back to the page.
+ A message says how many issues are left on the page, for example
 **"Page 16 saved · 0 issues left"**. Saving also confirms the setup values you left as they were, in every view. Then go
 to the next page.
 

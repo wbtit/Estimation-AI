@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   ALL_LAYERS,
+  flagOf,
+  isProblem,
+  issues,
+  markColour,
+  remainingIssues,
+  sizeGroups,
+  type BomRow,
   dashPx,
   hasGlow,
   labelDiffers,
@@ -165,5 +172,147 @@ describe("setup chips", () => {
     expect(states(view({ role_name: null, behaviour: null })).role).toBe(
       "missing",
     );
+  });
+});
+
+describe("approve", () => {
+  it("approved is a calm blue with no glow and no flag; ignored stays grey", () => {
+    const a = piece({ build_state: "attention", approved: true });
+    expect(markColour(a)).toBe("var(--approved)");
+    expect(hasGlow(a)).toBe(false);
+    expect(flagOf(a)).toBeNull();
+    expect(isProblem(a)).toBe(false);
+    expect(markColour(piece({ approved: true, ignored: true }))).toBe(
+      "var(--mark-ignored)",
+    );
+    expect(markColour(piece({ type: "column", approved: true, b: null }))).toBe(
+      "var(--approved)",
+    );
+  });
+
+  it("the navigator skips approved members; Hide approved and Only problems hide them", () => {
+    const list = [
+      piece({ id: "r", build_state: "attention" }),
+      piece({ id: "ra", build_state: "attention", approved: true }),
+      piece({ id: "o", build_state: "needs_review", a: [0, 50], b: [100, 50] }),
+      piece({ id: "oa", build_state: "needs_review", approved: true }),
+    ];
+    expect(issues(list).map((x) => x.piece.id)).toEqual(["r", "o"]);
+    expect(visible(list[1]!, { ...ALL_LAYERS, hideApproved: true })).toBe(
+      false,
+    );
+    expect(visible(list[0]!, { ...ALL_LAYERS, hideApproved: true })).toBe(true);
+    expect(visible(list[1]!, { ...ALL_LAYERS, onlyProblems: true })).toBe(
+      false,
+    );
+    expect(visible(list[1]!, ALL_LAYERS)).toBe(true);
+  });
+
+  it("Save page counts the red and orange left (not approved, ignored or deleted)", () => {
+    const left = remainingIssues([
+      piece({ id: "r1", build_state: "attention" }),
+      piece({ id: "r2", build_state: "attention", approved: true }),
+      piece({ id: "r3", build_state: "attention", ignored: true }),
+      piece({ id: "r4", build_state: "attention", deleted: true }),
+      piece({ id: "o1", build_state: "needs_review" }),
+      piece({ id: "f", build_state: "found" }),
+    ]);
+    expect(left).toEqual({ red: 1, orange: 1, ids: ["r1", "o1"] });
+  });
+});
+
+const bomRow = (over: Partial<BomRow>): BomRow => ({
+  main: 1,
+  category: "Beams",
+  piecemark: "B1",
+  qty: 1,
+  section_type: "W",
+  section: "W16X26",
+  length_mm: 3048,
+  grade: null,
+  weight_kg: 36,
+  weight_lb: 79.37,
+  member: "LF-B-1",
+  piece_id: "p1",
+  sheet_id: "s1",
+  approved: false,
+  build_state: "found",
+  in_main_total: true,
+  ...over,
+});
+
+describe("members by size", () => {
+  const rows: BomRow[] = [
+    bomRow({ piece_id: "a", section: "W16X26", approved: true }),
+    bomRow({ piece_id: "b", section: "W16X26", sheet_id: "s2" }),
+    bomRow({
+      piece_id: "c",
+      section: "W8X10",
+      length_mm: 2000,
+      weight_lb: 30,
+      qty: 2,
+      weight_kg: 13.6,
+    }),
+    bomRow({
+      piece_id: "d",
+      section: null,
+      weight_lb: null,
+      weight_kg: null,
+      build_state: "attention",
+      in_main_total: false,
+    }),
+    bomRow({
+      piece_id: "e",
+      category: "Column",
+      section: "W10X49",
+      length_mm: null,
+      weight_lb: null,
+      weight_kg: null,
+    }),
+    bomRow({ piece_id: "f", category: "Vertical Brace", section: "L4X4X1/2" }),
+  ];
+
+  it("groups by kind (beams, columns, braces), sections in order, No size last", () => {
+    const g = sizeGroups(rows);
+    expect(g.map((x) => x.kind)).toEqual(["Beams", "Column", "Vertical Brace"]);
+    expect(g[0]!.rows.map((r) => r.section)).toEqual(["W8X10", "W16X26", null]);
+    const w16 = g[0]!.rows[1]!;
+    expect([w16.qty, w16.approved, w16.piece_ids]).toEqual([2, 1, ["a", "b"]]);
+    expect(w16.sheets).toEqual([
+      { sheet_id: "s1", qty: 1, piece_ids: ["a"] },
+      { sheet_id: "s2", qty: 1, piece_ids: ["b"] },
+    ]);
+    expect(g[0]!.rows[2]!.no_weight).toBe(1);
+    expect(g[0]!.total).toMatchObject({ qty: 5, approved: 1 });
+  });
+
+  it("Sheet is one page (all its views)", () => {
+    const g = sizeGroups(rows, "s2");
+    expect(g.map((x) => [x.kind, x.total.qty])).toEqual([["Beams", 1]]);
+  });
+
+  it("the totals equal the BOM's totals (main + attention) for the same scope", () => {
+    // the BOM's rule (api/src/review/line-first-bom.ts add()): pieces = qty, length = length x
+    // qty, weight = the row weight; main and attention rows together are every row
+    const bomTotals = (rs: BomRow[]) => ({
+      pieces: rs.reduce((t, r) => t + r.qty, 0),
+      length_mm: rs.reduce((t, r) => t + (r.length_mm ?? 0) * r.qty, 0),
+      weight_lb: rs.reduce((t, r) => t + (r.weight_lb ?? 0), 0),
+    });
+    for (const scope of [undefined, "s1", "s2"]) {
+      const inScope = rows.filter(
+        (r) => scope === undefined || r.sheet_id === scope,
+      );
+      const g = sizeGroups(rows, scope);
+      const sum = {
+        pieces: g.reduce((t, x) => t + x.total.qty, 0),
+        length_mm: g.reduce((t, x) => t + x.total.length_mm, 0),
+        weight_lb: g.reduce((t, x) => t + x.total.weight_lb, 0),
+      };
+      const b = bomTotals(inScope);
+      expect(sum.pieces).toBe(b.pieces);
+      expect(sum.length_mm).toBeCloseTo(b.length_mm, 6);
+      expect(sum.weight_lb).toBeCloseTo(b.weight_lb, 6);
+    }
   });
 });

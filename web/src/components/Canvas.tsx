@@ -133,6 +133,8 @@ export interface CanvasProps {
   toolAsk?: { tool: Tool; n: number };
   /** A view of this page is building: a spinner in the bar. */
   building?: boolean;
+  /** A: approve the selected members. */
+  onApprove?: () => void;
 }
 
 const TOOLS: { tool: Tool; Icon: LucideIcon; label: string }[] = [
@@ -391,6 +393,15 @@ export const Canvas: React.FC<CanvasProps> = (props) => {
         !e.altKey
       ) {
         step(e.shiftKey ? -1 : 1);
+        return;
+      }
+      if (
+        (e.key === "a" || e.key === "A") &&
+        !e.ctrlKey &&
+        !e.metaKey &&
+        !e.altKey
+      ) {
+        if (selected.size > 0) props.onApprove?.();
         return;
       }
       const t = toolForKey(e.key, {
@@ -1374,7 +1385,11 @@ export const PieceMark: React.FC<{
     : 0;
   if (angle > 90) angle -= 180;
   if (angle <= -90) angle += 180;
-  const state = p.ignored ? "ignored" : (p.build_state ?? "found");
+  const state = p.ignored
+    ? "ignored"
+    : p.approved
+      ? "approved"
+      : (p.build_state ?? "found");
   if (isColumn(p)) {
     const t = (COLUMN_PX / 2) * px;
     const cw = Math.min(swPx, 2.5) * px;
@@ -1587,6 +1602,7 @@ const LayerFilter: React.FC<{
       {box("labels", "Labels")}
       {box("allSizes", "Show all read sizes")}
       {box("onlyProblems", "Only problems")}
+      {box("hideApproved", "Hide approved")}
       {box("flags", "Show flags")}
       {box("isolateUndefined", "Only undefined beams")}
       <div className="row">

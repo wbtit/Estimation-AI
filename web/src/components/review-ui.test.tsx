@@ -26,7 +26,7 @@ import {
   processingSteps,
   ProjectsScreen,
 } from "./ProjectsScreen";
-import { PropertiesPanel } from "./PropertiesPanel";
+import { MembersBySize, PropertiesPanel } from "./PropertiesPanel";
 import { ReportTab } from "./ReportTab";
 import { undoneViewText } from "./Workspace";
 
@@ -1408,5 +1408,100 @@ describe("polish round: Space and the wheel outside the page", () => {
     });
     expect(overBar).toBe(false);
     expect(pct()).not.toBe(afterToolbar);
+  });
+});
+
+describe("approve and members by size", () => {
+  it("an approved member is drawn in the approved colour with no glow", () => {
+    const { container } = render(
+      <svg>
+        <PieceMark
+          p={piece({ build_state: "attention", approved: true })}
+          px={1}
+          on={false}
+          labels
+        />
+      </svg>,
+    );
+    expect(
+      container.querySelector("[data-state]")!.getAttribute("data-state"),
+    ).toBe("approved");
+    expect(container.querySelectorAll("[data-testid=glow]")).toHaveLength(0);
+    expect(
+      [...container.querySelectorAll("line")].some(
+        (l) => l.getAttribute("stroke") === "var(--approved)",
+      ),
+    ).toBe(true);
+  });
+
+  it("A approves the selection; nothing selected, nothing happens", () => {
+    const onApprove = vi.fn();
+    const { unmount } = canvasWith({ onApprove, selected: new Set(["a"]) });
+    fireEvent.keyDown(window, { key: "a" });
+    expect(onApprove).toHaveBeenCalledTimes(1);
+    unmount();
+    const none = vi.fn();
+    canvasWith({ onApprove: none });
+    fireEvent.keyDown(window, { key: "a" });
+    expect(none).not.toHaveBeenCalled();
+  });
+
+  it("the Member panel has Approve, then Unapprove once approved", () => {
+    const onEdit = vi.fn();
+    const panel = (sel: Piece[]) => (
+      <PropertiesPanel
+        bomRows={[]}
+        sheetId="s1"
+        selected={sel}
+        kinds={[]}
+        crop={null}
+        onEdit={onEdit}
+        onDelete={() => undefined}
+        onCropTool={() => undefined}
+      />
+    );
+    const { rerender } = render(panel([piece({}), piece({ id: "b" })]));
+    fireEvent.click(screen.getByText(/Approve 2/));
+    expect(onEdit).toHaveBeenCalledWith({ approved: true });
+    rerender(
+      panel([piece({ approved: true }), piece({ id: "b", approved: true })]),
+    );
+    expect(screen.queryByRole("button", { name: /^Approve/ })).toBeNull();
+    expect(screen.getByTestId("approve-bar").textContent).toContain("Approved");
+    fireEvent.click(screen.getByText(/Unapprove/));
+    expect(onEdit).toHaveBeenLastCalledWith({ approved: false });
+  });
+
+  it("Members by size: Sheet selects a size's members; Project lists pages and opens one", () => {
+    const rows: BomRow[] = [
+      row({ section: "W16X26", sheet_id: "s1", qty: 1 }),
+      row({ section: "W16X26", sheet_id: "s2", qty: 1 }),
+      row({ section: "W8X10", sheet_id: "s1", qty: 1 }),
+    ].map((r, i) => ({ ...r, piece_id: `p${i}`, approved: i === 0 }));
+    const onSelect = vi.fn();
+    const onOpen = vi.fn();
+    render(
+      <MembersBySize
+        rows={rows}
+        sheetId="s1"
+        onSelectPieces={onSelect}
+        onOpenPage={onOpen}
+        pageName={(id) => `Page ${id}`}
+      />,
+    );
+    const sheetRows = screen.getAllByTestId("size-row");
+    expect(sheetRows.map((r) => r.textContent)).toEqual([
+      expect.stringContaining("W8X10"),
+      expect.stringContaining("W16X26"),
+    ]);
+    expect(sheetRows[1]!.textContent).toContain("1/1");
+    fireEvent.click(sheetRows[1]!);
+    expect(onSelect).toHaveBeenCalledWith(["p0"]);
+    fireEvent.click(screen.getByText("Project"));
+    const projRows = screen.getAllByTestId("size-row");
+    expect(projRows[1]!.textContent).toContain("1/2");
+    fireEvent.click(projRows[1]!);
+    fireEvent.click(screen.getByText("Page s2 · 1"));
+    expect(onOpen).toHaveBeenCalledWith("s2", ["p1"]);
   });
 });

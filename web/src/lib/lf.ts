@@ -83,6 +83,8 @@ export interface Page {
     found: number;
     needs_review: number;
     attention: number;
+    /** Approved by a person (out of found / needs_review / attention). */
+    approved?: number;
   };
 }
 
@@ -166,6 +168,8 @@ export interface Piece {
   studs: number | null;
   camber_raw: string | null;
   ignored: boolean;
+  /** A person confirmed it (Approve). */
+  approved?: boolean;
   deleted: boolean;
   added: boolean;
   edited: boolean;
@@ -217,7 +221,10 @@ export interface BomRow {
   weight_kg: number | null;
   weight_lb: number | null;
   member: string;
+  /** The piece's row id (selects it on the page). */
+  piece_id?: string;
   sheet_id: string | null;
+  approved?: boolean;
   build_state: string | null;
   in_main_total: boolean;
 }
@@ -263,8 +270,10 @@ export interface Layers {
   isolateUndefined: boolean;
   /** Write every read size (else only where it differs from the drawing's label, or on hover). */
   allSizes: boolean;
-  /** Hide found and ignored members: only orange and red remain. */
+  /** Hide found, approved and ignored members: only orange and red remain. */
   onlyProblems: boolean;
+  /** Hide the members a person approved. */
+  hideApproved: boolean;
   /** Length filter in mm (beams); null = no bound. */
   minMm: number | null;
   maxMm: number | null;
@@ -281,21 +290,28 @@ export const ALL_LAYERS: Layers = {
   isolateUndefined: false,
   allSizes: false,
   onlyProblems: false,
+  hideApproved: false,
   minMm: null,
   maxMm: null,
 };
 
-/** A member that needs attention or review (and is not ignored). */
+/** A member that needs attention or review (not ignored, not approved by a person). */
 export function isProblem(p: Piece): boolean {
   return (
     !p.ignored &&
+    !p.approved &&
     (p.build_state === "attention" || p.build_state === "needs_review")
   );
 }
 
+/** Approved by a person and shown as such (an ignored member stays grey). */
+export const isApproved = (p: Piece): boolean =>
+  !p.ignored && p.approved === true;
+
 export function visible(p: Piece, l: Layers): boolean {
   if (p.deleted) return false;
   if (l.onlyProblems && !isProblem(p)) return false;
+  if (l.hideApproved && isApproved(p)) return false;
   if (isColumn(p)) return l.columns && !l.isolateUndefined;
   const undef = isUndefinedBeam(p);
   if (l.isolateUndefined && !undef) return false;
@@ -464,7 +480,7 @@ export function activeView<T extends { id: string; position: number }>(
 
 /** The flag colour of a piece: red for "attention", amber for "needs review", none when found. */
 export function flagOf(p: Piece): "red" | "amber" | null {
-  if (p.ignored) return null;
+  if (p.ignored || p.approved) return null;
   if (p.build_state === "attention") return "red";
   if (p.build_state === "needs_review") return "amber";
   return null;
@@ -474,6 +490,7 @@ export function flagOf(p: Piece): "red" | "amber" | null {
  * (CSS variables, styles.css). */
 export function markColour(p: Piece): string {
   if (p.ignored) return "var(--mark-ignored)";
+  if (p.approved) return "var(--approved)";
   if (p.build_state === "attention") return "var(--attention)";
   if (p.build_state === "needs_review") return "var(--review)";
   return isColumn(p) ? "var(--column)" : "var(--beam)";
@@ -492,7 +509,7 @@ export const COLUMN_PX = 14;
 
 /** Only "attention" (red) glows; review is a plain orange line, found the kind colour. */
 export function hasGlow(p: Piece): boolean {
-  return !p.ignored && p.build_state === "attention";
+  return !p.ignored && !p.approved && p.build_state === "attention";
 }
 
 /** The on-screen width of a mark in CSS px: thin at low zoom, never thicker than MARK_MAX_PX. */
@@ -651,9 +668,8 @@ export function issues(
     .filter(
       (p) =>
         p.a &&
-        !p.ignored &&
         !p.deleted &&
-        (p.build_state === "attention" || p.build_state === "needs_review") &&
+        isProblem(p) &&
         visible(p, { ...layers, minMm: null, maxMm: null }),
     )
     .map((piece) => ({ piece, key: issueKey(piece, viewPos) }))
@@ -717,6 +733,125 @@ export function common<T>(values: readonly T[]): T | typeof MIXED | null {
   return values.every((v) => JSON.stringify(v) === first)
     ? (values[0] as T)
     : MIXED;
+}
+
+/** Red and orange members left on a page (not approved, ignored or deleted): Save page asks about
+ * them. */
+export function remainingIssues(pieces: readonly Piece[]): {
+  red: number;
+  orange: number;
+  ids: string[];
+} {
+  const left = pieces.filter((p) => !p.deleted && isProblem(p));
+  return {
+    red: left.filter((p) => p.build_state === "attention").length,
+    orange: left.filter((p) => p.build_state === "needs_review").length,
+    ids: left.map((p) => p.id),
+  };
+}
+
+// ---- members by size ----------------------------------------------------------------------------
+export interface SizeRowView {
+  /** The section as the BOM writes it; null = no size. */
+  section: string | null;
+  qty: number;
+  length_mm: number;
+  weight_lb: number;
+  /** Pieces with no weight (no length or not in the catalog), within qty. */
+  no_weight: number;
+  approved: number;
+  piece_ids: string[];
+  /** Pages holding this size, with their counts (page order of the BOM rows). */
+  sheets: { sheet_id: string; qty: number; piece_ids: string[] }[];
+}
+
+export interface SizeGroup {
+  kind: string;
+  rows: SizeRowView[];
+  total: {
+    qty: number;
+    length_mm: number;
+    weight_lb: number;
+    approved: number;
+  };
+}
+
+const KIND_ORDER = (k: string) => {
+  const c = k.toLowerCase();
+  return c.includes("beam")
+    ? 0
+    : c.includes("column")
+      ? 1
+      : c.includes("brace")
+        ? 2
+        : 3;
+};
+
+/** Members by size from the BOM rows (so the numbers are the BOM's): grouped by kind (Beams,
+ * Columns, Braces, others), then one row per section ("No size" last), with Qty, total length,
+ * weight (lb) and how many are approved. `sheetId` limits it to one page (all its views); the BOM
+ * already leaves out ignored and deleted members. */
+export function sizeGroups(
+  rows: readonly BomRow[],
+  sheetId?: string | null,
+): SizeGroup[] {
+  const kinds = new Map<string, Map<string, SizeRowView>>();
+  for (const r of rows) {
+    if (sheetId !== undefined && r.sheet_id !== sheetId) continue;
+    const kind = r.category ?? "Other";
+    const bySection = kinds.get(kind) ?? new Map<string, SizeRowView>();
+    kinds.set(kind, bySection);
+    const key = r.section ?? "";
+    const row = bySection.get(key) ?? {
+      section: r.section,
+      qty: 0,
+      length_mm: 0,
+      weight_lb: 0,
+      no_weight: 0,
+      approved: 0,
+      piece_ids: [],
+      sheets: [],
+    };
+    bySection.set(key, row);
+    row.qty += r.qty;
+    row.length_mm += (r.length_mm ?? 0) * r.qty;
+    if (r.weight_lb === null) row.no_weight += r.qty;
+    else row.weight_lb += r.weight_lb;
+    if (r.approved) row.approved += r.qty;
+    if (r.piece_id) row.piece_ids.push(r.piece_id);
+    if (r.sheet_id) {
+      let s = row.sheets.find((x) => x.sheet_id === r.sheet_id);
+      if (!s) {
+        s = { sheet_id: r.sheet_id, qty: 0, piece_ids: [] };
+        row.sheets.push(s);
+      }
+      s.qty += r.qty;
+      if (r.piece_id) s.piece_ids.push(r.piece_id);
+    }
+  }
+  return [...kinds.entries()]
+    .sort(
+      (a, b) => KIND_ORDER(a[0]) - KIND_ORDER(b[0]) || a[0].localeCompare(b[0]),
+    )
+    .map(([kind, m]) => {
+      const list = [...m.values()].sort((a, b) =>
+        a.section === null
+          ? 1
+          : b.section === null
+            ? -1
+            : a.section.localeCompare(b.section, undefined, { numeric: true }),
+      );
+      return {
+        kind,
+        rows: list,
+        total: {
+          qty: list.reduce((t, r) => t + r.qty, 0),
+          length_mm: list.reduce((t, r) => t + r.length_mm, 0),
+          weight_lb: list.reduce((t, r) => t + r.weight_lb, 0),
+          approved: list.reduce((t, r) => t + r.approved, 0),
+        },
+      };
+    });
 }
 
 // ---- summary --------------------------------------------------------------------------------------

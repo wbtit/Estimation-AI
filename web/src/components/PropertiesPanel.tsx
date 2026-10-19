@@ -1,15 +1,18 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
+  Check,
   ChevronDown,
   ChevronRight,
   Lock,
   PanelRight,
   Trash2,
+  Undo2,
 } from "lucide-react";
 import { formatFtIn } from "../lib/ftin";
 import {
   common,
   MIXED,
+  sizeGroups,
   summary,
   type BomRow,
   type Box,
@@ -29,6 +32,7 @@ export interface PieceEdit {
   studs?: number | null;
   camber?: string | null;
   ignored?: boolean;
+  approved?: boolean;
 }
 
 const show = (v: unknown): string =>
@@ -99,6 +103,10 @@ export const PropertiesPanel: React.FC<{
   viewPieces?: Piece[];
   viewName?: string | null;
   onSetSizeAll?: (ids: string[], profile: string) => void;
+  /** Members by size: select the members of a size on this page, or open a page with them. */
+  onSelectPieces?: (ids: string[]) => void;
+  onOpenPage?: (sheetId: string, ids: string[]) => void;
+  pageName?: (sheetId: string) => string;
 }> = ({
   bomRows,
   sheetId,
@@ -111,6 +119,9 @@ export const PropertiesPanel: React.FC<{
   viewPieces = [],
   viewName = null,
   onSetSizeAll,
+  onSelectPieces,
+  onOpenPage,
+  pageName = (id) => id,
 }) => {
   const [tab, setTab] = useState<"summary" | "member">(
     selected.length ? "member" : "summary",
@@ -153,6 +164,15 @@ export const PropertiesPanel: React.FC<{
                 />
               )}
             </Section>
+            <Section title="Members by size" testId="by-size">
+              <MembersBySize
+                rows={bomRows}
+                sheetId={sheetId}
+                onSelectPieces={onSelectPieces}
+                onOpenPage={onOpenPage}
+                pageName={pageName}
+              />
+            </Section>
             <Section title="Project Summary" testId="project-summary">
               <SummaryList rows={bomRows} />
             </Section>
@@ -189,6 +209,121 @@ export const PropertiesPanel: React.FC<{
           </Section>
         )}
       </div>
+    </div>
+  );
+};
+
+const lbs = (n: number) => Math.round(n).toLocaleString("en-US");
+
+/** Members by size (Sheet = this page, all its views; Project = every page): per kind, one row per
+ * section with Qty, total length, weight (lb) and approved / pieces, a "No size" row, a total per
+ * kind. From the BOM rows, so the numbers are the BOM's. Sheet: a row click selects those members
+ * on the page. Project: a row click lists the pages with that size; a page click opens it with
+ * them selected. */
+export const MembersBySize: React.FC<{
+  rows: readonly BomRow[];
+  sheetId: string | null;
+  onSelectPieces?: (ids: string[]) => void;
+  onOpenPage?: (sheetId: string, ids: string[]) => void;
+  pageName: (sheetId: string) => string;
+}> = ({ rows, sheetId, onSelectPieces, onOpenPage, pageName }) => {
+  const [scope, setScope] = useState<"sheet" | "project">("sheet");
+  const [open, setOpen] = useState<string | null>(null);
+  const groups = sizeGroups(rows, scope === "sheet" ? sheetId : undefined);
+  useEffect(() => setOpen(null), [scope, sheetId]);
+  return (
+    <div className="by-size">
+      <div className="seg light small" role="tablist">
+        {(["sheet", "project"] as const).map((k) => (
+          <button
+            key={k}
+            role="tab"
+            aria-selected={scope === k}
+            className={scope === k ? "on" : ""}
+            onClick={() => setScope(k)}
+          >
+            {k === "sheet" ? "Sheet" : "Project"}
+          </button>
+        ))}
+      </div>
+      {groups.length === 0 && <span className="muted">No members</span>}
+      <table className="size-table" data-testid={`by-size-${scope}`}>
+        <thead>
+          <tr>
+            <th>Section</th>
+            <th>Qty</th>
+            <th>Length</th>
+            <th>lbs</th>
+            <th title="approved / pieces">✓</th>
+          </tr>
+        </thead>
+        {groups.map((g) => (
+          <tbody key={g.kind}>
+            <tr className="kind">
+              <td colSpan={5}>{g.kind}</td>
+            </tr>
+            {g.rows.map((r) => {
+              const key = `${g.kind}|${r.section ?? ""}`;
+              return (
+                <React.Fragment key={key}>
+                  <tr
+                    className={`size-row${open === key ? " on" : ""}`}
+                    data-testid="size-row"
+                    onClick={() => {
+                      setOpen(open === key && scope === "project" ? null : key);
+                      if (scope === "sheet") onSelectPieces?.(r.piece_ids);
+                    }}
+                  >
+                    <td className={r.section ? "" : "no-size"}>
+                      {r.section ?? "No size"}
+                    </td>
+                    <td>{r.qty}</td>
+                    <td>{r.length_mm > 0 ? formatFtIn(r.length_mm) : "—"}</td>
+                    <td
+                      title={
+                        r.no_weight ? `${r.no_weight} without a weight` : ""
+                      }
+                    >
+                      {r.weight_lb > 0 ? lbs(r.weight_lb) : "—"}
+                    </td>
+                    <td className={r.approved === r.qty ? "all-ok" : ""}>
+                      {r.approved}/{r.qty}
+                    </td>
+                  </tr>
+                  {scope === "project" && open === key && (
+                    <tr className="pages">
+                      <td colSpan={5}>
+                        {r.sheets.map((sh) => (
+                          <button
+                            key={sh.sheet_id}
+                            className="link"
+                            onClick={() =>
+                              onOpenPage?.(sh.sheet_id, sh.piece_ids)
+                            }
+                          >
+                            {pageName(sh.sheet_id)} · {sh.qty}
+                          </button>
+                        ))}
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              );
+            })}
+            <tr className="total">
+              <td>Total</td>
+              <td>{g.total.qty}</td>
+              <td>
+                {g.total.length_mm > 0 ? formatFtIn(g.total.length_mm) : "—"}
+              </td>
+              <td>{g.total.weight_lb > 0 ? lbs(g.total.weight_lb) : "—"}</td>
+              <td>
+                {g.total.approved}/{g.total.qty}
+              </td>
+            </tr>
+          </tbody>
+        ))}
+      </table>
     </div>
   );
 };
@@ -289,6 +424,8 @@ const MemberSection: React.FC<{
     ),
   );
   const ignored = common(selected.map((p) => p.ignored));
+  const shown = selected.filter((p) => !p.deleted);
+  const nApproved = shown.filter((p) => p.approved).length;
   const [studsText, setStudsText] = useState(show(studs));
   const [camberText, setCamberText] = useState(show(camber));
   useEffect(() => setStudsText(show(studs)), [studs]);
@@ -309,6 +446,33 @@ const MemberSection: React.FC<{
         )
       }
     >
+      <div className="approve-bar" data-testid="approve-bar">
+        {nApproved < shown.length && (
+          <button
+            className="approve"
+            title="Confirm as built (A)"
+            onClick={() => onEdit({ approved: true })}
+          >
+            <Check size={15} strokeWidth={3} /> Approve
+            {shown.length > 1 ? ` ${shown.length - nApproved}` : ""}
+          </button>
+        )}
+        {nApproved > 0 && (
+          <button
+            className="unapprove"
+            title="Take the approval back"
+            onClick={() => onEdit({ approved: false })}
+          >
+            <Undo2 size={14} /> Unapprove
+            {shown.length > 1 ? ` ${nApproved}` : ""}
+          </button>
+        )}
+        {nApproved === shown.length && shown.length > 0 && (
+          <span className="approved-note">
+            <Check size={13} strokeWidth={3} /> Approved
+          </span>
+        )}
+      </div>
       <div className="fld-box">
         <span className="fld-label">Piecemark</span>
         <b>{show(tag) || "—"}</b>

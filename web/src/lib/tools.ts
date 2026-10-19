@@ -37,6 +37,7 @@ export const SHORTCUTS: { keys: string; what: string }[] = [
   { keys: "K", what: "Draw column" },
   { keys: "M", what: "Measure" },
   { keys: "N / Shift+N", what: "Next / previous issue" },
+  { keys: "A", what: "Approve the selected members" },
   { keys: "Ctrl+Z", what: "Undo" },
   {
     keys: "Delete",

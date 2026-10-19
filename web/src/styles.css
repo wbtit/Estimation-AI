@@ -29,6 +29,8 @@
   --column: #2979ff;
   --review: #ff9100;
   --attention: #ff1744;
+  /* approved by a person: a calm solid blue, no glow */
+  --approved: #2962ff;
   --ok: #00c853;
   --mark-ignored: #9aa1b2;
   --beam-label: #6a007f;
@@ -1790,4 +1792,145 @@ table.grid tr.total td {
 .menu.role-menu.up {
   top: auto;
   bottom: 100%;
+}
+
+/* approve (Member panel) ------------------------------------------------------------------------ */
+.approve-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.approve-bar button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-weight: 600;
+}
+
+.approve-bar .approve {
+  background: var(--approved);
+  border: 1px solid var(--approved);
+  color: #fff;
+}
+
+.approve-bar .unapprove {
+  background: transparent;
+  border: 1px solid var(--shell-line);
+  color: var(--shell-text);
+}
+
+.approve-bar .approved-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #82b1ff;
+  font-weight: 600;
+  font-size: 12px;
+}
+
+/* members by size (Summary) */
+.by-size .seg.small {
+  margin: 0 0 8px;
+}
+
+.by-size .seg.small button {
+  padding: 3px 10px;
+  font-size: 12px;
+}
+
+.size-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.size-table th {
+  text-align: right;
+  font-weight: 600;
+  color: var(--shell-muted);
+  padding: 2px 4px;
+}
+
+.size-table th:first-child,
+.size-table td:first-child {
+  text-align: left;
+}
+
+.size-table td {
+  text-align: right;
+  padding: 3px 4px;
+  white-space: nowrap;
+}
+
+.size-table tr.kind td {
+  text-align: left;
+  font-weight: 700;
+  color: var(--shell-text);
+  padding-top: 8px;
+  border-bottom: 1px solid var(--shell-line);
+}
+
+.size-table tr.size-row {
+  cursor: pointer;
+}
+
+.size-table tr.size-row:hover td {
+  background: var(--shell-input);
+}
+
+.size-table tr.size-row.on td {
+  background: rgba(41, 98, 255, 0.28);
+}
+
+.size-table td.no-size {
+  color: #ff8a80;
+  font-style: italic;
+}
+
+.size-table td.all-ok {
+  color: #82b1ff;
+  font-weight: 700;
+}
+
+.size-table tr.total td {
+  font-weight: 700;
+  border-top: 1px solid var(--shell-line);
+}
+
+.size-table tr.pages td {
+  text-align: left;
+  white-space: normal;
+}
+
+.size-table tr.pages button.link {
+  color: #82b1ff;
+  display: inline-block;
+  margin: 0 8px 2px 0;
+}
+
+/* Save page question */
+.modal-back {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 26, 46, 0.45);
+  display: grid;
+  place-items: center;
+  z-index: 100;
+}
+
+.modal {
+  background: #fff;
+  color: var(--text);
+  border-radius: 12px;
+  padding: 18px 20px;
+  min-width: 380px;
+  display: grid;
+  gap: 10px;
+  box-shadow: 0 16px 48px rgba(15, 26, 46, 0.35);
 }

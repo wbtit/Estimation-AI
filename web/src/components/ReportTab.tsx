@@ -10,6 +10,7 @@ interface PageReport {
   system_pieces: number;
   final_pieces: number;
   kept_unchanged: number;
+  confirmed_unchanged?: number;
   size_changed: number;
   length_changed: number;
   deleted_by_person: number;
@@ -43,6 +44,7 @@ const COLS: [keyof PageReport, string][] = [
   ["system_pieces", "System"],
   ["final_pieces", "Final"],
   ["kept_unchanged", "Kept"],
+  ["confirmed_unchanged", "Confirmed unchanged"],
   ["size_changed", "Size changed"],
   ["length_changed", "Length changed"],
   ["deleted_by_person", "Deleted"],

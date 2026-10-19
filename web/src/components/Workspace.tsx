@@ -6,6 +6,7 @@ import {
   activeView,
   ALL_LAYERS,
   loadFade,
+  remainingIssues,
   saveFade,
   type Bom,
   type Box,
@@ -147,6 +148,15 @@ export const Workspace: React.FC<{
     void loadBom();
     void loadRoles();
   }, [projectId]);
+
+  // a page opened from Members by size: select its members once its pieces are in
+  useEffect(() => {
+    const want = pendingSelect.current;
+    if (want && data?.sheet_id === want.sheetId) {
+      setSelected(new Set(want.ids));
+      pendingSelect.current = null;
+    }
+  }, [data]);
 
   useEffect(() => {
     setSelected(new Set());
@@ -346,7 +356,37 @@ export const Workspace: React.FC<{
         member_ids: [...selected],
         ...e,
       }),
+      e.approved === true
+        ? `${selected.size} approved (Undo takes it back)`
+        : e.approved === false
+          ? `${selected.size} unapproved`
+          : undefined,
     );
+  /** Save page; with red or orange members left, ask first (Approve all and save / Save only). */
+  const [saveAsk, setSaveAsk] = useState<ReturnType<
+    typeof remainingIssues
+  > | null>(null);
+  const savePage = (p: Page, approveIds: string[] = []) => {
+    const approve = approveIds.length
+      ? send("POST", `/api/projects/${projectId}/line-first/pieces/edit`, {
+          who,
+          member_ids: approveIds,
+          approved: true,
+        })
+      : Promise.resolve();
+    const left = approveIds.length ? 0 : remainingIssues(pieces).ids.length;
+    setSaveAsk(null);
+    void act(
+      approve.then(() => send("POST", sheetUrl(p, "save-page"), { who })),
+      `Page ${p.page_number} saved · ` +
+        (approveIds.length ? `${approveIds.length} approved · ` : "") +
+        `${left} issue${left === 1 ? "" : "s"} left`,
+    );
+  };
+  /** Members by size, Project: open a page with the members of a size selected. */
+  const pendingSelect = React.useRef<{ sheetId: string; ids: string[] } | null>(
+    null,
+  );
   const deleteSelected = () => {
     if (selected.size === 0) return;
     void act(
@@ -415,12 +455,9 @@ export const Workspace: React.FC<{
               className="primary row"
               style={{ gap: 6 }}
               onClick={() => {
-                // saving does not change any member's state: the issues left are the page's now
-                const left = page.counts.attention + page.counts.needs_review;
-                void act(
-                  send("POST", sheetUrl(page, "save-page"), { who }),
-                  `Page ${page.page_number} saved · ${left} issue${left === 1 ? "" : "s"} left`,
-                );
+                const left = remainingIssues(pieces);
+                if (left.ids.length) setSaveAsk(left);
+                else savePage(page);
               }}
             >
               <Save size={16} /> Save page
@@ -684,6 +721,7 @@ export const Workspace: React.FC<{
                   .catch(fail)
               }
               building={(page.views ?? []).some((v) => v.badge === "Building")}
+              onApprove={() => void editSelected({ approved: true })}
               onDeleteSelected={deleteSelected}
               toolAsk={toolAsk}
             />
@@ -709,6 +747,21 @@ export const Workspace: React.FC<{
             viewName={
               (data?.views?.length ?? 0) > 1 ? (view?.name ?? null) : null
             }
+            onSelectPieces={(ids) => setSelected(new Set(ids))}
+            onOpenPage={(id, ids) => {
+              if (id === sheetId) {
+                setSelected(new Set(ids));
+                return;
+              }
+              pendingSelect.current = { sheetId: id, ids };
+              selectSheet(id);
+            }}
+            pageName={(id) => {
+              const pg = pages.find((x) => x.id === id);
+              return pg
+                ? `Page ${pg.page_number}${pg.sheet_number ? ` · ${pg.sheet_number}` : ""}`
+                : "Page";
+            }}
             onSetSizeAll={(ids, profile) =>
               void act(
                 send(
@@ -724,6 +777,34 @@ export const Workspace: React.FC<{
               )
             }
           />
+        </div>
+      )}
+      {saveAsk && page && (
+        <div className="modal-back" onClick={() => setSaveAsk(null)}>
+          <div
+            className="modal"
+            role="dialog"
+            aria-label="save page"
+            data-testid="save-ask"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <b>
+              {saveAsk.red} red and {saveAsk.orange} orange left
+            </b>
+            <span className="muted">
+              Approve them all as they are, or save the page with them left.
+            </span>
+            <div className="row" style={{ gap: 8, justifyContent: "flex-end" }}>
+              <button onClick={() => setSaveAsk(null)}>Cancel</button>
+              <button onClick={() => savePage(page)}>Save only</button>
+              <button
+                className="primary"
+                onClick={() => savePage(page, saveAsk.ids)}
+              >
+                Approve all and save
+              </button>
+            </div>
+          </div>
         </div>
       )}
       {toast && <div className="toast">{toast}</div>}
