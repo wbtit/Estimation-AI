@@ -530,12 +530,15 @@ def _letters_both_ways(page):
         pieces(page, (92.0, y), (920.0, y))
 
 
-def test_letter_only_grids_cross_only_under_the_direction_rule():
+def test_letter_only_grids_are_split_by_direction_and_cross():
     doc, page = _page()
     _letters_both_ways(page)
     grid = _steps(page)[4]
-    assert len(grid) == 6 and {g.family for g in grid} == {"A"}
-    assert crossings(grid) == []  # the registered family rule
+    # Phase 12b rule "grid_family_by_direction": one letter family on both axes is split, the
+    # more vertical lines become the number family, so the registered family rule finds crossings
+    assert len(grid) == 6 and {g.family for g in grid} == {"A", "N"}
+    assert all((g.family == "N") == (abs(g.p1[0] - g.p0[0]) < 1) for g in grid)
+    assert len(crossings(grid)) == 9
     cross = crossings(grid, "direction")
     assert len(cross) == 9
     names = {(c.n_label, c.a_label): _hv(c.point) for c in cross}
@@ -562,7 +565,8 @@ def test_the_build_uses_the_crossing_rule_of_its_setup():
         for y in YS.values():
             column(page, (x, y))
     frozen = build_page(page, Setup((40, 40, 960, 760), 96.0, None, None, "column_plan"))
-    assert frozen.counts()["grid_crossings"] == 0 and frozen.column_rule == "repeated_glyph"
+    # Phase 12b: the letter-only grid is split by direction, so the family rule crosses it too
+    assert frozen.counts()["grid_crossings"] == 9 and frozen.column_rule == "glyph_at_grid"
     s = Setup((40, 40, 960, 760), 96.0, None, None, "column_plan", crossing_rule="direction")
     dev = build_page(page, s)
     assert dev.counts()["grid_crossings"] == 9 and dev.column_rule == "glyph_at_grid"

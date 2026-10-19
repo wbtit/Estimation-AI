@@ -128,11 +128,13 @@ def _project(dbp: DbProject, tos_note: bool = True) -> tuple[str, str, str]:
             "SELECT id FROM sheets WHERE project_id = %s ORDER BY page_index", (dbp.project_id,)
         )
     ]
-    for sid, guess in zip(ids, ("foundation_plan", "framing_plan", "general_notes"), strict=True):
+    titles = ("FOUNDATION PLAN", "ROOF FRAMING PLAN", "GENERAL NOTES")
+    guesses = ("foundation_plan", "framing_plan", "general_notes")
+    for sid, guess, title in zip(ids, guesses, titles, strict=True):
         dbp.conn.execute(
-            "UPDATE sheets SET page_type_guess = %s, scale_parsed_ratio = 96,"
+            "UPDATE sheets SET page_type_guess = %s, title = %s, scale_parsed_ratio = 96,"
             " scale_parsed = '1/8\" = 1''-0\"', scale_override_ratio = NULL WHERE id = %s",
-            (guess, sid),
+            (guess, title, sid),
         )
     dbp.conn.commit()
     return ids[0], ids[1], ids[2]
@@ -249,9 +251,14 @@ def test_a_page_without_scale_or_pen_class_gets_a_reason_and_no_build(dbp: DbPro
     )
     dbp.conn.commit()
     out = auto_build(dbp.conn, dbp.config, dbp.project_id)
-    assert out["built"] == 1 and out["not_built"] == 1
+    # Phase 12b: no stored scale and none from the page's dimensions: "Scale needed", no build run
+    assert out["built"] == 1 and out["not_built"] == 0 and out["scale_needed"] == 1
     run = dbp.conn.execute("SELECT * FROM build_runs WHERE sheet_id = %s", (plan_id,)).fetchone()
-    assert run["status"] == "refused" and run["error"] == "no scale"
+    assert run is None
+    plan_snap = dbp.conn.execute(
+        "SELECT setup FROM build_snapshots WHERE sheet_id = %s", (plan_id,)
+    ).fetchone()["setup"]
+    assert plan_snap["evidence"]["scale_rule"] == "scale_needed"
     framing = _sheet(dbp, framing_id)
     assert framing["tos_mm"] is None and framing["column_plan_sheet_id"] is None
     snap = dbp.conn.execute(

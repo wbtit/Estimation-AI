@@ -272,9 +272,9 @@ describe('setting and confirming a kind', () => {
     expect((await get('weak')).kind.name).toBe('Beams'); // both pieces come back with one undo
   });
 
-  it('lists the 36 kinds for the dropdown, main first', async () => {
+  it('lists the 37 kinds for the dropdown, main first', async () => {
     const res = (await app.inject({ method: 'GET', url: '/api/member-kinds' })).json();
-    expect(res.kinds).toHaveLength(36);
+    expect(res.kinds).toHaveLength(37);
     expect(res.kinds[0]).toMatchObject({ kind: 'Column', scope: 'main' });
     expect(res.kinds.at(-1)).toMatchObject({ kind: 'Other trades', scope: 'excluded' });
   });

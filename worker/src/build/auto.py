@@ -25,17 +25,18 @@ import pymupdf
 from psycopg.types.json import Jsonb
 
 from src.build import RULES_VERSION
+from src.build.dimension_scale import scale_from_dimensions
 from src.build.job import _text_lines, build_sheet
+from src.build.page_roles import page_role, skip_role_name, stored_view_titles
 from src.build.propose import (
     choose_column_plan,
     grid_labels,
     propose_crop,
     propose_pen,
-    propose_role,
     propose_scale,
     propose_tos,
 )
-from src.build.segments import page_text_lines
+from src.build.segments import crop, page_text_lines, parse_page
 from src.build.views import load_views, pick_view, role_name, view_as_sheet
 from src.config import WorkerConfig
 from src.queue import Job
@@ -139,26 +140,47 @@ def _refuse(conn, project_id: str, auto_id: str | None, job_id: str | None, why:
     return {"refused": [why]}
 
 
+PILE_ROLE = "Pile plan"
+SCALE_FROM_DIMENSIONS = "from dimensions"
+
+
 def propose_sheet(conn, page: pymupdf.Page, sheet: dict[str, Any]) -> dict[str, Any]:
     """Proposals for one page, stored on the sheet as system values. Returns the evidence."""
     text = _text_lines(conn, str(sheet["id"])) or page_text_lines(page)
-    role = propose_role(sheet["page_type_guess"])
+    # Phase 12b rules "plan_only_roles" and "pile_plan" (src/build/page_roles.py)
+    pr = page_role(sheet.get("title"), stored_view_titles(text), sheet["page_type_guess"])
+    role = pr.role
     cp = propose_crop(page, text)
     # Phase 12a (a proposal default, a reported deviation): a column plan page gets beam pen = none
     # (a system value, no view_pens row), so its build makes columns and no beams
-    pen = None if role == "column_plan" else propose_pen(page, cp.box)[0]
+    pen = None if role in (None, "column_plan") else propose_pen(page, cp.box)[0]
     ratio, scale_text = propose_scale(sheet)
+    scale_rule = "stored" if ratio is not None else None
+    dims = None
+    if ratio is None and role is not None:
+        # Phase 12b rule "scale_from_dimensions": a system value, flagged for review like any
+        dims = scale_from_dimensions(crop(parse_page(page), cp.box), text, cp.box)
+        if dims.ratio is not None:
+            ratio, scale_text, scale_rule = dims.ratio, SCALE_FROM_DIMENSIONS, "dimensions"
+        else:
+            scale_rule = "scale_needed"
     tos = propose_tos(text, cp.box)
     x0, y0, x1, y1 = (round(v, 2) for v in cp.box)
     view = pick_view(load_views(conn, str(sheet["id"])))
     if view is None:
         raise AutoBuildError("a page has no view")
+    name = (
+        PILE_ROLE
+        if pr.pile
+        else role_name(role, sheet["page_type_guess"])
+        if role is not None
+        else (skip_role_name(sheet.get("title")) or role_name(None, sheet["page_type_guess"]))
+    )
     conn.execute(
         "UPDATE build_views SET role_name = %s, box = %s, scale_ratio = %s, scale_text = %s,"
         " tos_mm = %s, tos_raw = %s, tos_source = %s, column_plan_view_id = NULL WHERE id = %s",
-        (role_name(role, sheet["page_type_guess"]),
-         Jsonb({"x0": x0, "y0": y0, "x1": x1, "y1": y1}), ratio, scale_text, tos.mm, tos.raw,
-         "read" if tos.mm is not None else None, view.id),
+        (name, Jsonb({"x0": x0, "y0": y0, "x1": x1, "y1": y1}), ratio, scale_text, tos.mm,
+         tos.raw, "read" if tos.mm is not None else None, view.id),
     )  # fmt: skip
     conn.execute("DELETE FROM view_pens WHERE view_id = %s", (view.id,))
     if pen:
@@ -167,16 +189,24 @@ def propose_sheet(conn, page: pymupdf.Page, sheet: dict[str, Any]) -> dict[str, 
             " VALUES (%s, 1, %s, 'suggested')",
             (view.id, pen),
         )
-    return {
+    ev = {
         "role": role,
+        "role_rule": pr.rule,
+        "pile_plan": pr.pile,
         "crop_rule": cp.rule,
         "grid_labels": grid_labels(cp.grid),
         "grid_lines": len(cp.grid),
         "bubbles": len(cp.bubbles),
         "tos_rule": tos.rule,
-        "pen_rule": "column_plan_no_beams" if role == "column_plan" else "proposed",
         "tos_notes": tos.notes,
+        "pen_rule": "column_plan_no_beams" if role == "column_plan" else "proposed",
+        "scale_rule": scale_rule,
     }
+    if dims is not None:
+        ev["scale_dimension_pairs"] = dims.pairs
+        ev["scale_dimensions_agreeing"] = dims.agreeing
+        ev["scale_dimensions_rule"] = dims.rule
+    return ev
 
 
 def _new_run(conn, sheet: dict[str, Any], auto_id: str, inputs: dict[str, Any]) -> str:
@@ -285,7 +315,13 @@ def _run(conn, config, project_id, auto_id, sheets, pdf_path, crossing_rule) -> 
         conn.execute("UPDATE auto_builds SET pages_done = pages_done + 1 WHERE id = %s", (auto_id,))
         conn.commit()
 
-    roles = {str(s["id"]): evidence[str(s["id"])]["role"] for s in sheets}
+    # a page with no scale (none stored, none from its dimensions) is not built: "Scale needed"
+    roles = {
+        str(s["id"]): None
+        if evidence[str(s["id"])]["scale_rule"] == "scale_needed"
+        else evidence[str(s["id"])]["role"]
+        for s in sheets
+    }
     for s in sheets:
         if roles[str(s["id"])] == "column_plan":
             build(s, base)
@@ -309,12 +345,25 @@ def _run(conn, config, project_id, auto_id, sheets, pdf_path, crossing_rule) -> 
         choice = {"column_plan_sheet_id": plan} if plan else {"no_column_plan": True}
         build(s, {**base, **choice})
     skipped = sum(1 for s in sheets if roles[str(s["id"])] is None)
+    paths = {
+        "scale_from_dimensions": sum(e["scale_rule"] == "dimensions" for e in evidence.values()),
+        "scale_needed": sum(e["scale_rule"] == "scale_needed" for e in evidence.values()),
+        "not_a_plan": sum(e["role_rule"] != "plan_text" for e in evidence.values()),
+        "pile_plans": sum(bool(e["pile_plan"]) for e in evidence.values()),
+    }
     conn.execute(
         "UPDATE auto_builds SET pages_done = pages_done + %s WHERE id = %s", (skipped, auto_id)
     )
 
     # the SYSTEM VERSION, frozen in the same transaction as the end of the run
-    totals = {"pages": len(sheets), "built": 0, "not_built": 0, "skipped": skipped, "pieces": 0}
+    totals = {
+        "pages": len(sheets),
+        "built": 0,
+        "not_built": 0,
+        "skipped": skipped,
+        "pieces": 0,
+        **paths,
+    }
     for page in conn.execute(
         "SELECT * FROM sheets WHERE project_id = %s ORDER BY page_index", (project_id,)
     ).fetchall():

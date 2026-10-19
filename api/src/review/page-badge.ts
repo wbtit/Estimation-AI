@@ -1,5 +1,7 @@
 // The badge of a page card in the review UI (Phase 11b). Pure; the order of the checks is the rule:
 //   Building          a build of the page is pending or running
+//   Scale needed      the page builds but has no scale (Phase 12b: none stored, none from its
+//                     dimensions); it is skipped until a person sets one
 //   Requesting Build  a setup value changed after the last build attempt (or never built since)
 //   Not built         the last build was refused or failed (the reasons are shown with it)
 //   Skip              no role (column plan or framing)
@@ -7,7 +9,14 @@
 //   Not confirmed     built with at least one system value (a value no person set or saved)
 //   Built             built, every value a person's
 export type Badge =
-  'Building' | 'Requesting Build' | 'Not built' | 'Skip' | 'Reviewed' | 'Not confirmed' | 'Built';
+  | 'Building'
+  | 'Scale needed'
+  | 'Requesting Build'
+  | 'Not built'
+  | 'Skip'
+  | 'Reviewed'
+  | 'Not confirmed'
+  | 'Built';
 
 export interface BadgeInput {
   role: 'column_plan' | 'framing' | null;
@@ -18,6 +27,8 @@ export interface BadgeInput {
   last_edit_at: Date | string | null;
   last_run: { status: string; started_at: Date | string } | null;
   system_values: string[];
+  /** Phase 12b: the view builds but has no scale. */
+  scale_missing?: boolean;
 }
 
 const t = (d: Date | string | null): number => (d === null ? -Infinity : new Date(d).getTime());
@@ -52,6 +63,7 @@ export function systemValues(s: {
 export function pageBadge(p: BadgeInput): Badge {
   if (p.last_run && (p.last_run.status === 'pending' || p.last_run.status === 'running'))
     return 'Building';
+  if (p.role !== null && p.scale_missing) return 'Scale needed';
   const lastAttempt = p.last_run ? t(p.last_run.started_at) : -Infinity;
   if (p.role !== null && t(p.setup_changed_at) > lastAttempt) return 'Requesting Build';
   const latest = Math.max(t(p.built_at), t(p.setup_changed_at), t(p.last_edit_at));
@@ -69,6 +81,7 @@ export function pageBadge(p: BadgeInput): Badge {
  * that needs the most attention. All Skip (or Reviewed with no building view) stays as it is. */
 const PAGE_ORDER: Badge[] = [
   'Building',
+  'Scale needed',
   'Requesting Build',
   'Not built',
   'Not confirmed',

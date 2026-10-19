@@ -79,6 +79,18 @@ export const SummaryList: React.FC<{
       <b>{s.beams}</b>
       <span>Brace:</span>
       <b>{s.braces}</b>
+      {s.piles > 0 && (
+        <>
+          <span>Piles:</span>
+          <b>{s.piles}</b>
+        </>
+      )}
+      {s.joists > 0 && (
+        <>
+          <span title="Not in the steel total">Joists:</span>
+          <b>{s.joists}</b>
+        </>
+      )}
       <span title="US short tons (2000 lb) of found and needs review pieces">
         Total Weight (tons):
       </span>

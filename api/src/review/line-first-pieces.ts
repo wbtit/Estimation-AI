@@ -35,6 +35,10 @@ export interface PieceView {
   ignored: boolean;
   /** A person confirmed it (Approve). */
   approved: boolean;
+  /** Phase 12b: the column another column-plan page already has (left out of the totals). */
+  duplicate_of: string | null;
+  /** Phase 12b: a kind outside the steel totals (Joist, Wall, Other trades). */
+  excluded_kind: boolean;
   deleted: boolean;
   /** Drawn by a person in the review UI. */
   added: boolean;
@@ -184,6 +188,11 @@ export async function loadPieces(
       camber_raw: camber ?? null,
       ignored: lf.has('ignored') ? lf.get('ignored') === true : r.ignored,
       approved: lf.get('approved') === true,
+      duplicate_of:
+        typeof (r.kind_evidence as Record<string, unknown> | null)?.duplicate_of === 'string'
+          ? ((r.kind_evidence as Record<string, unknown>).duplicate_of as string)
+          : null,
+      excluded_kind: v.counting === 'not_counted',
       deleted: v.deleted,
       added: r.added_by !== null,
       edited: own.length > 0,
@@ -230,5 +239,7 @@ export function toBuiltPiece(p: PieceView): BuiltPiece {
     support_state: p.support_state,
     piece_index: p.piece_index,
     approved: p.approved,
+    duplicate_of: p.duplicate_of,
+    excluded_kind: p.excluded_kind,
   };
 }

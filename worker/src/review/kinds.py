@@ -52,6 +52,7 @@ TABLE: list[tuple[str, str, tuple[str, ...]]] = [
     ("Outriggers", MAIN, ("outrigger",)),
     ("Hangers", MAIN, ("hanger",)),
     ("Misc. Attachments", MAIN, ("attachment",)),
+    ("Piles", MAIN, ("pile", "piling")),  # Phase 12b (migration 023)
     ("Posts/Pipe", MAIN, ("post", "pipe")),
     ("Column", MAIN, ("column",)),
     ("Beams", MAIN, ("beam",)),

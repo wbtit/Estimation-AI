@@ -93,13 +93,13 @@ def test_evidence_carries_no_page_text_only_the_keyword_and_where() -> None:
 def test_the_table_covers_the_scope_list_without_repeats() -> None:
     names = [k for k, _, _ in TABLE]
     assert len(names) == len(set(names))
-    assert [s for _, s, _ in TABLE].count("main") == 21
+    assert [s for _, s, _ in TABLE].count("main") == 22
     assert all(c in SCOPE for _, cands in AMBIGUOUS for c in cands)
 
 
 def test_the_kind_names_are_exactly_the_member_kinds_of_the_database(dbp: DbProject) -> None:
     rows = dbp.conn.execute("SELECT kind, scope FROM member_kinds").fetchall()
-    assert len(rows) == 36
+    assert len(rows) == 37  # Phase 12b: Piles
     db = {r["kind"]: r["scope"] for r in rows}
     assert {k: s for k, s in SCOPE.items()} == {k: v for k, v in db.items()}
-    assert sorted(db.values()).count("main") == 21 and sorted(db.values()).count("misc") == 12
+    assert sorted(db.values()).count("main") == 22 and sorted(db.values()).count("misc") == 12

@@ -26,6 +26,13 @@ GLYPH_LONG_MIN, GLYPH_LONG_MAX, GLYPH_SHORT_MIN, GLYPH_ASPECT = 3.0, 24.0, 3.0, 
 GLYPH_MAX_VERTS, GLYPH_IOU = 20, 0.5
 AT_GRID_PT = 30.0
 REPEAT_MIN = 4
+# Phase 12b rule "column_glyph_shape": a glyph chosen by the repeated-glyph rule must have a
+# column-like outline: straight-sided, closed, COLUMN_GLYPH_VERTS corners, long side
+# COLUMN_GLYPH_MIN_IN to COLUMN_GLYPH_MAX_IN at the view's scale (rebar dots, elevation targets and
+# triangle markers are not columns)
+COLUMN_GLYPH_VERTS = (4, 12)
+COLUMN_GLYPH_MIN_IN = 4.0
+COLUMN_GLYPH_MAX_IN = 36.0
 TEXT_PAD_PT = 1.0
 
 
@@ -37,6 +44,7 @@ class Glyph:
     n_verts: int
     at_grid: bool
     grid: Crossing | None
+    curved: bool = False  # the outline has a curve (a circle, a target)
 
     @property
     def centre(self) -> Pt:
@@ -131,13 +139,30 @@ def find_glyphs(
         near = min(grid, key=lambda g: math.dist(g.point, c), default=None)
         at = near is not None and math.dist(near.point, c) <= AT_GRID_PT
         paint = "fs" if any("f" in by_id[i].paint for i in ids) else "s"
-        out.append(Glyph(sorted(ids), sh.bbox, paint, len(sh.pts), at, near if at else None))
+        curved = any(by_id[i].curved for i in ids)
+        out.append(
+            Glyph(sorted(ids), sh.bbox, paint, len(sh.pts), at, near if at else None, curved)
+        )
     out.sort(key=lambda g: (round(g.centre[1], 1), round(g.centre[0], 1)))
     return out
 
 
-def column_plan_columns(glyphs: list[Glyph], has_grid: bool) -> tuple[list[Glyph], str]:
-    """The columns of a column plan page and the rule that chose them."""
+def column_like(g: Glyph, ratio: float | None) -> bool:
+    """Rule "column_glyph_shape" (constants above)."""
+    if g.curved or not COLUMN_GLYPH_VERTS[0] <= g.n_verts <= COLUMN_GLYPH_VERTS[1]:
+        return False
+    if ratio is None:
+        return True
+    long_in = max(g.box[2] - g.box[0], g.box[3] - g.box[1]) / 72.0 * ratio
+    return COLUMN_GLYPH_MIN_IN <= long_in <= COLUMN_GLYPH_MAX_IN
+
+
+def column_plan_columns(
+    glyphs: list[Glyph], has_grid: bool, ratio: float | None = None
+) -> tuple[list[Glyph], str]:
+    """The columns of a column plan page and the rule that chose them. Phase 12b: the
+    repeated-glyph rule only looks at column-like glyphs (rule "column_glyph_shape"); a glyph at a
+    grid crossing needs no shape test."""
     if has_grid:
         cols = [g for g in glyphs if g.at_grid]
         if cols:
@@ -153,6 +178,7 @@ def column_plan_columns(glyphs: list[Glyph], has_grid: bool) -> tuple[list[Glyph
                     best[key] = g
             chosen = sorted(best.values(), key=lambda g: (g.centre[1], g.centre[0]))
             return chosen, "glyph_at_grid"
+    glyphs = [g for g in glyphs if column_like(g, ratio)]
     counts = Counter(g.signature for g in glyphs)
     if not counts:
         return [], "none"

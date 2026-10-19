@@ -35,6 +35,9 @@ GRID_END_TOL_PT = 12.0
 GRID_SAME_AXIS_DEG = 1.0
 GRID_SAME_AXIS_PT = 6.0
 GRID_EXTEND_PT = 24.0  # grid lines meet when they cross within this extension
+# Phase 12b rule "grid_family_by_direction": a label family with lines in two directions at least
+# 90 - FAMILY_DIRECTION_TOL_DEG apart is split by direction (more vertical lines -> "N")
+FAMILY_DIRECTION_TOL_DEG = 20.0
 
 
 @dataclass
@@ -164,8 +167,31 @@ def _merge_same_axis(lines: list[GridLine]) -> tuple[list[GridLine], set[int]]:
         else:
             out.append(g)
     used = {i for g in out for i in g.seg_ids}
+    out = families_by_direction(out)
     out.sort(key=lambda g: (g.family, g.label))
     return out, used
+
+
+def _is_vertical(g: GridLine) -> bool:
+    return angle_diff(g.angle, 90.0) < angle_diff(g.angle, 0.0)
+
+
+def families_by_direction(lines: list[GridLine]) -> list[GridLine]:
+    """Rule "grid_family_by_direction": labels like E.12 and E.14 are one family by their first
+    character, but when that family holds lines in two directions (at least 90 -
+    FAMILY_DIRECTION_TOL_DEG apart) the drawing uses one prefix for both axes: the more vertical
+    lines become numbers ("N") and the others letters ("A"), so they cross."""
+    for fam in sorted({g.family for g in lines}):
+        group = [g for g in lines if g.family == fam]
+        if not any(
+            angle_diff(a.angle, b.angle) >= 90.0 - FAMILY_DIRECTION_TOL_DEG
+            for i, a in enumerate(group)
+            for b in group[i + 1 :]
+        ):
+            continue
+        for g in group:
+            g.family = "N" if _is_vertical(g) else "A"
+    return lines
 
 
 CROSSING_RULES = ("family", "direction")

@@ -36,6 +36,7 @@ import pymupdf
 from psycopg.types.json import Jsonb
 
 from src.build import RULES_VERSION
+from src.build.duplicates import mark_duplicate_columns
 from src.build.geom import Pt, angle_deg, angle_diff, project
 from src.build.grids import CROSSING_RULES, Bubble, GridLine
 from src.build.labels import Attached
@@ -50,6 +51,8 @@ log = logging.getLogger("worker.build")
 
 JOB_TYPE = "build_sheet"
 BEAM_KIND, COLUMN_KIND = "Beams", "Column"
+JOIST_KIND, PILE_KIND = "Joist", "Piles"  # Phase 12b rules "joist_label" and "pile_plan"
+PILE_ROLE = "Pile plan"
 OVERLAP_ANGLE_DEG, OVERLAP_PERP_PT, OVERLAP_SHARE = 2.0, 2.0, 0.5
 
 
@@ -355,6 +358,18 @@ def _overlaps(a: Pt, b: Pt, row: dict[str, Any]) -> bool:
 
 def _size_fields(att: Attached) -> dict[str, Any]:
     lb = att.label
+    if att.size_state == "joist":
+        # a joist keeps its designation as written and never a W / HSS size
+        return {
+            "profile_raw": lb.raw if lb else None,
+            "profile": None,
+            "mark": None,
+            "studs": None,
+            "camber_raw": None,
+            "camber_mm": None,
+            "size_state": "undefined",
+            "label_evidence": Jsonb(att.evidence()),
+        }
     return {
         "profile_raw": lb.raw if lb else None,
         "profile": lb.canonical if lb else None,
@@ -444,6 +459,7 @@ def store(
 
     # columns of the column plan: members first, so their nodes can point at them
     column_member: dict[int, str] = {}
+    column_kind = PILE_KIND if view.row.get("role_name") == PILE_ROLE else COLUMN_KIND
     for k, (g, att) in enumerate(zip(pb.columns, pb.column_labels, strict=True)):
         info = pb.column_info(k)
         # Phase 12a: a base-plate column with no grid crossing near it is kept for review
@@ -452,7 +468,7 @@ def store(
         grid = [g.grid.n_label, g.grid.a_label] if g.grid else [None, None]
         fields = {
             "type": "column",
-            "kind": COLUMN_KIND,
+            "kind": column_kind,
             "kind_evidence": Jsonb({"source": "line_first_build", **info}),
             **_size_fields(att),
             "build_run_id": run_id,
@@ -472,7 +488,7 @@ def store(
             "end_resolution_method": "line_first_build",
             "source_bbox": Jsonb(_box(g.box)),
         }
-        mid = upsert(stable_member_id(key, COLUMN_KIND, g.centre), fields)
+        mid = upsert(stable_member_id(key, column_kind, g.centre), fields)
         if mid is not None:
             column_member[k] = mid
     glyph_column = {id(g): column_member.get(k) for k, g in enumerate(pb.columns)}
@@ -513,11 +529,16 @@ def store(
     for p, att in zip(pb.supports.pieces, pb.piece_labels, strict=True):
         sx, sy = plan_mm(p.a, ratio)
         ex, ey = plan_mm(p.b, ratio)
-        state = build_state(att.size_state, p.support_state)
+        joist = att.size_state == "joist"
+        # a joist is identified by its label: its state follows its supports only
+        state = build_state("sized" if joist else att.size_state, p.support_state)
+        kind = JOIST_KIND if joist else BEAM_KIND
         fields = {
-            "type": "beam",
-            "kind": BEAM_KIND,
-            "kind_evidence": Jsonb({"source": "line_first_build"}),
+            "type": "joist" if joist else "beam",
+            "kind": kind,
+            "kind_evidence": Jsonb(
+                {"source": "line_first_build", **({"rule": "joist_label"} if joist else {})}
+            ),
             **_size_fields(att),
             "build_run_id": run_id,
             "beam_line_id": line_uuid[p.line],
@@ -552,7 +573,7 @@ def store(
             "plan_method": "pdf_geometry",
             "source_bbox": Jsonb(_box((*p.a, *p.b))),
         }
-        upsert(stable_member_id(key, BEAM_KIND, p.a, p.b), fields)
+        upsert(stable_member_id(key, kind, p.a, p.b), fields)
 
     removed = 0
     for mid, row in existing.items():
@@ -561,17 +582,25 @@ def store(
             removed += 1
     assign_tags(conn, project_id, sheet_id)
     out = pb.counts()
+    if pb.setup.role == "column_plan":
+        # Phase 12b rule "column_duplicates": a column another built column plan already has
+        out["duplicate_columns"] = mark_duplicate_columns(
+            conn, project_id, sheet_id, run_id, ratio, pb.grid_lines
+        )
     out.update(counts)
     out["removed"] = removed
     out["length_mm_total"] = round(sum(length_mm(p.a, p.b, ratio) for p in pb.supports.pieces), 1)
+
+    def st(a, p) -> str:
+        return build_state("sized" if a.size_state == "joist" else a.size_state, p.support_state)
+
     out["build_found"] = sum(
-        build_state(a.size_state, p.support_state) == "found"
-        for p, a in zip(pb.supports.pieces, pb.piece_labels, strict=True)
+        st(a, p) == "found" for p, a in zip(pb.supports.pieces, pb.piece_labels, strict=True)
     )
     out["build_needs_review"] = sum(
-        build_state(a.size_state, p.support_state) == "needs_review"
-        for p, a in zip(pb.supports.pieces, pb.piece_labels, strict=True)
+        st(a, p) == "needs_review" for p, a in zip(pb.supports.pieces, pb.piece_labels, strict=True)
     )
+    out["joists"] = sum(a.size_state == "joist" for a in pb.piece_labels)
     out["build_attention"] = out["pieces"] - out["build_found"] - out["build_needs_review"]
     return out
 

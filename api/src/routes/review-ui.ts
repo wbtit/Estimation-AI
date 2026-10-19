@@ -361,7 +361,9 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
             return {
               approved: list.filter((p) => p.approved).length,
               pieces: list.length,
-              beams: list.filter((p) => p.type !== 'column' && p.type !== 'brace').length,
+              beams: list.filter(
+                (p) => p.type !== 'column' && p.type !== 'brace' && p.type !== 'joist',
+              ).length,
               columns: list.filter((p) => p.type === 'column').length,
               braces: list.filter((p) => p.type === 'brace').length,
               found: byState('found'),
@@ -382,6 +384,7 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
               last_edit_at: lastEdit,
               last_run: run ? { status: run.status, started_at: run.started_at } : null,
               system_values: sys,
+              scale_missing: vs.build_scale_ratio === null,
             });
             const reasons =
               run && (run.status === 'refused' || run.status === 'failed')

@@ -402,7 +402,8 @@ h4 {
   color: #b42323;
 }
 
-.badge.Requesting-Build {
+.badge.Requesting-Build,
+.badge.Scale-needed {
   background: #fff1d6;
   color: #9a5b00;
 }
@@ -663,7 +664,8 @@ h4 {
   background: #16a34a;
 }
 
-.tag.Requesting-Build {
+.tag.Requesting-Build,
+.tag.Scale-needed {
   background: var(--orange);
 }
 

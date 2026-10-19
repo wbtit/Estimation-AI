@@ -5,11 +5,11 @@ import { countingOf, loadKinds, parseAbbreviationCsv, typeOfKind } from '../revi
 describe('member kinds table', () => {
   afterAll(() => closeDatabaseConnection());
 
-  it('holds the 21 main, 12 misc and 3 excluded kinds with distinct tag prefixes', async () => {
+  it('holds the 22 main (Piles since Phase 12b), 12 misc and 3 excluded kinds with distinct tag prefixes', async () => {
     const kinds = await loadKinds(getDb());
     const by = (s: string) => [...kinds.values()].filter((k) => k.scope === s);
-    expect([by('main').length, by('misc').length, by('excluded').length]).toEqual([21, 12, 3]);
-    expect(new Set([...kinds.values()].map((k) => k.prefix)).size).toBe(36);
+    expect([by('main').length, by('misc').length, by('excluded').length]).toEqual([22, 12, 3]);
+    expect(new Set([...kinds.values()].map((k) => k.prefix)).size).toBe(37);
     expect([...kinds.values()].every((k) => k.provisional)).toBe(true); // the owner's list is empty
     expect([...kinds.keys()].slice(0, 2)).toEqual(['Column', 'Beams']); // owner's order
   });

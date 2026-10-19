@@ -194,7 +194,7 @@ def build_page(
     columns: list[Glyph] = []
     column_rule: str | None = None
     if setup.role == "column_plan":
-        columns, column_rule = column_plan_columns(glyphs, has_grid)
+        columns, column_rule = column_plan_columns(glyphs, has_grid, setup.ratio)
         if plates:
             # one column per base plate at its centre; a glyph column inside a plate is that column
             columns = [g for g in columns if not in_plate(plates, g.centre)] + [
@@ -243,7 +243,22 @@ def build_page(
     sup = build(lines, support_glyphs, projected, all_columns=setup.role == "column_plan")
     labels = find_labels(text, legend or {})
     piece_labels = attach_to_pieces([(p.a, p.b) for p in sup.pieces], labels)
-    column_labels = attach_to_columns([g.centre for g in columns], labels)
+    # Phase 12b rules "column_label_leader" and "typical_column_size": a leader from a size label
+    # to a column, and TYP notes over columns of the same glyph signature (a plate column's
+    # signature is its section type)
+    plate_of = {
+        id(g): p for g in columns for p in plates if not g.shape_ids and in_plate([p], g.centre)
+    }
+    column_labels = attach_to_columns(
+        [g.centre for g in columns],
+        labels,
+        [g.box for g in columns],
+        [tuple(map(float, r)) for r in ps.seg] if len(ps) else [],
+        [
+            ("plate", plate_of[id(g)].section_type) if id(g) in plate_of else g.signature
+            for g in columns
+        ],
+    )
     return PageBuild(
         setup=setup,
         rules_version=RULES_VERSION,

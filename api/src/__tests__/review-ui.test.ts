@@ -56,6 +56,11 @@ describe('page badge', () => {
       'Not built',
     );
     expect(badge({ role: null })).toBe('Skip');
+    // Phase 12b: a page that builds but has no scale waits for one
+    expect(badge({ scale_missing: true, setup_changed_at: at(2), last_run: null })).toBe(
+      'Scale needed',
+    );
+    expect(badge({ role: null, scale_missing: true })).toBe('Skip');
     expect(badge({ system_values: ['crop'] })).toBe('Not confirmed');
     expect(badge({})).toBe('Built');
     expect(badge({ reviewed_at: at(3), system_values: ['crop'] })).toBe('Reviewed');
@@ -118,6 +123,8 @@ function fin(over: Partial<PieceView>): PieceView {
     camber_raw: null,
     ignored: false,
     approved: false,
+    duplicate_of: null,
+    excluded_kind: false,
     deleted: false,
     added: false,
     edited: false,
@@ -248,6 +255,67 @@ describe('system vs final report', () => {
     const m = minutesPerSheet(rows);
     expect(m.get('A')).toBe(7);
     expect(m.get('B')).toBe(1);
+  });
+});
+
+describe('BOM totals (Phase 12b)', () => {
+  it('leaves duplicate columns and joists out of the main and attention totals', () => {
+    const piece = {
+      member_id: 'm',
+      sheet_id: 'S',
+      tag: null,
+      quantity: 1,
+      start: [0, 0, 0] as [number, number, number],
+      end: [3048, 0, 0] as [number, number, number],
+      size_state: 'sized',
+      support_state: 'both',
+      piece_index: 1,
+    };
+    const bom = lineFirstBom(
+      [
+        {
+          ...piece,
+          id: 'b',
+          type: 'beam',
+          kind: 'Beams',
+          profile: 'W16X26',
+          profile_raw: 'W16X26',
+          build_state: 'found',
+        },
+        {
+          ...piece,
+          id: 'j',
+          type: 'joist',
+          kind: 'Joist',
+          profile: null,
+          profile_raw: '30K7',
+          build_state: 'found',
+          excluded_kind: true,
+        },
+        {
+          ...piece,
+          id: 'c',
+          type: 'column',
+          kind: 'Column',
+          profile: null,
+          profile_raw: null,
+          start: null,
+          end: null,
+          build_state: 'attention',
+          duplicate_of: 'c0',
+        },
+      ],
+      null,
+      new Map(),
+    );
+    expect(bom.totals.pieces).toBe(1);
+    expect(bom.attention.pieces).toBe(0);
+    expect(bom.excluded.pieces).toBe(2);
+    expect(bom.rows.find((r) => r.piece_id === 'c')).toMatchObject({
+      excluded: true,
+      in_main_total: false,
+      duplicate_of: 'c0',
+    });
   });
 });
 

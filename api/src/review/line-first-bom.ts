@@ -42,6 +42,10 @@ export interface BuiltPiece {
   piece_index: number | null;
   /** A person confirmed it (Approve); optional for callers that do not know. */
   approved?: boolean;
+  /** Phase 12b: a duplicate column (counted once, on the page built first). */
+  duplicate_of?: string | null;
+  /** Phase 12b: a kind outside the steel totals (Joist). */
+  excluded_kind?: boolean;
 }
 
 export interface LineFirstBomRow {
@@ -66,6 +70,9 @@ export interface LineFirstBomRow {
   support_state: string | null;
   piece_index: number | null;
   in_main_total: boolean;
+  /** Phase 12b: a duplicate column or a kind outside the steel totals: in neither total. */
+  duplicate_of: string | null;
+  excluded: boolean;
 }
 
 export interface LineFirstBomTotal {
@@ -82,6 +89,8 @@ export interface LineFirstBom {
   rows: LineFirstBomRow[];
   totals: LineFirstBomTotal;
   attention: LineFirstBomTotal;
+  /** Phase 12b: duplicate columns and kinds outside the steel totals (Joist), shown apart. */
+  excluded: LineFirstBomTotal;
   by_category: (LineFirstBomTotal & { category: string | null })[];
 }
 
@@ -153,7 +162,9 @@ export function lineFirstBom(
       size_state: p.size_state,
       support_state: p.support_state,
       piece_index: p.piece_index,
-      in_main_total: p.build_state !== 'attention',
+      in_main_total: p.build_state !== 'attention' && !p.duplicate_of && !p.excluded_kind,
+      duplicate_of: p.duplicate_of ?? null,
+      excluded: Boolean(p.duplicate_of) || p.excluded_kind === true,
     };
   });
   rows.sort(
@@ -165,9 +176,11 @@ export function lineFirstBom(
   );
   const totals = emptyTotal();
   const attention = emptyTotal();
+  const excluded = emptyTotal();
   const byCat = new Map<string | null, LineFirstBomTotal>();
   for (const r of rows) {
-    if (r.in_main_total) {
+    if (r.excluded) add(excluded, r);
+    else if (r.in_main_total) {
       add(totals, r);
       const t = byCat.get(r.category) ?? emptyTotal();
       add(t, r);
@@ -177,5 +190,5 @@ export function lineFirstBom(
   const by_category = [...byCat.entries()]
     .map(([category, t]) => ({ category, ...t }))
     .sort((a, b) => (a.category ?? '').localeCompare(b.category ?? ''));
-  return { rows, totals, attention, by_category };
+  return { rows, totals, attention, excluded, by_category };
 }

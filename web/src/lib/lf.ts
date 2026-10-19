@@ -6,6 +6,7 @@ export type Pt2 = [number, number];
 export type Role = "column_plan" | "framing" | null;
 export type Badge =
   | "Building"
+  | "Scale needed"
   | "Requesting Build"
   | "Not built"
   | "Skip"
@@ -227,12 +228,17 @@ export interface BomRow {
   approved?: boolean;
   build_state: string | null;
   in_main_total: boolean;
+  /** Phase 12b: a duplicate column (counted on the page built first) or a kind outside the
+   * steel totals (Joist). */
+  excluded?: boolean;
+  duplicate_of?: string | null;
 }
 
 export interface Bom {
   rows: BomRow[];
   totals: { pieces: number; length_mm: number; weight_lb: number };
   attention: { pieces: number; length_mm: number; weight_lb: number };
+  excluded?: { pieces: number; length_mm: number; weight_lb: number };
 }
 
 export interface SheetLines {
@@ -795,6 +801,7 @@ export function sizeGroups(
   const kinds = new Map<string, Map<string, SizeRowView>>();
   for (const r of rows) {
     if (sheetId !== undefined && r.sheet_id !== sheetId) continue;
+    if (r.duplicate_of) continue; // counted once, on the page built first
     const kind = r.category ?? "Other";
     const bySection = kinds.get(kind) ?? new Map<string, SizeRowView>();
     kinds.set(kind, bySection);
@@ -858,6 +865,9 @@ export interface Summary {
   columns: number;
   beams: number;
   braces: number;
+  /** Phase 12b: piles and joists apart (joists are outside the steel totals). */
+  piles: number;
+  joists: number;
   tons: number;
 }
 
@@ -867,12 +877,22 @@ export function summary(
   rows: readonly BomRow[],
   sheetId?: string | null,
 ): Summary {
-  const out: Summary = { columns: 0, beams: 0, braces: 0, tons: 0 };
+  const out: Summary = {
+    columns: 0,
+    beams: 0,
+    braces: 0,
+    piles: 0,
+    joists: 0,
+    tons: 0,
+  };
   let lb = 0;
   for (const r of rows) {
     if (sheetId !== undefined && r.sheet_id !== sheetId) continue;
+    if (r.duplicate_of) continue;
     const cat = (r.category ?? "").toLowerCase();
     if (cat === "column") out.columns += r.qty;
+    else if (cat === "piles") out.piles += r.qty;
+    else if (cat === "joist") out.joists += r.qty;
     else if (cat.includes("brace")) out.braces += r.qty;
     else out.beams += r.qty;
     if (r.in_main_total) lb += r.weight_lb ?? 0;

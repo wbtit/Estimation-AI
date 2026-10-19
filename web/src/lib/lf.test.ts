@@ -171,12 +171,16 @@ describe("properties and summary", () => {
       columns: 1,
       beams: 4,
       braces: 1,
+      piles: 0,
+      joists: 0,
       tons: 2.25,
     });
     expect(summary(rows, "S")).toEqual({
       columns: 1,
       beams: 3,
       braces: 1,
+      piles: 0,
+      joists: 0,
       tons: 2,
     });
   });
@@ -196,7 +200,29 @@ describe("properties and summary", () => {
       columns: 27,
       beams: 0,
       braces: 0,
+      piles: 0,
+      joists: 0,
       tons: 0,
+    });
+  });
+
+  it("counts piles and joists apart and a duplicate column once (Phase 12b)", () => {
+    const rows = [
+      row({ category: "Column" }),
+      row({
+        category: "Column",
+        duplicate_of: "c0",
+        excluded: true,
+        in_main_total: false,
+      }),
+      row({ category: "Piles" }),
+      row({ category: "Joist", excluded: true, in_main_total: false }),
+    ];
+    expect(summary(rows)).toMatchObject({
+      columns: 1,
+      piles: 1,
+      joists: 1,
+      beams: 0,
     });
   });
 
