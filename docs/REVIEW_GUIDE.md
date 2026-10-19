@@ -10,11 +10,17 @@ coloured marks. Everything you do is saved with your name and the time.
 |---|---|
 | Zoom in or out around the mouse | **Ctrl + mouse wheel**, or pinch on a trackpad |
 | Pan up and down / left and right | Mouse wheel / **Shift + wheel** |
-| Pan freely | Hold **Space** and drag, or drag with the middle mouse button |
-| See the whole page | **Fit** (toolbar) |
-| Zoom to an exact size | Type a number in the **%** box (bottom right), 10% to 800% |
+| Pan freely | **Hand** tool (**H**, under Select): drag the page |
+| Pan without changing tool | Hold **Space** and drag; let go and you are back in your tool |
+| Pan with the mouse | Drag with the middle button (any tool) |
+| See the whole page | **Fit** (bar above the page, right) |
+| Zoom to an exact size | Type a number in the **%** box (bar above the page), 10% to 800% |
 
-The drawing sharpens a moment after you stop zooming.
+The page has no scrollbars; panning replaces them. The drawing sharpens a moment after you stop
+zooming.
+
+The bar above the page shows the page, the issue navigator, what the current tool expects, and on
+the right **− % +**, **Fit** and **?** (keyboard shortcuts).
 
 ## 2. Open a page
 
@@ -24,7 +30,15 @@ means you changed something, so press ▶; **Reviewed** means you saved it. The 
 **orange** numbers on the picture count the members that need attention or review.
 
 The selected card lists the page's **Views** and the fields of the chosen view: **Role**,
-**Top of Steel**, **Scale** and **Status**.
+**Top of Steel**, **Scale** and **Setup**. Setup is a row of chips (**Role**, **Crop**, **Scale**,
+**Pen**, **Column plan**, **T.O.S.**):
+
+- **green ✓**: you (or someone) confirmed it;
+- **grey**: the system set it, not confirmed yet;
+- **red !**: missing.
+
+Hover a chip for its meaning. Pen, Column plan and T.O.S. show for framing views only. While a view
+builds, its chip and the card show a spinning circle and ▶ waits.
 
 ## 3. Views and roles
 
@@ -32,7 +46,21 @@ A simple page has one view, **View 1**, covering the plan. When a sheet holds mo
 drawing (for example a framing plan and a partial plan at another scale), press **+ Add view** on
 the card and drag the new view's box on the page. Each view has its own role, scale and Top of
 Steel; lengths use the view's scale. Click a view's name (on the card or on the page) to work on
-it. The ✕ next to a view deletes it.
+it.
+
+The **⌄** next to a view's name opens its menu:
+
+- **Rename**: type the new name, then Enter.
+- **Edit box**: the view's box shows square handles on the page. Drag a corner or an edge. Each
+  drag is saved and can be undone. Press **Done** or **Esc** when finished.
+- **Delete view** (not View 1): if the view has built pieces you are asked first. Pieces nobody
+  touched go with it; pieces you edited or drew move to View 1. The message says how many of each.
+- **Reset box to page crop** (View 1 only): View 1 always stays, so its box goes back to the
+  page's crop instead.
+
+Adding a view, deleting one and changing a box are all on **Undo** (Ctrl+Z), like piece edits.
+Undoing a delete brings the view back with its pieces. While you drag a new view's box, **Esc**
+cancels it.
 
 **Role** = a name and what the build does with it:
 
@@ -89,18 +117,33 @@ Each member is drawn in one colour:
 
 | Colour | Meaning |
 |---|---|
-| **Magenta** line | a beam, with its size written along it (`w18x35 <10>` = size and studs) |
-| **Blue I** | a column, with its mark |
-| **Orange**, with a glow | needs review: size taken from a nearby label, or one end not supported |
-| **Red**, with a glow | needs attention: no size, or no support (dashed = a beam with no size) |
+| **Magenta** line | a beam |
+| **Blue I** | a column |
+| **Orange** | needs review: size taken from a nearby label, or one end not supported |
+| **Red**, with a soft glow (a red ring on a column) | needs attention: no size, or no support (dashed = a beam with no size) |
 | **Grey** | ignored (not ours) |
 
-Hover a member to see what the system read. **Show flags** (Layers) adds the old small flags.
+Only red glows, so real problems stand out. Lines are thin when you are zoomed out and get
+thicker as you zoom in (never more than about 4 pixels); the member under the mouse or selected is
+drawn thicker. Columns are the same small size at every zoom.
+
+**Sizes on the page**: the drawing already shows its own labels, so the size we read
+(`w18x35 <10>` = size and studs) is written along a beam only when it **differs** from the
+drawing's label (for example after you changed it), and on the member under the mouse or selected.
+Column marks show the same way.
+
+Layers (funnel icon):
+
+- **Show all read sizes**: writes every size and column mark, as before.
+- **Only problems**: hides the members that are fine, so only orange and red remain.
+- **Show flags**: adds the old small flags.
+
+Hover a member to see what the system read.
 
 ### The issue navigator
 
-The pill at the top of the page reads **"N need attention · M to review"**. Press **Next ▸** or
-the **N** key to jump to the next one. **◂ Prev** or **Shift+N** goes back.
+The bar above the page reads **"N need attention · M to review"**. Press **Next ▸** or the **N**
+key to jump to the next one. **◂** or **Shift+N** goes back.
 
 The navigator zooms to the member and selects it, so the Member panel opens. It goes through
 attention members first, then review members. Once you fix a member, it drops out of the list and
@@ -123,14 +166,31 @@ Click a member to select it. Shift+click or drag a box to select several; the pa
   and is left out of the BOM.
 - **Missing beam**: **Draw beam**, then click both ends. **Missing column**: **Draw column**, then
   click its centre. Then give it a size.
-- **Undo** takes back your last change. The number on it counts your changes since the last save.
-- **Measure**: click two points to read a length.
-- Hover a tool to see its name.
+- **Undo** (or **Ctrl+Z**) takes back your last change, a piece edit or a view change. The number
+  on it counts your changes since the last save.
+- **Measure**: click two points to read a length. It shows in the bar above the page.
+- Hover a tool to see its name and its key.
+
+### Keyboard shortcuts
+
+Press **?** (or the **?** button in the bar) for this list:
+
+| Key | Does |
+|---|---|
+| **V** / **H** | Select / Hand |
+| **Space** (hold) | Hand while held, in any tool |
+| **C** / **P** / **X** | Crop / Pick beam / Exclude area |
+| **B** / **K** / **M** | Draw beam / Draw column / Measure |
+| **N** / **Shift+N** | Next / previous issue |
+| **Ctrl+Z** | Undo |
+| **Delete** | Delete the selection (or the selected exclude box) |
+| **Esc** | Cancel what you are drawing, back to Select |
 
 ## 6. Save the page
 
 When the page matches the drawing, press **Save page** (top right) and the badge turns
-**Reviewed**. Saving also confirms the setup values you left as they were, in every view. Then go
+**Reviewed**. A message says how many issues are left on the page, for example
+**"Page 16 saved · 0 issues left"**. Saving also confirms the setup values you left as they were, in every view. Then go
 to the next page.
 
 The **BOM** tab lists every piece (lengths in feet-inches, weights in lb) and exports to Excel.
