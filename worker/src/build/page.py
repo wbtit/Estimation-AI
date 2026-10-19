@@ -87,8 +87,9 @@ class PageBuild:
     def column_info(self, k: int) -> dict:
         """How column k was found: the rule, and for a base plate its section type and grid."""
         g = self.columns[k]
+        # a base-plate column has no shapes of its own; its plate is the one holding its centre
         p = (
-            next((p for p in self.plates if p.centre == g.centre), None)
+            next((p for p in self.plates if in_plate([p], g.centre)), None)
             if not g.shape_ids
             else None
         )

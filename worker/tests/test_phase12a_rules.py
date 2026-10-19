@@ -230,6 +230,26 @@ def test_a_base_plate_is_one_column_at_its_centre_with_the_section_type_of_its_o
     assert pb.counts()["base_plate_columns"] == 3 and pb.lines == []
 
 
+def test_base_plate_columns_keep_their_rule_with_uneven_coordinates():
+    doc, page = _page()
+    x, y, b = 300.0, 400.0, 9.0
+    # bolts as real exports draw them: loops of different counts, a little off the exact corners
+    for (dx, dy), n, off in zip(
+        ((-b, -b), (b, -b), (b, b), (-b, b)),
+        (13, 16, 17, 19),
+        (0.13, -0.07, 0.21, 0.0),
+        strict=True,
+    ):
+        _ring(page, (x + dx + off, y + dy - off / 2), 1.5, n=n)
+    for k, (a, c) in enumerate(((-15, -15), (15, -15), (15, 15), (-15, 15))):
+        nxt = ((-15, -15), (15, -15), (15, 15), (-15, 15))[(k + 1) % 4]
+        line(page, (x + a, y + c), (x + nxt[0], y + nxt[1]))
+    pb = _build(page, role="column_plan", ratio=QUARTER)
+    assert len(pb.columns) == 1
+    info = pb.column_info(0)
+    assert info["rule"] == "base_plate" and info["off_grid"]
+
+
 def test_a_bolt_drawn_with_a_hole_round_it_is_still_one_plate_and_one_column():
     doc, page = _page()
     _base_plate(page, (300, 400))

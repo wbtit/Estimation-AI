@@ -75,6 +75,12 @@ phase11r-job-018 stays archived and intact.
   plan page every column found there is a support node. No constant changed. All three jobs were
   re-run on fresh copies (`p12a-after3-job-015`, `-018`, `-020`), and `phase12-job-018` /
   `demo3-job-018` were made again; the superseded copies were renamed `…-superseded` and archived.
+- Evidence fix after the third after-run, found from its stored members: a base-plate column was
+  matched to its plate by exact centre equality, which real float coordinates miss, so its stored
+  evidence lost `rule: base_plate`, `section_type` and `off_grid` (and a sized off-grid plate column
+  would have been "found", not "needs review"). Now the plate holding the column's centre. Counts
+  of section 3 are not affected except the found / needs review split of sized plate columns. The
+  after copies were made once more (`p12a-after4-job-0XX`, `phase12-job-018`, `demo3-job-018`).
 
 - Rule 4 changes a proposal default of auto mode (column-plan pages: no beam pen).
 - Rules 1, 2, 3, 6, 7 change what the build finds (`RULES_VERSION` phase12a-build-v1); runs made with
