@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  anchorIn,
   clampZoom,
   pageAt,
   parseZoom,
@@ -85,5 +86,15 @@ describe("zoom maths", () => {
     expect(parseZoom("2x")).toBe(2);
     expect(parseZoom("5000")).toBe(8);
     expect(parseZoom("abc")).toBeNull();
+  });
+});
+
+describe("anchorIn", () => {
+  it("is the pointer inside the page area, else the nearest point of it", () => {
+    const r = { left: 100, top: 50, width: 800, height: 600 };
+    expect(anchorIn(r, 300, 200)).toEqual([200, 150]);
+    expect(anchorIn(r, 120, 20)).toEqual([20, 0]); // over the bar above the canvas
+    expect(anchorIn(r, 60, 300)).toEqual([0, 250]); // left of the area
+    expect(anchorIn(r, 2000, 2000)).toEqual([800, 600]);
   });
 });

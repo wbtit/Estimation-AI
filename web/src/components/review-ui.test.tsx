@@ -1374,3 +1374,39 @@ describe("polish round: views on the card", () => {
     );
   });
 });
+
+describe("polish round: Space and the wheel outside the page", () => {
+  it("Space released on a focused toolbar button does not click it; in a field it types", () => {
+    canvasWith();
+    const measure = screen.getByLabelText("Measure");
+    fireEvent.click(measure);
+    measure.focus();
+    fireEvent.keyDown(measure, { key: " " });
+    expect(screen.getByLabelText("Hand").className).toBe("on");
+    // fireEvent returns false when the default (the button's click) was prevented
+    expect(fireEvent.keyUp(measure, { key: " " })).toBe(false);
+    expect(screen.getByLabelText("Measure").className).toBe("on");
+    const zoomBox = screen.getByLabelText("zoom percent");
+    expect(fireEvent.keyUp(zoomBox, { key: " " })).toBe(true);
+  });
+
+  it("ctrl + wheel over the floating toolbar or the bar zooms the canvas, not the browser", () => {
+    canvasWith();
+    const pct = () =>
+      (screen.getByLabelText("zoom percent") as HTMLInputElement).value;
+    const before = pct();
+    const overToolbar = fireEvent.wheel(screen.getByTestId("toolbar"), {
+      deltaY: -100,
+      ctrlKey: true,
+    });
+    expect(overToolbar).toBe(false); // the browser's page zoom is prevented
+    const afterToolbar = pct();
+    expect(afterToolbar).not.toBe(before);
+    const overBar = fireEvent.wheel(screen.getByTestId("canvas-bar"), {
+      deltaY: -100,
+      ctrlKey: true,
+    });
+    expect(overBar).toBe(false);
+    expect(pct()).not.toBe(afterToolbar);
+  });
+});

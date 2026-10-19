@@ -42,6 +42,19 @@ export function wheelFactor(deltaY: number, deltaMode = 0): number {
   return Math.exp(-deltaY * (DELTA_PX[deltaMode] ?? 1) * WHEEL_ZOOM_K);
 }
 
+/** The zoom anchor of a wheel event, in CSS px from the page area's corner: the pointer, moved to
+ * the nearest point of the area when it is over the toolbar or the bar above the canvas. */
+export function anchorIn(
+  r: { left: number; top: number; width: number; height: number },
+  clientX: number,
+  clientY: number,
+): Pt2 {
+  return [
+    Math.min(Math.max(clientX - r.left, 0), r.width),
+    Math.min(Math.max(clientY - r.top, 0), r.height),
+  ];
+}
+
 /** Pixels a wheel event scrolls (plain wheel: vertical; shift + wheel: horizontal). */
 export function wheelPan(e: {
   deltaX: number;

@@ -65,6 +65,7 @@ import {
 } from "../lib/lf";
 import { snapPoint } from "../lib/snap";
 import {
+  anchorIn,
   clampZoom,
   parseZoom,
   viewOfBox,
@@ -192,6 +193,7 @@ export const Canvas: React.FC<CanvasProps> = (props) => {
     at: Pt2;
   } | null>(null);
   const viewport = useRef<HTMLDivElement>(null);
+  const centre = useRef<HTMLDivElement>(null);
   const pendingScroll = useRef<{ left: number; top: number } | null>(null);
   const zoomRef = useRef(zoom);
   zoomRef.current = zoom;
@@ -290,26 +292,30 @@ export const Canvas: React.FC<CanvasProps> = (props) => {
   }, [props.toolAsk]);
 
   // the wheel: ctrl + wheel (and a trackpad pinch) zooms around the pointer; plain wheel pans up
-  // and down, shift + wheel left and right. Bound to the canvas only (passive: false there).
+  // and down, shift + wheel left and right. Bound to the whole canvas area (the page, the floating
+  // toolbar and the bar above it; passive: false), so ctrl + wheel over the toolbar or the bar
+  // zooms the page, never the browser. Over the toolbar or the bar, the zoom is around the nearest
+  // point of the page area.
   useEffect(() => {
+    const area = centre.current;
     const el = viewport.current;
-    if (!el) return;
+    if (!area || !el) return;
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
       if (e.ctrlKey || e.metaKey) {
         const r = el.getBoundingClientRect();
-        zoomTo(zoomRef.current * wheelFactor(e.deltaY, e.deltaMode), [
-          e.clientX - r.left,
-          e.clientY - r.top,
-        ]);
+        zoomTo(
+          zoomRef.current * wheelFactor(e.deltaY, e.deltaMode),
+          anchorIn(r, e.clientX, e.clientY),
+        );
         return;
       }
       const d = wheelPan(e);
       el.scrollLeft += d.dx;
       el.scrollTop += d.dy;
     };
-    el.addEventListener("wheel", onWheel, { passive: false });
-    return () => el.removeEventListener("wheel", onWheel);
+    area.addEventListener("wheel", onWheel, { passive: false });
+    return () => area.removeEventListener("wheel", onWheel);
   }, [zoomTo]);
 
   // the issue navigator: attention first, then review
@@ -411,6 +417,9 @@ export const Canvas: React.FC<CanvasProps> = (props) => {
       if (e.key === " ") {
         space.current = false;
         setSpaceHeld(false);
+        // a focused button (the last tool clicked) is pressed by Space on key up: Space is the
+        // temporary hand here, never a click (typing in a field is left alone)
+        if (!isTyping(e.target)) e.preventDefault();
       }
     };
     // a lost focus never leaves the hand stuck on
@@ -710,7 +719,7 @@ export const Canvas: React.FC<CanvasProps> = (props) => {
     tool === "editBox" && view?.box ? (boxEdit?.box ?? view.box) : null;
 
   return (
-    <div className="center">
+    <div className="center" ref={centre} data-testid="canvas-area">
       <div className="canvas-bar" data-testid="canvas-bar">
         <b className="title">
           Page {page.page_number}
