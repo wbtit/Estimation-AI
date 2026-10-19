@@ -10,8 +10,11 @@ import type { PDFDocumentProxy } from "pdfjs-dist";
 import {
   ChevronLeft,
   ChevronRight,
+  CircleHelp,
   Crop,
   Filter,
+  Hand,
+  LoaderCircle,
   Maximize,
   Minus,
   MousePointer2,
@@ -30,18 +33,23 @@ import { MM_PER_PT } from "../lib/geometry";
 import {
   activeView,
   beamLabel,
+  COLUMN_PX,
+  dashPx,
   evidenceText,
   flagOf,
+  hasGlow,
   isColumn,
   isUndefinedBeam,
   issues,
   markColour,
+  markWidthPx,
   nextIssue,
   penLineAt,
   penLinesInBox,
   penPreview,
   pieceAt,
   piecesInBox,
+  showSizeLabel,
   stateReason,
   visible,
   type Box,
@@ -65,18 +73,24 @@ import {
   zoomAround,
   type View,
 } from "../lib/zoom";
+import {
+  cursorFor,
+  dragHandle,
+  effectiveTool,
+  HANDLE_CURSOR,
+  handleAt,
+  handlePoints,
+  pressPans,
+  SHORTCUTS,
+  tipOf,
+  toolForKey,
+  type BoxHandle,
+  type Tool,
+} from "../lib/tools";
 import { ColumnIcon } from "./icons";
 import { PageView } from "./PageView";
 
-export type Tool =
-  | "select"
-  | "crop"
-  | "pick"
-  | "exclude"
-  | "view"
-  | "beam"
-  | "column"
-  | "measure";
+export type { Tool };
 export type PickMode = "replace" | "add";
 
 export interface CanvasProps {
@@ -113,12 +127,16 @@ export interface CanvasProps {
   onAcceptExclusions?: (ids: string[] | "all") => void;
   onSuggestExcludes?: () => void;
   onAddView?: (box: Box) => void;
-  /** Raised from outside (the Crop section's Redraw, the page card's + Add view): use a tool. */
+  /** Raised from outside (the Crop section's Redraw, the page card's + Add view or Edit box):
+   * use a tool. */
   toolAsk?: { tool: Tool; n: number };
+  /** A view of this page is building: a spinner in the bar. */
+  building?: boolean;
 }
 
 const TOOLS: { tool: Tool; Icon: LucideIcon; label: string }[] = [
   { tool: "select", Icon: MousePointer2, label: "Select" },
+  { tool: "hand", Icon: Hand, label: "Hand" },
   { tool: "crop", Icon: Crop, label: "Crop" },
   { tool: "pick", Icon: Pipette, label: "Pick beam" },
   { tool: "exclude", Icon: SquareX, label: "Exclude area" },
@@ -177,7 +195,18 @@ export const Canvas: React.FC<CanvasProps> = (props) => {
   const pendingScroll = useRef<{ left: number; top: number } | null>(null);
   const zoomRef = useRef(zoom);
   zoomRef.current = zoom;
+  const [spaceHeld, setSpaceHeld] = useState(false);
   const space = useRef(false);
+  const [panning, setPanning] = useState(false);
+  const [overHandle, setOverHandle] = useState<BoxHandle | null>(null);
+  const [help, setHelp] = useState(false);
+  /** Edit box: the handle being dragged and the box as it is now. */
+  const [boxEdit, setBoxEdit] = useState<{
+    handle: BoxHandle;
+    from: Pt2;
+    start: Box;
+    box: Box;
+  } | null>(null);
   const pan = useRef<{ x: number; y: number; sl: number; st: number } | null>(
     null,
   );
@@ -311,19 +340,43 @@ export const Canvas: React.FC<CanvasProps> = (props) => {
     [issueList, lastIssue, show, props],
   );
 
+  /** Esc: cancel what is being drawn (a box, a beam, an Edit box drag), then back to Select. */
+  const cancel = useCallback(() => {
+    setFirst(null);
+    setDrag(null);
+    setMeasure(null);
+    setBoxEdit(null);
+    setTool("select");
+  }, []);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (isTyping(e.target)) return;
       if (e.key === " ") {
-        space.current = true;
         e.preventDefault();
+        if (!space.current) {
+          space.current = true;
+          setSpaceHeld(true);
+        }
         return;
       }
       if (e.key === "Escape") {
-        setFirst(null);
-        setDrag(null);
-        setMeasure(null);
-        setTool("select");
+        if (help) setHelp(false);
+        else cancel();
+        return;
+      }
+      if (e.key === "?") {
+        setHelp((h) => !h);
+        return;
+      }
+      if (
+        (e.ctrlKey || e.metaKey) &&
+        !e.shiftKey &&
+        e.key.toLowerCase() === "z"
+      ) {
+        e.preventDefault();
+        if (props.pendingEdits > 0) props.onUndo();
+        return;
       }
       if (
         (e.key === "n" || e.key === "N") &&
@@ -332,6 +385,18 @@ export const Canvas: React.FC<CanvasProps> = (props) => {
         !e.altKey
       ) {
         step(e.shiftKey ? -1 : 1);
+        return;
+      }
+      const t = toolForKey(e.key, {
+        ctrl: e.ctrlKey,
+        meta: e.metaKey,
+        alt: e.altKey,
+      });
+      if (t) {
+        setTool(t);
+        setFirst(null);
+        setDrag(null);
+        setBoxEdit(null);
         return;
       }
       if ((e.key === "Delete" || e.key === "Backspace") && exclusionOn) {
@@ -343,15 +408,25 @@ export const Canvas: React.FC<CanvasProps> = (props) => {
         props.onDeleteSelected();
     };
     const onUp = (e: KeyboardEvent) => {
-      if (e.key === " ") space.current = false;
+      if (e.key === " ") {
+        space.current = false;
+        setSpaceHeld(false);
+      }
+    };
+    // a lost focus never leaves the hand stuck on
+    const onBlur = () => {
+      space.current = false;
+      setSpaceHeld(false);
     };
     window.addEventListener("keydown", onKey);
     window.addEventListener("keyup", onUp);
+    window.addEventListener("blur", onBlur);
     return () => {
       window.removeEventListener("keydown", onKey);
       window.removeEventListener("keyup", onUp);
+      window.removeEventListener("blur", onBlur);
     };
-  }, [selected, props, step, exclusionOn]);
+  }, [selected, props, step, exclusionOn, help, cancel]);
 
   const snap = (p: Pt2): Pt2 => {
     if (!lines) return p;
@@ -383,7 +458,7 @@ export const Canvas: React.FC<CanvasProps> = (props) => {
     e: React.PointerEvent,
   ): boolean => {
     const p: Pt2 = [pt.x, pt.y];
-    if (e.button === 1 || e.button === 2 || (e.button === 0 && space.current)) {
+    if (pressPans(e.button, tool, space.current)) {
       const el = viewport.current!;
       e.preventDefault();
       pan.current = {
@@ -392,7 +467,17 @@ export const Canvas: React.FC<CanvasProps> = (props) => {
         sl: el.scrollLeft,
         st: el.scrollTop,
       };
+      setPanning(true);
       return true;
+    }
+    if (tool === "editBox") {
+      const b = view?.box;
+      const hd = b ? handleAt(b, p, 7 * px) : null;
+      if (b && hd) {
+        setBoxEdit({ handle: hd, from: p, start: b, box: b });
+        return true;
+      }
+      return false;
     }
     if (tool === "select") {
       if (single && single.a) {
@@ -463,6 +548,23 @@ export const Canvas: React.FC<CanvasProps> = (props) => {
       el.scrollTop = pan.current.st - (e.clientY - pan.current.y);
       return;
     }
+    if (boxEdit) {
+      setBoxEdit({
+        ...boxEdit,
+        box: dragHandle(
+          boxEdit.start,
+          boxEdit.handle,
+          p[0] - boxEdit.from[0],
+          p[1] - boxEdit.from[1],
+          { w, h },
+        ),
+      });
+      return;
+    }
+    if (tool === "editBox") {
+      const b = view?.box;
+      setOverHandle(b ? handleAt(b, p, 7 * px) : null);
+    }
     if (handle) setHandle({ ...handle, at: snap(p) });
     else if (drag) setDrag({ ...drag, to: p });
     setHover(first ? snap(p) : null);
@@ -475,6 +577,27 @@ export const Canvas: React.FC<CanvasProps> = (props) => {
   const up = (pt: { x: number; y: number }, e: React.PointerEvent) => {
     if (pan.current) {
       pan.current = null;
+      setPanning(false);
+      return;
+    }
+    if (boxEdit) {
+      const b = boxEdit.box;
+      const s0 = boxEdit.start;
+      setBoxEdit(null);
+      const moved =
+        Math.max(
+          Math.abs(b.x0 - s0.x0),
+          Math.abs(b.y0 - s0.y0),
+          Math.abs(b.x1 - s0.x1),
+          Math.abs(b.y1 - s0.y1),
+        ) > 0.5;
+      if (moved)
+        props.onCrop({
+          x0: Math.round(b.x0 * 100) / 100,
+          y0: Math.round(b.y0 * 100) / 100,
+          x1: Math.round(b.x1 * 100) / 100,
+          y1: Math.round(b.y1 * 100) / 100,
+        });
       return;
     }
     if (handle) {
@@ -534,38 +657,47 @@ export const Canvas: React.FC<CanvasProps> = (props) => {
     else if (!e.shiftKey) props.onSelect([], false);
   };
 
+  const shown = effectiveTool(tool, spaceHeld);
   const toolButton = (t: (typeof TOOLS)[number]) => (
     <button
       key={t.tool}
-      data-tip={t.label}
+      data-tip={tipOf(t.label, t.tool)}
       aria-label={t.label}
-      className={tool === t.tool ? "on" : ""}
+      aria-keyshortcuts={
+        tipOf("", t.tool).trim().replace(/[()]/g, "") || undefined
+      }
+      className={shown === t.tool ? "on" : ""}
       onClick={() => {
         setTool(t.tool);
         setFirst(null);
+        setBoxEdit(null);
       }}
     >
       <t.Icon {...ICON} />
     </button>
   );
   const hint =
-    tool === "pick"
-      ? pens.length
-        ? "Click a highlighted line to deselect it · Ctrl + drag a box · click another line to pick its pen"
-        : "Click one beam line"
-      : tool === "crop"
-        ? "Drag a box around the plan"
-        : tool === "view"
-          ? "Drag the box of the new view"
-          : tool === "exclude"
-            ? "Drag a box over a title block, detail, table or legend · click a box to select it"
-            : tool === "beam" || tool === "measure"
-              ? first
-                ? "Click the second point"
-                : "Click the first point"
-              : tool === "column"
-                ? "Click the column centre"
-                : null;
+    shown === "hand"
+      ? "Drag to move the page"
+      : tool === "pick"
+        ? pens.length
+          ? "Click a highlighted line to deselect it · Ctrl + drag a box · click another line to pick its pen"
+          : "Click one beam line"
+        : tool === "crop"
+          ? "Drag a box around the plan · Esc cancels"
+          : tool === "view"
+            ? "Drag the box of the new view · Esc cancels"
+            : tool === "editBox"
+              ? `Drag a handle of ${view?.name ?? "the view"}'s box · Esc when done`
+              : tool === "exclude"
+                ? "Drag a box over a title block, detail, table or legend · click a box to select it"
+                : tool === "beam" || tool === "measure"
+                  ? first
+                    ? "Click the second point"
+                    : "Click the first point"
+                  : tool === "column"
+                    ? "Click the column centre"
+                    : null;
   const deselected = view?.deselections.length ?? 0;
   const unmatched = view?.deselections_unmatched ?? 0;
   const suggested = (view?.exclusions ?? []).filter(
@@ -574,18 +706,42 @@ export const Canvas: React.FC<CanvasProps> = (props) => {
   const exSel =
     (view?.exclusions ?? []).find((e) => e.id === exclusionOn) ?? null;
   const several = views.length > 1;
+  const editing =
+    tool === "editBox" && view?.box ? (boxEdit?.box ?? view.box) : null;
 
   return (
     <div className="center">
-      <div className="canvas-chip">
-        <b>
+      <div className="canvas-bar" data-testid="canvas-bar">
+        <b className="title">
           Page {page.page_number}
           {page.sheet_number ? ` · ${page.sheet_number}` : ""}
           {several && view ? ` · ${view.name}` : ""}
         </b>
-        {hint && <span className="muted">{hint}</span>}
+        {issueList.length > 0 && (
+          <div className="navigator" data-testid="navigator">
+            <button
+              aria-label="previous issue"
+              title="Previous issue (Shift+N)"
+              onClick={() => step(-1)}
+            >
+              <ChevronLeft size={15} />
+            </button>
+            <span>
+              <b className="n-attention">{nAttention}</b> need attention ·{" "}
+              <b className="n-review">{nReview}</b> to review
+            </span>
+            <button
+              aria-label="next issue"
+              title="Next issue (N)"
+              onClick={() => step(1)}
+            >
+              Next <ChevronRight size={15} />
+            </button>
+          </div>
+        )}
+        {hint && <span className="hint">{hint}</span>}
         {measure && ratio && (
-          <span data-testid="measure">
+          <span className="measure" data-testid="measure">
             {formatFtIn(
               Math.hypot(
                 measure.b[0] - measure.a[0],
@@ -596,27 +752,93 @@ export const Canvas: React.FC<CanvasProps> = (props) => {
             )}
           </span>
         )}
-      </div>
-      {issueList.length > 0 && (
-        <div className="navigator" data-testid="navigator">
-          <button
-            aria-label="previous issue"
-            title="Previous (Shift+N)"
-            onClick={() => step(-1)}
-          >
-            <ChevronLeft size={16} /> Prev
-          </button>
-          <span>
-            <b className="n-attention">{nAttention}</b> need attention ·{" "}
-            <b className="n-review">{nReview}</b> to review
+        <span className="grow" />
+        {props.building && (
+          <span className="building" data-testid="canvas-building">
+            <LoaderCircle size={14} className="spin" /> Building…
           </span>
+        )}
+        <div className="zoom-group">
           <button
-            aria-label="next issue"
-            title="Next (N)"
-            onClick={() => step(1)}
+            aria-label="zoom out"
+            title="Zoom out (Ctrl+wheel)"
+            onClick={() => zoomTo(zoom / 1.25)}
           >
-            Next <ChevronRight size={16} />
+            <Minus size={15} />
           </button>
+          <input
+            aria-label="zoom percent"
+            className="zoom-box"
+            value={zoomText ?? `${Math.round(zoom * 100)}%`}
+            onFocus={(e) => {
+              setZoomText(String(Math.round(zoom * 100)));
+              e.target.select();
+            }}
+            onChange={(e) => setZoomText(e.target.value)}
+            onBlur={() => {
+              const z = zoomText === null ? null : parseZoom(zoomText);
+              if (z !== null && Math.abs(z - zoom) > 1e-9) zoomTo(z);
+              setZoomText(null);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+              if (e.key === "Escape") {
+                setZoomText(null);
+                (e.target as HTMLInputElement).blur();
+              }
+            }}
+          />
+          <button
+            aria-label="zoom in"
+            title="Zoom in (Ctrl+wheel)"
+            onClick={() => zoomTo(zoom * 1.25)}
+          >
+            <Plus size={15} />
+          </button>
+          <button
+            className="fit"
+            aria-label="Fit"
+            title="Fit the page"
+            onClick={fit}
+          >
+            <Maximize size={14} /> Fit
+          </button>
+        </div>
+        <button
+          className="help"
+          aria-label="keyboard shortcuts"
+          title="Keyboard shortcuts (?)"
+          onClick={() => setHelp(!help)}
+        >
+          <CircleHelp size={16} />
+        </button>
+      </div>
+      {help && (
+        <div
+          className="shortcuts"
+          data-testid="shortcuts"
+          role="dialog"
+          aria-label="Keyboard shortcuts"
+        >
+          <div className="row">
+            <b>Keyboard shortcuts</b>
+            <span className="grow" />
+            <button className="link" onClick={() => setHelp(false)}>
+              Close
+            </button>
+          </div>
+          <table>
+            <tbody>
+              {SHORTCUTS.map((k) => (
+                <tr key={k.keys}>
+                  <td>
+                    <kbd>{k.keys}</kbd>
+                  </td>
+                  <td>{k.what}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
       {tool === "pick" && (
@@ -693,8 +915,18 @@ export const Canvas: React.FC<CanvasProps> = (props) => {
           )}
         </div>
       )}
+      {tool === "editBox" && (
+        <div className="tool-bar" data-testid="editbox-bar">
+          <span>
+            Editing <b>{view?.name ?? "the view"}</b>: each drag is saved (Undo
+            puts it back)
+          </span>
+          <button onClick={cancel}>Done</button>
+        </div>
+      )}
       <div className="toolbar" data-testid="toolbar">
         {toolButton(TOOLS[0]!)}
+        {toolButton(TOOLS[1]!)}
         <span style={{ position: "relative" }}>
           <button
             data-tip={layersOpen ? undefined : "Layers"}
@@ -713,14 +945,11 @@ export const Canvas: React.FC<CanvasProps> = (props) => {
             />
           )}
         </span>
-        <button data-tip="Fit" aria-label="Fit" onClick={fit}>
-          <Maximize {...ICON} />
-        </button>
         <div className="sep" />
-        {TOOLS.slice(1).map(toolButton)}
+        {TOOLS.slice(2).map(toolButton)}
         <div className="sep" />
         <button
-          data-tip="Undo"
+          data-tip="Undo (Ctrl+Z)"
           aria-label="Undo"
           onClick={props.onUndo}
           disabled={props.pendingEdits === 0}
@@ -731,49 +960,15 @@ export const Canvas: React.FC<CanvasProps> = (props) => {
           )}
         </button>
       </div>
-      <div className="zoom-card">
-        <button
-          aria-label="zoom out"
-          title="Zoom out"
-          onClick={() => zoomTo(zoom / 1.25)}
-        >
-          <Minus size={16} />
-        </button>
-        <input
-          aria-label="zoom percent"
-          className="zoom-box"
-          value={zoomText ?? `${Math.round(zoom * 100)}%`}
-          onFocus={(e) => {
-            setZoomText(String(Math.round(zoom * 100)));
-            e.target.select();
-          }}
-          onChange={(e) => setZoomText(e.target.value)}
-          onBlur={() => {
-            const z = zoomText === null ? null : parseZoom(zoomText);
-            if (z !== null && Math.abs(z - zoom) > 1e-9) zoomTo(z);
-            setZoomText(null);
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-            if (e.key === "Escape") {
-              setZoomText(null);
-              (e.target as HTMLInputElement).blur();
-            }
-          }}
-        />
-        <button
-          aria-label="zoom in"
-          title="Zoom in"
-          onClick={() => zoomTo(zoom * 1.25)}
-        >
-          <Plus size={16} />
-        </button>
-      </div>
       <div
         className="viewport"
         ref={viewport}
         data-testid="viewport"
         onContextMenu={(e) => e.preventDefault()}
+        // the middle button pans here, not the browser's autoscroll
+        onMouseDown={(e) => {
+          if (e.button === 1) e.preventDefault();
+        }}
       >
         {pdf ? (
           <PageView
@@ -789,11 +984,9 @@ export const Canvas: React.FC<CanvasProps> = (props) => {
             onPointerMove={move}
             onPointerUp={up}
             cursor={
-              pan.current
-                ? "grabbing"
-                : tool === "select"
-                  ? "default"
-                  : "crosshair"
+              tool === "editBox" && !panning && (boxEdit || overHandle)
+                ? HANDLE_CURSOR[boxEdit?.handle ?? overHandle!]
+                : cursorFor(tool, spaceHeld, panning)
             }
           >
             <defs>
@@ -814,7 +1007,7 @@ export const Canvas: React.FC<CanvasProps> = (props) => {
                 />
               </pattern>
             </defs>
-            {!several && crop && (
+            {!several && crop && !editing && (
               <rect
                 x={crop.x0}
                 y={crop.y0}
@@ -829,7 +1022,7 @@ export const Canvas: React.FC<CanvasProps> = (props) => {
             )}
             {several &&
               views.map((v) =>
-                v.box ? (
+                v.box && !(editing && v.id === view?.id) ? (
                   <ViewBox
                     key={v.id}
                     v={v}
@@ -839,6 +1032,7 @@ export const Canvas: React.FC<CanvasProps> = (props) => {
                   />
                 ) : null,
               )}
+            {editing && <EditBox b={editing} px={px} />}
             {(view?.exclusions ?? []).map((e) => (
               <ExclusionBox
                 key={e.id}
@@ -888,6 +1082,7 @@ export const Canvas: React.FC<CanvasProps> = (props) => {
                   on={selected.has(p.id)}
                   hover={p.id === hoverId}
                   labels={layers.labels}
+                  allSizes={layers.allSizes}
                   flags={layers.flags}
                 />
               ))}
@@ -960,6 +1155,33 @@ export const Canvas: React.FC<CanvasProps> = (props) => {
     </div>
   );
 };
+
+/** The active view's box while Edit box is on: solid, with eight square handles. */
+const EditBox: React.FC<{ b: Box; px: number }> = ({ b, px }) => (
+  <g data-testid="edit-box" pointerEvents="none">
+    <rect
+      x={b.x0}
+      y={b.y0}
+      width={b.x1 - b.x0}
+      height={b.y1 - b.y0}
+      fill="rgba(61,107,245,0.05)"
+      stroke="var(--crop)"
+      strokeWidth={2 * px}
+    />
+    {Object.entries(handlePoints(b)).map(([k, q]) => (
+      <rect
+        key={k}
+        x={q[0] - 5 * px}
+        y={q[1] - 5 * px}
+        width={10 * px}
+        height={10 * px}
+        fill="#fff"
+        stroke="var(--crop)"
+        strokeWidth={1.5 * px}
+      />
+    ))}
+  </g>
+);
 
 /** A view's box with its name; the active view solid, the others dashed. */
 const ViewBox: React.FC<{
@@ -1091,18 +1313,30 @@ const PreviewLine: React.FC<{ l: PenLine; px: number }> = ({ l, px }) => {
 };
 
 /** One piece on the page, drawn whole in its state colour (attention red, needs review orange,
- * else the kind colour: beams magenta-purple, columns blue) at full strength with a thin white
- * halo, so it reads over any linework; attention and review get a soft glow. Beams are 3 px on
- * screen (6 px on hover or select), undefined beams dashed; columns are an I. The size is written
- * along the beam; the small midpoint flag is optional (Show flags). */
+ * else the kind colour: beams magenta, columns blue) with a thin white halo so it reads over any
+ * linework. Only attention glows (a soft red band; a red ring on a column). The width follows the
+ * zoom (MARK_PT on paper, MARK_MIN_PX..MARK_MAX_PX on screen, MARK_ON_PX hovered or selected);
+ * undefined beams are dashed with dashes scaled to the width; a column is an I of COLUMN_PX on
+ * screen at every zoom. The read size is written along the beam only where it differs from the
+ * drawing's label, on hover or selection, or with "Show all read sizes". */
 export const PieceMark: React.FC<{
   p: Piece;
+  /** One screen pixel in page points (1 / zoom). */
   px: number;
   on: boolean;
   hover?: boolean;
   labels: boolean;
+  allSizes?: boolean;
   flags?: boolean;
-}> = ({ p, px, on, hover = false, labels, flags = false }) => {
+}> = ({
+  p,
+  px,
+  on,
+  hover = false,
+  labels,
+  allSizes = false,
+  flags = false,
+}) => {
   if (!p.a) return null;
   const tip = [
     `${p.tag ?? ""} ${p.profile ?? "no size"}`.trim(),
@@ -1114,77 +1348,83 @@ export const PieceMark: React.FC<{
     .filter(Boolean)
     .join("\n");
   const colour = markColour(p);
-  const glow =
-    !p.ignored &&
-    (p.build_state === "attention" || p.build_state === "needs_review");
+  const glow = hasGlow(p);
   const mid: Pt2 = p.b ? [(p.a[0] + p.b[0]) / 2, (p.a[1] + p.b[1]) / 2] : p.a;
   const flag = flags ? flagOf(p) : null;
   const wide = on || hover;
-  const sw = (wide ? 6 : 3) * px;
+  const zoom = 1 / px;
+  const swPx = markWidthPx(zoom, wide);
+  const sw = swPx * px;
+  const halo = sw + Math.min(2, swPx * 0.6 + 0.8) * px;
   // the label runs along the beam, upright, just under it
   let angle = p.b
     ? (Math.atan2(p.b[1] - p.a[1], p.b[0] - p.a[0]) * 180) / Math.PI
     : 0;
   if (angle > 90) angle -= 180;
   if (angle <= -90) angle += 180;
-  const label = isColumn(p) ? "" : beamLabel(p);
   const state = p.ignored ? "ignored" : (p.build_state ?? "found");
   if (isColumn(p)) {
-    const t = 9 * px;
+    const t = (COLUMN_PX / 2) * px;
+    const cw = Math.min(swPx, 2.5) * px;
     const I = `M ${p.a[0] - t} ${p.a[1] - t} L ${p.a[0] + t} ${p.a[1] - t} M ${p.a[0] - t} ${p.a[1] + t} L ${p.a[0] + t} ${p.a[1] + t} M ${p.a[0]} ${p.a[1] - t} L ${p.a[0]} ${p.a[1] + t}`;
+    const showTag = labels && p.tag && (allSizes || wide);
     return (
       <g
         data-testid={`piece-${p.tag ?? p.id}`}
         data-state={state}
+        data-glow={glow ? "1" : undefined}
         data-flag={flag ?? undefined}
       >
         <title>{tip}</title>
         {glow && (
           <circle
+            data-testid="glow"
             cx={p.a[0]}
             cy={p.a[1]}
-            r={t * 2.2}
-            fill={colour}
-            opacity={0.22}
+            r={t * 1.9}
+            fill="none"
+            stroke="var(--attention)"
+            strokeWidth={2 * px}
+            opacity={0.85}
           />
         )}
         {on && (
           <circle
             cx={p.a[0]}
             cy={p.a[1]}
-            r={t * 2}
+            r={t * 1.7}
             fill="none"
             stroke="var(--select)"
-            strokeWidth={3 * px}
+            strokeWidth={2.5 * px}
           />
         )}
         <path
           d={I}
           stroke="#fff"
-          strokeWidth={sw + 3 * px}
+          strokeWidth={cw + 2 * px}
           fill="none"
           strokeLinecap="square"
         />
         <path
           d={I}
           stroke={colour}
-          strokeWidth={sw}
+          strokeWidth={wide ? cw + 1 * px : cw}
           fill="none"
           strokeLinecap="square"
         />
         {/* a wide transparent box makes the column easy to hover */}
         <rect
-          x={p.a[0] - 2 * t}
-          y={p.a[1] - 2 * t}
-          width={4 * t}
-          height={4 * t}
+          x={p.a[0] - 1.6 * t}
+          y={p.a[1] - 1.6 * t}
+          width={3.2 * t}
+          height={3.2 * t}
           fill="transparent"
         />
-        {labels && p.tag && (
+        {showTag && (
           <text
             x={p.a[0] + t + 3 * px}
             y={p.a[1] + t + 9 * px}
-            fontSize={9 * px}
+            fontSize={10 * px}
             fill="var(--column-id)"
             stroke="#fff"
             strokeWidth={3 * px}
@@ -1199,19 +1439,24 @@ export const PieceMark: React.FC<{
     );
   }
   const seg = { x1: p.a[0], y1: p.a[1], x2: p.b![0], y2: p.b![1] };
+  const [dash, gap] = dashPx(swPx);
+  const label =
+    labels && showSizeLabel(p, { hover, on, allSizes }) ? beamLabel(p) : "";
   return (
     <g
       data-testid={`piece-${p.tag ?? p.id}`}
       data-state={state}
+      data-glow={glow ? "1" : undefined}
       data-flag={flag ?? undefined}
     >
       <title>{tip}</title>
       {glow && (
         <line
+          data-testid="glow"
           {...seg}
-          stroke={colour}
-          strokeOpacity={0.25}
-          strokeWidth={sw + 9 * px}
+          stroke="var(--attention)"
+          strokeOpacity={0.22}
+          strokeWidth={sw + 7 * px}
           strokeLinecap="round"
         />
       )}
@@ -1219,31 +1464,29 @@ export const PieceMark: React.FC<{
         <line
           {...seg}
           stroke="var(--select)"
-          strokeWidth={sw + 7 * px}
-          strokeOpacity={0.75}
+          strokeWidth={sw + 5 * px}
+          strokeOpacity={0.7}
           strokeLinecap="round"
         />
       )}
-      <line
-        {...seg}
-        stroke="#fff"
-        strokeWidth={sw + 2.5 * px}
-        strokeLinecap="round"
-      />
+      <line {...seg} stroke="#fff" strokeWidth={halo} strokeLinecap="round" />
       <line
         {...seg}
         stroke={colour}
         strokeWidth={sw}
-        strokeDasharray={isUndefinedBeam(p) ? `${8 * px} ${5 * px}` : undefined}
+        strokeDasharray={
+          isUndefinedBeam(p) ? `${dash * px} ${gap * px}` : undefined
+        }
         strokeLinecap="round"
       />
       {/* a wide transparent line makes the beam easy to hover */}
       <line {...seg} stroke="transparent" strokeWidth={12 * px} />
-      {labels && label && (
+      {label && (
         <text
+          data-testid="size-label"
           transform={`translate(${mid[0]} ${mid[1]}) rotate(${angle})`}
           y={11 * px}
-          fontSize={9 * px}
+          fontSize={10 * px}
           textAnchor="middle"
           fill="var(--beam-label)"
           stroke="#fff"
@@ -1330,6 +1573,8 @@ const LayerFilter: React.FC<{
       {box("undefinedBeams", "Undefined Beams")}
       {box("columns", "Columns")}
       {box("labels", "Labels")}
+      {box("allSizes", "Show all read sizes")}
+      {box("onlyProblems", "Only problems")}
       {box("flags", "Show flags")}
       {box("isolateUndefined", "Only undefined beams")}
       <div className="row">

@@ -1,9 +1,18 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Bell, Check, EllipsisVertical, Play, Plus, X } from "lucide-react";
+import {
+  Bell,
+  Check,
+  ChevronDown,
+  EllipsisVertical,
+  LoaderCircle,
+  Play,
+  Plus,
+} from "lucide-react";
 import { formatFtIn, parseFtIn } from "../lib/ftin";
 import {
   activeView,
   PAGE_TYPE_SHORT,
+  setupChips,
   type Behaviour,
   type Page,
   type PageViewInfo,
@@ -40,6 +49,11 @@ export interface PageActions {
   ) => void;
   addView?: (p: Page) => void;
   deleteView?: (p: Page, viewId: string) => void;
+  renameView?: (p: Page, viewId: string, name: string) => void;
+  /** Edit box: drag the handles of the view's box on the canvas. */
+  editBox?: (p: Page, viewId: string) => void;
+  /** View 1 cannot be deleted: its box goes back to the page crop. */
+  resetBox?: (p: Page, viewId: string) => void;
 }
 
 /** A view of the page as the card shows it: the page's views, or one made of the page's setup. */
@@ -89,16 +103,6 @@ export const hasNoBeams = (v: Pick<PageViewInfo, "no_beams">): boolean =>
 
 const badgeClass = (b: string) => b.replace(/\s+/g, "-");
 const builds = (b: Behaviour | null) => b === "column_plan" || b === "framing";
-
-/** Setup values in the estimator's words. */
-const VALUE_WORDS: Record<string, string> = {
-  role: "role",
-  crop: "crop",
-  scale: "scale",
-  pen_class: "beam pen",
-  tos: "Top of Steel",
-  column_plan: "column plan",
-};
 
 function scaleLabel(text: string | null, ratio: number | null): string {
   if (ratio === null) return "—";
@@ -171,14 +175,15 @@ export const PageCard: React.FC<{
   if (view.scale_ratio !== null && !ratios.has(view.scale_ratio))
     ratios.set(view.scale_ratio, view.scale_text ?? "");
 
-  const status =
-    view.badge === "Not built" && view.reasons.length
-      ? view.reasons.join("; ")
-      : page.reviewed_by && page.badge === "Reviewed"
-        ? `Saved by ${page.reviewed_by}, ${new Date(page.reviewed_at as string).toLocaleString()}`
-        : view.system_values.length && builds(behaviour)
-          ? `Not confirmed: ${view.system_values.map((v) => VALUE_WORDS[v] ?? v).join(", ")}`
-          : `${view.counts.pieces} pieces`;
+  const chips = setupChips(view);
+  const saved =
+    page.reviewed_by && page.badge === "Reviewed"
+      ? `Saved by ${page.reviewed_by}, ${new Date(page.reviewed_at as string).toLocaleString()}`
+      : null;
+  const building = views.some((v) => v.badge === "Building");
+  const [viewMenu, setViewMenu] = useState<string | null>(null);
+  const [renaming, setRenaming] = useState<string | null>(null);
+  const [newName, setNewName] = useState("");
 
   const second = pageBuilds ? "Estimating" : "Skip";
   const title =
@@ -202,11 +207,19 @@ export const PageCard: React.FC<{
           Page {page.page_number} | {title}
         </span>
         <span className="grow" />
+        {building && (
+          <LoaderCircle
+            size={14}
+            className="spin building-spin"
+            aria-label="building"
+            data-testid="card-building"
+          />
+        )}
         <button
           className={`play${page.badge === "Requesting Build" ? " ask" : ""}`}
-          title="Build"
+          title={building ? "Building…" : "Build every view of this page"}
           aria-label="build page"
-          disabled={!pageBuilds || page.badge === "Building"}
+          disabled={!pageBuilds || building}
           onClick={(e) => {
             e.stopPropagation();
             actions.build(page);
@@ -317,22 +330,91 @@ export const PageCard: React.FC<{
                 key={v.id || "first"}
                 className={`view-chip${v.id === view.id ? " on" : ""}`}
               >
-                <button
-                  onClick={() => v.id && onActiveView?.(v.id)}
-                  title={v.role_name ?? ""}
-                >
-                  {v.name}
-                  {v.badge === "Requesting Build" && <Bell size={10} />}
-                </button>
-                {v.position > 1 && actions.deleteView && (
+                {renaming === v.id ? (
+                  <input
+                    autoFocus
+                    aria-label={`rename ${v.name}`}
+                    value={newName}
+                    onChange={(e) => setNewName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Escape") setRenaming(null);
+                      if (e.key === "Enter")
+                        (e.target as HTMLInputElement).blur();
+                    }}
+                    onBlur={() => {
+                      const n = newName.trim();
+                      if (n && n !== v.name)
+                        actions.renameView?.(page, v.id, n);
+                      setRenaming(null);
+                    }}
+                  />
+                ) : (
+                  <button
+                    onClick={() => v.id && onActiveView?.(v.id)}
+                    title={v.role_name ?? ""}
+                  >
+                    {v.name}
+                    {v.badge === "Building" ? (
+                      <LoaderCircle size={10} className="spin" />
+                    ) : (
+                      v.badge === "Requesting Build" && <Bell size={10} />
+                    )}
+                  </button>
+                )}
+                {v.id && renaming !== v.id && (
                   <button
                     className="x"
-                    aria-label={`delete ${v.name}`}
-                    title={`Delete ${v.name}`}
-                    onClick={() => actions.deleteView!(page, v.id)}
+                    aria-label={`${v.name} menu`}
+                    title={`${v.name}: rename, edit box, ${v.position > 1 ? "delete" : "reset box"}`}
+                    onClick={() => setViewMenu(viewMenu === v.id ? null : v.id)}
                   >
-                    <X size={11} />
+                    <ChevronDown size={11} />
                   </button>
+                )}
+                {viewMenu === v.id && (
+                  <div className="menu view-menu" data-testid="view-menu">
+                    <button
+                      onClick={() => {
+                        setViewMenu(null);
+                        setNewName(v.name);
+                        setRenaming(v.id);
+                      }}
+                    >
+                      Rename
+                    </button>
+                    <button
+                      disabled={!v.box}
+                      onClick={() => {
+                        setViewMenu(null);
+                        onActiveView?.(v.id);
+                        actions.editBox?.(page, v.id);
+                      }}
+                    >
+                      Edit box
+                    </button>
+                    <hr />
+                    {v.position > 1 ? (
+                      <button
+                        className="danger"
+                        onClick={() => {
+                          setViewMenu(null);
+                          actions.deleteView?.(page, v.id);
+                        }}
+                      >
+                        Delete view
+                      </button>
+                    ) : (
+                      <button
+                        title="View 1 stays; its box goes back to the page crop"
+                        onClick={() => {
+                          setViewMenu(null);
+                          actions.resetBox?.(page, v.id);
+                        }}
+                      >
+                        Reset box to page crop
+                      </button>
+                    )}
+                  </div>
                 )}
               </span>
             ))}
@@ -428,9 +510,32 @@ export const PageCard: React.FC<{
             </>
           )}
           <div className="field">
-            <span>Status</span>
-            <span className="status">{status}</span>
+            <span>Setup</span>
+            <span className="chips" data-testid="setup-chips">
+              {chips.map((c) => (
+                <span
+                  key={c.key}
+                  className={`chip ${c.state}`}
+                  title={c.tip}
+                  data-state={c.state}
+                >
+                  {c.state === "ok" ? (
+                    <Check size={10} strokeWidth={3} />
+                  ) : c.state === "missing" ? (
+                    "!"
+                  ) : null}
+                  {c.label}
+                </span>
+              ))}
+            </span>
           </div>
+          {(saved ||
+            (view.badge === "Not built" && view.reasons.length > 0)) && (
+            <div className="card-note" title={view.reasons.join("; ")}>
+              {saved ??
+                `Not built: ${view.reasons.length} thing${view.reasons.length === 1 ? "" : "s"} to set`}
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -28,6 +28,24 @@ import { ReportTab } from "./ReportTab";
 
 type WsRoute = Extract<Route, { view: "workspace" }>;
 
+/** What POST /undo says when it undid a view change. */
+interface UndoneView {
+  kind: "add" | "delete" | "box";
+  applied: boolean;
+  pieces_restored: number;
+  pieces_removed: number;
+}
+
+/** The toast after undoing a view change. */
+export function undoneViewText(v: UndoneView): string {
+  if (!v.applied) return "Undone (the view had already changed)";
+  if (v.kind === "add")
+    return `View add undone${v.pieces_removed ? ` · ${v.pieces_removed} pieces removed` : ""}`;
+  if (v.kind === "delete")
+    return `View restored${v.pieces_restored ? ` with ${v.pieces_restored} pieces` : ""}`;
+  return "View box put back";
+}
+
 /** "Jane Doe" -> "JD" (the avatar in the top bar). */
 export const initials = (who: string): string =>
   who
@@ -206,22 +224,65 @@ export const Workspace: React.FC<{
       ).then(loadRoles),
     addView: () => askTool("view"),
     deleteView: (p, viewId) => {
-      if (
-        !window.confirm(
-          "Delete this view? Its pieces nobody edited go with it.",
-        )
+      const v = p.views?.find((x) => x.id === viewId);
+      const built = v?.counts.pieces ?? 0;
+      if (built > 0) {
+        const edited = pieces.filter(
+          (x) => x.build_view_id === viewId && (x.edited || x.added),
+        ).length;
+        const msg =
+          `Delete ${v?.name ?? "this view"}? Its ${built - edited} untouched built piece${built - edited === 1 ? "" : "s"} go with it` +
+          (edited
+            ? `; ${edited} piece${edited === 1 ? "" : "s"} you edited move to View 1.`
+            : ".") +
+          " Undo puts it all back.";
+        if (!window.confirm(msg)) return;
+      }
+      void send<{ pieces_removed: number; pieces_kept: number }>(
+        "DELETE",
+        `/api/projects/${projectId}/sheets/${p.id}/build-views/${viewId}`,
+        { who },
       )
-        return;
-      void act(
+        .then((r) => {
+          say(
+            `${v?.name ?? "View"} deleted · ${r.pieces_removed} piece${r.pieces_removed === 1 ? "" : "s"} removed` +
+              (r.pieces_kept
+                ? ` · ${r.pieces_kept} edited kept on View 1`
+                : "") +
+              " (Undo puts it back)",
+          );
+          setViewId(null);
+          return refresh();
+        })
+        .catch(fail);
+    },
+    renameView: (p, viewId, name) =>
+      act(
         send(
-          "DELETE",
+          "PATCH",
           `/api/projects/${projectId}/sheets/${p.id}/build-views/${viewId}`,
-          {
-            who,
-          },
+          { name, who },
         ),
-        "View deleted",
-      ).then(() => setViewId(null));
+      ),
+    editBox: (_p, viewId) => {
+      setViewId(viewId);
+      askTool("editBox");
+    },
+    resetBox: (p, viewId) => {
+      const box = p.page_crop ?? {
+        x0: 0,
+        y0: 0,
+        x1: p.width_pt ?? 0,
+        y1: p.height_pt ?? 0,
+      };
+      void act(
+        send("POST", sheetUrl(p, "build-setup/crop"), {
+          box,
+          view_id: viewId,
+          who,
+        }),
+        "Box reset to the page crop (Undo puts it back)",
+      );
     },
     setColumnPlan: (p, viewId, id) =>
       act(
@@ -353,12 +414,14 @@ export const Workspace: React.FC<{
             <button
               className="primary row"
               style={{ gap: 6 }}
-              onClick={() =>
+              onClick={() => {
+                // saving does not change any member's state: the issues left are the page's now
+                const left = page.counts.attention + page.counts.needs_review;
                 void act(
                   send("POST", sheetUrl(page, "save-page"), { who }),
-                  "Page saved",
-                )
-              }
+                  `Page ${page.page_number} saved · ${left} issue${left === 1 ? "" : "s"} left`,
+                );
+              }}
             >
               <Save size={16} /> Save page
             </button>
@@ -609,11 +672,18 @@ export const Workspace: React.FC<{
                 )
               }
               onUndo={() =>
-                void act(
-                  send("POST", `/api/projects/${projectId}/undo`, { who }),
-                  "Undone",
+                void send<{ view?: UndoneView }>(
+                  "POST",
+                  `/api/projects/${projectId}/undo`,
+                  { who },
                 )
+                  .then((r) => {
+                    say(r.view ? undoneViewText(r.view) : "Undone");
+                    return refresh();
+                  })
+                  .catch(fail)
               }
+              building={(page.views ?? []).some((v) => v.badge === "Building")}
               onDeleteSelected={deleteSelected}
               toolAsk={toolAsk}
             />

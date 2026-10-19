@@ -67,6 +67,8 @@ export interface Page {
     column_plan_sheet_id: string | null;
   };
   scales_found: ScaleFound[];
+  /** The page's own crop from before views (View 1's "Reset box to page crop"). */
+  page_crop?: Box | null;
   /** Phase 11c: the views of the page (the first one is the page's setup above). */
   views?: PageViewInfo[];
   built_at: string | null;
@@ -259,6 +261,10 @@ export interface Layers {
   flags: boolean;
   /** Only undefined beams (isolate). */
   isolateUndefined: boolean;
+  /** Write every read size (else only where it differs from the drawing's label, or on hover). */
+  allSizes: boolean;
+  /** Hide found and ignored members: only orange and red remain. */
+  onlyProblems: boolean;
   /** Length filter in mm (beams); null = no bound. */
   minMm: number | null;
   maxMm: number | null;
@@ -273,12 +279,23 @@ export const ALL_LAYERS: Layers = {
   labels: true,
   flags: false,
   isolateUndefined: false,
+  allSizes: false,
+  onlyProblems: false,
   minMm: null,
   maxMm: null,
 };
 
+/** A member that needs attention or review (and is not ignored). */
+export function isProblem(p: Piece): boolean {
+  return (
+    !p.ignored &&
+    (p.build_state === "attention" || p.build_state === "needs_review")
+  );
+}
+
 export function visible(p: Piece, l: Layers): boolean {
   if (p.deleted) return false;
+  if (l.onlyProblems && !isProblem(p)) return false;
   if (isColumn(p)) return l.columns && !l.isolateUndefined;
   const undef = isUndefinedBeam(p);
   if (l.isolateUndefined && !undef) return false;
@@ -460,6 +477,139 @@ export function markColour(p: Piece): string {
   if (p.build_state === "attention") return "var(--attention)";
   if (p.build_state === "needs_review") return "var(--review)";
   return isColumn(p) ? "var(--column)" : "var(--beam)";
+}
+
+// ---- marks: weight by state and zoom (Phase 11c polish round) ----------------------------------
+/** A member mark is this wide on paper, in page points ... */
+export const MARK_PT = 2;
+/** ... kept between these widths on screen, in CSS px ... */
+export const MARK_MIN_PX = 1.25;
+export const MARK_MAX_PX = 4;
+/** ... and this wide when hovered or selected. */
+export const MARK_ON_PX = 6;
+/** A column symbol is this tall on screen at every zoom. */
+export const COLUMN_PX = 14;
+
+/** Only "attention" (red) glows; review is a plain orange line, found the kind colour. */
+export function hasGlow(p: Piece): boolean {
+  return !p.ignored && p.build_state === "attention";
+}
+
+/** The on-screen width of a mark in CSS px: thin at low zoom, never thicker than MARK_MAX_PX. */
+export function markWidthPx(zoom: number, wide = false): number {
+  if (wide) return MARK_ON_PX;
+  return Math.min(MARK_MAX_PX, Math.max(MARK_MIN_PX, MARK_PT * zoom));
+}
+
+/** Dash and gap of an undefined beam, scaled with its width (CSS px). */
+export function dashPx(widthPx: number): [number, number] {
+  return [widthPx * 3, widthPx * 2];
+}
+
+const normSize = (s: string) =>
+  s.toUpperCase().replace(/\s+/g, "").replace(/×/g, "X");
+
+/** Does our read size differ from the label text on the drawing? The drawing's text starts with the
+ * size ("W18X35", "W18X35 (10)", "W18X35 C=3/4"); spaces and case do not count. A size with no
+ * label text (typed by a person) differs, and so do studs other than the label's. */
+export function labelDiffers(p: Piece): boolean {
+  if (!p.profile) return false;
+  if (!p.profile_raw) return true;
+  const raw = normSize(p.profile_raw);
+  const size = normSize(p.profile);
+  if (!raw.startsWith(size)) return true;
+  const next = raw.charAt(size.length);
+  if (next !== "" && /[0-9./X]/.test(next)) return true; // W18X35 is not W18X350
+  const read = p.evidence?.studs?.count ?? null;
+  return p.studs !== null && p.studs !== read;
+}
+
+/** Write the read size beside a beam? When it differs from the drawing, on hover or selection,
+ * or with "Show all read sizes". */
+export function showSizeLabel(
+  p: Piece,
+  o: { hover: boolean; on: boolean; allSizes: boolean },
+): boolean {
+  if (!p.profile) return false;
+  return o.allSizes || o.hover || o.on || labelDiffers(p);
+}
+
+// ---- setup chips of a view (the page card) -------------------------------------------------------
+export type ChipState = "ok" | "system" | "missing";
+export interface SetupChip {
+  key: "role" | "crop" | "scale" | "pen" | "column_plan" | "tos";
+  label: string;
+  state: ChipState;
+  tip: string;
+}
+
+/** The setup of a view as chips: green when a person confirmed it, grey when the system set it,
+ * red when missing. Pen, Column plan and T.O.S. only for framing; only Role when nothing builds. */
+export function setupChips(
+  v: Pick<
+    PageViewInfo,
+    | "role_name"
+    | "behaviour"
+    | "box"
+    | "scale_ratio"
+    | "pens"
+    | "no_beams"
+    | "column_plan_sheet_id"
+    | "column_plan_view_id"
+    | "tos_mm"
+    | "system_values"
+  >,
+): SetupChip[] {
+  const sys = new Set(v.system_values);
+  const chip = (
+    key: SetupChip["key"],
+    label: string,
+    has: boolean,
+    sysKey: string,
+    what: string,
+  ): SetupChip => {
+    const state: ChipState = !has
+      ? "missing"
+      : sys.has(sysKey)
+        ? "system"
+        : "ok";
+    const tip =
+      state === "missing"
+        ? `${what}: missing`
+        : state === "system"
+          ? `${what}: set by the system, not confirmed`
+          : `${what}: confirmed`;
+    return { key, label, state, tip };
+  };
+  const out = [chip("role", "Role", v.role_name !== null, "role", "Role")];
+  if (v.behaviour !== "framing" && v.behaviour !== "column_plan") return out;
+  out.push(chip("crop", "Crop", v.box !== null, "crop", "Crop"));
+  out.push(chip("scale", "Scale", v.scale_ratio !== null, "scale", "Scale"));
+  if (v.behaviour === "framing") {
+    out.push(
+      chip(
+        "pen",
+        "Pen",
+        v.no_beams || v.pens.length > 0,
+        "pen_class",
+        "Beam pen",
+      ),
+    );
+    // "None" is a valid column plan once a person chose it; unchosen and empty is missing
+    const linked =
+      v.column_plan_sheet_id !== null || v.column_plan_view_id !== null;
+    out.push(
+      chip(
+        "column_plan",
+        "Column plan",
+        linked || !sys.has("column_plan"),
+        "column_plan",
+        "Column plan",
+      ),
+    );
+    out.push(chip("tos", "T.O.S.", v.tos_mm !== null, "tos", "Top of Steel"));
+  }
+  return out;
 }
 
 // ---- issue navigator ----------------------------------------------------------------------------

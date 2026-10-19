@@ -786,100 +786,147 @@ h4 {
   overflow: auto;
   background: var(--canvas);
   position: relative;
+  /* panning (hand, Space, wheel, middle drag) replaces the scrollbars */
+  scrollbar-width: none;
 }
 
-.canvas-chip {
-  position: absolute;
-  top: 12px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 15;
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  background: rgba(255, 255, 255, 0.95);
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  padding: 5px 14px;
-  box-shadow: 0 2px 10px rgba(15, 26, 46, 0.12);
-  white-space: nowrap;
-  max-width: calc(100% - 140px);
-  overflow: hidden;
+.viewport::-webkit-scrollbar {
+  display: none;
 }
 
-.zoom-card {
-  position: absolute;
-  right: 14px;
-  bottom: 14px;
-  z-index: 15;
+/* the slim bar above the canvas: page title, navigator, hint; zoom and Fit on the right */
+.canvas-bar {
+  height: 40px;
+  flex: none;
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 12px;
+  padding: 0 10px 0 14px;
   background: #fff;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 4px;
-  box-shadow: 0 2px 10px rgba(15, 26, 46, 0.12);
-}
-
-.zoom-card button {
-  border: none;
-  width: 30px;
-  height: 30px;
-  padding: 0;
-  display: grid;
-  place-items: center;
-  color: var(--icon);
-}
-
-.zoom-card .zoom-box {
-  width: 56px;
-  text-align: center;
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  padding: 3px 4px;
-  background: transparent;
-}
-
-.zoom-card .zoom-box:focus {
-  border-color: var(--accent);
-  color: var(--text);
-  outline: none;
-}
-
-/* the issue navigator: a pill at the top centre of the canvas */
-.navigator {
-  position: absolute;
-  top: 54px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 16;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  background: var(--shell);
-  color: #fff;
-  border-radius: 999px;
-  padding: 4px 6px;
-  box-shadow: 0 4px 16px rgba(15, 26, 46, 0.3);
+  border-bottom: 1px solid var(--line);
   white-space: nowrap;
+  min-width: 0;
+  z-index: 15;
 }
 
-.navigator button {
+.canvas-bar .title {
+  font-size: 14px;
+}
+
+.canvas-bar .hint {
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.canvas-bar .measure {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.canvas-bar .building {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.spin {
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.zoom-group {
   display: flex;
   align-items: center;
   gap: 2px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 2px;
+}
+
+.zoom-group button {
   border: none;
-  border-radius: 999px;
-  background: var(--shell-3);
-  color: #fff;
-  padding: 4px 10px;
+  height: 26px;
+  min-width: 26px;
+  padding: 0 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  color: var(--icon);
+  background: transparent;
+  border-radius: 6px;
+}
+
+.zoom-group button:hover,
+.canvas-bar .help:hover {
+  background: #eef0f5;
+}
+
+.zoom-group .fit {
+  border-left: 1px solid var(--line);
+  border-radius: 0 6px 6px 0;
+  font-size: 12px;
+}
+
+.zoom-group .zoom-box {
+  width: 52px;
+  text-align: center;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 2px 4px;
+  background: transparent;
+}
+
+.zoom-group .zoom-box:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.canvas-bar .help {
+  border: none;
+  background: transparent;
+  color: var(--icon);
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+}
+
+/* the issue navigator, in the bar */
+.navigator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.navigator button {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--text);
+  padding: 2px 8px;
+  height: 26px;
 }
 
 .navigator button:hover {
-  background: var(--shell-on);
+  background: #eef0f5;
 }
 
 .navigator .n-attention {
@@ -887,13 +934,55 @@ h4 {
 }
 
 .navigator .n-review {
-  color: var(--review);
+  color: #e65100;
 }
 
-/* the bar of a tool (Pick beam, Exclude area) under the page chip */
+/* the keyboard shortcut sheet ("?") */
+.shortcuts {
+  position: absolute;
+  top: 48px;
+  right: 12px;
+  z-index: 40;
+  width: 380px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 12px;
+  box-shadow: 0 8px 28px rgba(15, 26, 46, 0.2);
+}
+
+.shortcuts table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 6px;
+}
+
+.shortcuts td {
+  padding: 3px 4px;
+  vertical-align: top;
+}
+
+.shortcuts td:first-child {
+  white-space: nowrap;
+  width: 1%;
+}
+
+kbd {
+  display: inline-block;
+  font:
+    600 11px/1.4 ui-monospace,
+    monospace;
+  background: #f3f4f7;
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  padding: 0 5px;
+}
+
+/* the bar of a tool (Pick beam, Exclude area, Edit box) under the canvas bar */
 .tool-bar {
   position: absolute;
-  top: 54px;
+  top: 50px;
   left: 64px;
   z-index: 16;
   display: flex;
@@ -973,7 +1062,7 @@ button.link {
 .toolbar {
   position: absolute;
   left: 12px;
-  top: 64px;
+  top: 52px;
   z-index: 20;
   background: #fff;
   border: 1px solid #e5e7eb;
@@ -1465,12 +1554,82 @@ table.grid tr.total td {
 }
 
 .view-chip {
+  position: relative;
   display: inline-flex;
   align-items: center;
   border: 1px solid var(--shell-line);
   border-radius: 999px;
   background: var(--shell-input);
-  overflow: hidden;
+}
+
+.view-chip input {
+  width: 110px;
+  font-size: 12px;
+  padding: 1px 6px;
+  border-radius: 999px;
+}
+
+.view-chip .view-menu {
+  left: 0;
+  right: auto;
+  top: calc(100% + 4px);
+  min-width: 190px;
+}
+
+.menu button.danger {
+  color: #b42318;
+}
+
+.menu button:disabled {
+  color: var(--muted);
+  background: transparent;
+}
+
+/* setup of the active view as chips: green confirmed, grey system, red missing */
+.page-card .chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.page-card .chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  border-radius: 999px;
+  padding: 3px 7px;
+  border: 1px solid transparent;
+}
+
+.page-card .chip.ok {
+  background: rgba(0, 200, 83, 0.16);
+  color: #69f0ae;
+  border-color: rgba(0, 200, 83, 0.45);
+}
+
+.page-card .chip.system {
+  background: var(--shell-input);
+  color: var(--shell-muted);
+  border-color: var(--shell-line);
+}
+
+.page-card .chip.missing {
+  background: rgba(255, 23, 68, 0.16);
+  color: #ff8a80;
+  border-color: rgba(255, 23, 68, 0.55);
+}
+
+.page-card .card-note {
+  font-size: 11px;
+  color: var(--shell-muted);
+  padding: 0 10px 2px 86px;
+}
+
+.page-card .building-spin {
+  color: #82b1ff;
 }
 
 .view-chip button {

@@ -28,6 +28,7 @@ import {
 } from "./ProjectsScreen";
 import { PropertiesPanel } from "./PropertiesPanel";
 import { ReportTab } from "./ReportTab";
+import { undoneViewText } from "./Workspace";
 
 afterEach(() => {
   cleanup();
@@ -300,7 +301,7 @@ describe("page card", () => {
     expect(a.build).toHaveBeenCalled();
   });
 
-  it("shows Top of Steel, Scale and Status only on the selected card", () => {
+  it("shows Top of Steel, Scale and the setup chips only on the selected card", () => {
     const { rerender } = render(
       <PageCard
         page={page()}
@@ -322,7 +323,8 @@ describe("page card", () => {
       />,
     );
     expect(screen.getByLabelText("top of steel")).toBeTruthy();
-    expect(screen.getByText("Status")).toBeTruthy();
+    expect(screen.getByText("Setup")).toBeTruthy();
+    expect(screen.getByTestId("setup-chips")).toBeTruthy();
   });
 
   it("a skipped page shows Skip once", () => {
@@ -878,8 +880,8 @@ describe("canvas", () => {
     ].map((b) => b.getAttribute("aria-label"));
     expect(order).toEqual([
       "Select",
+      "Hand",
       "Layers",
-      "Fit",
       "Crop",
       "Pick beam",
       "Exclude area",
@@ -889,7 +891,16 @@ describe("canvas", () => {
       "Measure",
       "Undo",
     ]);
-    expect(screen.getByLabelText("Crop").getAttribute("data-tip")).toBe("Crop");
+    expect(screen.getByLabelText("Crop").getAttribute("data-tip")).toBe(
+      "Crop (C)",
+    );
+    expect(screen.getByLabelText("Hand").getAttribute("data-tip")).toBe(
+      "Hand (H)",
+    );
+    // Fit and the zoom box sit in the bar above the canvas, not over the drawing
+    const bar = screen.getByTestId("canvas-bar");
+    expect(bar.querySelector("[aria-label=Fit]")).toBeTruthy();
+    expect(bar.querySelector("[aria-label='zoom percent']")).toBeTruthy();
     expect(screen.getByLabelText("Select").className).toBe("on");
     const undo = screen.getByLabelText("Undo");
     expect(undo.textContent).toContain("3");
@@ -1032,5 +1043,335 @@ describe("canvas", () => {
     );
     fireEvent.click(screen.getByText("Reset deselections (2)"));
     expect(onReset).toHaveBeenCalled();
+  });
+});
+
+// ---- Phase 11c polish round -----------------------------------------------------------------------
+const pview = (over: Partial<PageViewInfo> = {}): PageViewInfo => ({
+  id: "v1",
+  position: 1,
+  name: "View 1",
+  box: { x0: 100, y0: 100, x1: 500, y1: 400 },
+  role_name: "Framing plan",
+  behaviour: "framing",
+  scale_ratio: 96,
+  scale_text: null,
+  tos_mm: 4000,
+  tos_raw: null,
+  pens: [{ pen_class: "p", position: 1, source: "person" }],
+  no_beams: false,
+  column_plan_view_id: null,
+  column_plan_sheet_id: "c1",
+  exclusions: [],
+  deselections: [],
+  setup_changed_at: null,
+  built_at: null,
+  badge: "Built",
+  reasons: [],
+  system_values: [],
+  counts: page().counts,
+  ...over,
+});
+
+function canvasWith(over: Partial<React.ComponentProps<typeof Canvas>> = {}) {
+  const noop = () => undefined;
+  const props: React.ComponentProps<typeof Canvas> = {
+    pdf: null,
+    page: page(),
+    data: {
+      sheet_id: "s1",
+      crop: null,
+      pen_class: null,
+      tos_mm: null,
+      scale_ratio: 96,
+      grid_lines: [],
+      pieces: [],
+      views: [pview()],
+    },
+    lines: null,
+    layers: ALL_LAYERS,
+    onLayers: noop,
+    selected: new Set(),
+    onSelect: noop,
+    pendingEdits: 2,
+    onCrop: noop,
+    onPick: noop,
+    onDraw: noop,
+    onEnds: noop,
+    onUndo: noop,
+    onDeleteSelected: noop,
+    ...over,
+  };
+  return render(<Canvas {...props} />);
+}
+
+describe("polish round: hand, keys, cancel", () => {
+  it("H picks the hand; Space held shows the hand in any tool and release goes back", () => {
+    canvasWith();
+    fireEvent.keyDown(window, { key: "b" });
+    expect(screen.getByLabelText("Draw beam").className).toBe("on");
+    fireEvent.keyDown(window, { key: " " });
+    expect(screen.getByLabelText("Hand").className).toBe("on");
+    expect(screen.getByLabelText("Draw beam").className).toBe("");
+    expect(screen.getByTestId("canvas-bar").textContent).toContain(
+      "Drag to move the page",
+    );
+    fireEvent.keyUp(window, { key: " " });
+    expect(screen.getByLabelText("Draw beam").className).toBe("on");
+    expect(screen.getByLabelText("Hand").className).toBe("");
+    fireEvent.keyDown(window, { key: "h" });
+    expect(screen.getByLabelText("Hand").className).toBe("on");
+    fireEvent.keyDown(window, { key: "v" });
+    expect(screen.getByLabelText("Select").className).toBe("on");
+  });
+
+  it("Esc cancels a view box being drawn; Ctrl+Z undoes; ? opens the shortcut sheet", () => {
+    const onUndo = vi.fn();
+    const onAddView = vi.fn();
+    canvasWith({ onUndo, onAddView, toolAsk: { tool: "view", n: 1 } });
+    expect(screen.getByLabelText("Add view").className).toBe("on");
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.getByLabelText("Select").className).toBe("on");
+    expect(onAddView).not.toHaveBeenCalled();
+    fireEvent.keyDown(window, { key: "z", ctrlKey: true });
+    expect(onUndo).toHaveBeenCalledTimes(1);
+    fireEvent.keyDown(window, { key: "?" });
+    expect(screen.getByTestId("shortcuts").textContent).toContain(
+      "Hand while held",
+    );
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByTestId("shortcuts")).toBeNull();
+  });
+
+  it("Edit box shows the active view's box with handles; Done leaves it", () => {
+    const { container } = canvasWith({
+      pdf: { getPage: () => new Promise(() => undefined) } as never,
+      toolAsk: { tool: "editBox", n: 1 },
+    });
+    expect(screen.getByTestId("editbox-bar").textContent).toContain("View 1");
+    expect(
+      container.querySelectorAll("[data-testid=edit-box] rect"),
+    ).toHaveLength(9);
+    fireEvent.click(screen.getByText("Done"));
+    expect(screen.queryByTestId("edit-box")).toBeNull();
+  });
+
+  it("a building view shows a spinner in the canvas bar", () => {
+    canvasWith({ building: true });
+    expect(screen.getByTestId("canvas-building").textContent).toContain(
+      "Building",
+    );
+  });
+});
+
+describe("polish round: marks", () => {
+  it("only an attention member glows", () => {
+    const { container } = render(
+      <svg>
+        <PieceMark p={piece({ id: "f" })} px={1} on={false} labels />
+        <PieceMark
+          p={piece({ id: "r", tag: "R", build_state: "needs_review" })}
+          px={1}
+          on={false}
+          labels
+        />
+        <PieceMark
+          p={piece({ id: "x", tag: "X", build_state: "attention" })}
+          px={1}
+          on={false}
+          labels
+        />
+        <PieceMark
+          p={piece({
+            id: "c",
+            tag: "C",
+            type: "column",
+            build_state: "attention",
+            b: null,
+          })}
+          px={1}
+          on={false}
+          labels
+        />
+        <PieceMark
+          p={piece({
+            id: "d",
+            tag: "D",
+            type: "column",
+            b: null,
+            build_state: "needs_review",
+          })}
+          px={1}
+          on={false}
+          labels
+        />
+      </svg>,
+    );
+    const glowing = [...container.querySelectorAll("[data-testid=glow]")].map(
+      (g) => g.closest("[data-state]")!.getAttribute("data-state"),
+    );
+    expect(glowing).toEqual(["attention", "attention"]);
+  });
+
+  it("the read size is written only where it differs, or on hover / select / Show all", () => {
+    const same = piece({
+      studs: 12,
+      evidence: { studs: { raw: "(12)", count: 12 } },
+    });
+    const changed = piece({ id: "b2", tag: "B2", profile: "W18X35" });
+    const labels = (el: HTMLElement) =>
+      [...el.querySelectorAll("[data-testid=size-label]")].map(
+        (t) => t.textContent,
+      );
+    const a = render(
+      <svg>
+        <PieceMark p={same} px={1} on={false} labels />
+        <PieceMark p={changed} px={1} on={false} labels />
+      </svg>,
+    );
+    expect(labels(a.container)).toEqual(["w18x35 <12>"]);
+    a.unmount();
+    const b = render(
+      <svg>
+        <PieceMark p={same} px={1} on={false} hover labels />
+        <PieceMark p={same} px={1} on labels />
+        <PieceMark p={same} px={1} on={false} labels allSizes />
+        <PieceMark p={changed} px={1} on={false} labels={false} />
+      </svg>,
+    );
+    expect(labels(b.container)).toEqual([
+      "w16x26 <12>",
+      "w16x26 <12>",
+      "w16x26 <12>",
+    ]);
+  });
+
+  it("the mark is thin at low zoom and capped at high zoom (screen px)", () => {
+    const width = (px: number) => {
+      const { container, unmount } = render(
+        <svg>
+          <PieceMark p={piece({})} px={px} on={false} labels={false} />
+        </svg>,
+      );
+      // the coloured line: the one with the kind colour
+      const line = [...container.querySelectorAll("line")].find(
+        (l) => l.getAttribute("stroke") === "var(--beam)",
+      )!;
+      const w = Number(line.getAttribute("stroke-width")) / px;
+      unmount();
+      return w;
+    };
+    expect(width(1 / 0.3)).toBeCloseTo(1.25);
+    expect(width(1 / 1.2)).toBeCloseTo(2.4);
+    expect(width(1 / 6)).toBeCloseTo(4);
+  });
+});
+
+describe("polish round: views on the card", () => {
+  const twoViews = () =>
+    page({
+      views: [
+        pview(),
+        pview({ id: "v2", position: 2, name: "View 2", badge: "Building" }),
+      ],
+    });
+  const card = (a: PageActions, p = twoViews()) =>
+    render(
+      <PageCard
+        page={p}
+        columnPlans={[]}
+        selected
+        onSelect={() => undefined}
+        actions={a}
+        activeViewId="v1"
+        onActiveView={() => undefined}
+      />,
+    );
+
+  it("a view chip menu: Rename, Edit box, Delete; View 1 offers Reset box instead of Delete", () => {
+    const a = {
+      ...actions(),
+      deleteView: vi.fn(),
+      renameView: vi.fn(),
+      editBox: vi.fn(),
+      resetBox: vi.fn(),
+    };
+    card(a);
+    fireEvent.click(screen.getByLabelText("View 2 menu"));
+    const menu = screen.getByTestId("view-menu");
+    expect(menu.textContent).toContain("Delete view");
+    fireEvent.click(within(menu).getByText("Delete view"));
+    expect(a.deleteView).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "s1" }),
+      "v2",
+    );
+    fireEvent.click(screen.getByLabelText("View 1 menu"));
+    const m1 = screen.getByTestId("view-menu");
+    expect(m1.textContent).not.toContain("Delete");
+    fireEvent.click(within(m1).getByText("Reset box to page crop"));
+    expect(a.resetBox).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "s1" }),
+      "v1",
+    );
+    fireEvent.click(screen.getByLabelText("View 1 menu"));
+    fireEvent.click(
+      within(screen.getByTestId("view-menu")).getByText("Edit box"),
+    );
+    expect(a.editBox).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "s1" }),
+      "v1",
+    );
+    fireEvent.click(screen.getByLabelText("View 2 menu"));
+    fireEvent.click(
+      within(screen.getByTestId("view-menu")).getByText("Rename"),
+    );
+    const input = screen.getByLabelText("rename View 2");
+    fireEvent.change(input, { target: { value: "Partial plan" } });
+    fireEvent.blur(input);
+    expect(a.renameView).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "s1" }),
+      "v2",
+      "Partial plan",
+    );
+  });
+
+  it("while a view builds: a spinner on the card and ▶ disabled", () => {
+    card(actions());
+    expect(screen.getByTestId("card-building")).toBeTruthy();
+    expect(
+      (screen.getByLabelText("build page") as HTMLButtonElement).disabled,
+    ).toBe(true);
+  });
+
+  it("setup chips: green, grey, red", () => {
+    card(
+      actions(),
+      page({
+        views: [pview({ system_values: ["scale"], tos_mm: null })],
+      }),
+    );
+    const chips = [...screen.getByTestId("setup-chips").children].map(
+      (c) => `${c.textContent}:${c.getAttribute("data-state")}`,
+    );
+    expect(chips).toEqual([
+      "Role:ok",
+      "Crop:ok",
+      "Scale:system",
+      "Pen:ok",
+      "Column plan:ok",
+      "!T.O.S.:missing",
+    ]);
+  });
+
+  it("the undo toast names what a view undo did", () => {
+    const base = { applied: true, pieces_restored: 0, pieces_removed: 0 };
+    expect(
+      undoneViewText({ ...base, kind: "delete", pieces_restored: 12 }),
+    ).toBe("View restored with 12 pieces");
+    expect(undoneViewText({ ...base, kind: "add" })).toBe("View add undone");
+    expect(undoneViewText({ ...base, kind: "box" })).toBe("View box put back");
+    expect(undoneViewText({ ...base, kind: "box", applied: false })).toContain(
+      "already changed",
+    );
   });
 });
