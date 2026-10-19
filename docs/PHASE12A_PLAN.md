@@ -58,6 +58,14 @@ phase11r-job-018 stays archived and intact.
 
 ## 4. Deviations (to be repeated in the results)
 
+- Crash fix after the first after-run (allowed by section 3; it does not use any count): on four
+  job-018 column-plan pages the build failed with a unique-id violation because a hole drawn round
+  each bolt made a second set of four rings at the same corners, so two plates (two columns) had the
+  same centre. Now a ring inside a plate already found is part of that plate. No constant changed.
+  The crashed copies were renamed `…-crashed` and archived; the after runs were redone on fresh
+  copies (`p12a-after2-job-018`, `phase12-job-018`, `demo3-job-018`). job-015 and job-020 had no
+  failure; their first after runs stand.
+
 - Rule 4 changes a proposal default of auto mode (column-plan pages: no beam pen).
 - Rules 1, 2, 3, 6, 7 change what the build finds (`RULES_VERSION` phase12a-build-v1); runs made with
   phase11-build-v1 are not rebuilt.

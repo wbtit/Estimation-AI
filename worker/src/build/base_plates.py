@@ -10,7 +10,8 @@ the corners of a rectangle (two by two on its two axes, the axes at right angles
 BOLT_RECT_DEG, corners within BOLT_CORNER_TOL_PT of the rectangle) with sides BOLT_SIDE_MIN_IN to
 BOLT_SIDE_MAX_IN mark ONE column at the rectangle's centre. The plate is the bolt rectangle grown by
 PLATE_GROW_X times its larger side (the plate drawn around the bolts lies inside); every line inside
-it (the plate, the bolts, the column's own outline) belongs to the column and is never a beam. The
+it (the plate, the bolts, the column's own outline) belongs to the column and is never a beam, and
+every other ring inside it (a hole or washer round a bolt) is part of the same plate. The
 shape inside the bolts sets the column's section type: a small rectangle (sides joined at right
 angles) -> "HSS"; an I (two parallel lines joined at their middles by a third)
 -> "W"; else none. Its size still comes from the labels. A base-plate column with no grid crossing
@@ -173,7 +174,9 @@ def find_base_plates(ps: PageSegments, ratio: float, crossings: list[Crossing]) 
     used: set[int] = set()
     out: list[BasePlate] = []
     for k, r in enumerate(rings):
-        if k in used:
+        # a ring inside a plate already found is part of it (a hole or washer drawn round a bolt
+        # makes a second ring at each corner): one column per plate
+        if k in used or any(_inside(p.plate, r.centre) for p in out):
             continue
         near = [
             j

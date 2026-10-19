@@ -230,6 +230,17 @@ def test_a_base_plate_is_one_column_at_its_centre_with_the_section_type_of_its_o
     assert pb.counts()["base_plate_columns"] == 3 and pb.lines == []
 
 
+def test_a_bolt_drawn_with_a_hole_round_it_is_still_one_plate_and_one_column():
+    doc, page = _page()
+    _base_plate(page, (300, 400))
+    b = 12 / 12 * QFT / 2
+    for dx in (-b, b):  # a 3 pt hole round each bolt: a second set of four rings, same centre
+        for dy in (-b, b):
+            _ring(page, (300 + dx, 400 + dy), 3.0)
+    pb = _build(page, role="column_plan", ratio=QUARTER)
+    assert pb.counts()["base_plates"] == 1 and len(pb.columns) == 1
+
+
 def test_three_bolts_or_bolts_of_different_sizes_are_not_a_base_plate():
     doc, page = _page()
     b = 6.0
