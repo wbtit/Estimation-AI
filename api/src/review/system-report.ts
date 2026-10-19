@@ -6,7 +6,8 @@
 //   line, and an overlap of at least MATCH_OVERLAP of the shorter piece;
 //   columns: centres within MATCH_OFFSET_PT;
 // the closest pair (distance between middles) is matched first.
-// Classes of a system piece: kept unchanged / size changed / length changed (more than 1 inch; a
+// Classes of a system piece: kept unchanged / confirmed unchanged by person (a person approved it
+// and its size and length are the system's) / size changed / length changed (more than 1 inch; a
 // piece can be both) / deleted by person / ignored / removed by rebuild (no final match). Final
 // pieces with no system match: added by person (drawn) or added by rebuild (a later build); ones a
 // person deleted again are counted apart.
@@ -23,6 +24,7 @@ export const IDLE_SECONDS = 300;
 
 export type SystemClass =
   | 'kept_unchanged'
+  | 'confirmed_unchanged'
   | 'size_changed'
   | 'length_changed'
   | 'size_and_length_changed'
@@ -59,6 +61,7 @@ export interface PageReport {
   system_pieces: number;
   final_pieces: number;
   kept_unchanged: number;
+  confirmed_unchanged: number;
   size_changed: number;
   length_changed: number;
   deleted_by_person: number;
@@ -195,7 +198,7 @@ export function classify(s: SnapshotPiece, f: PieceView | undefined): SystemClas
   if (size && length) return 'size_and_length_changed';
   if (size) return 'size_changed';
   if (length) return 'length_changed';
-  return 'kept_unchanged';
+  return f.approved ? 'confirmed_unchanged' : 'kept_unchanged';
 }
 
 function setupChanged(a: SetupValues, b: SetupValues): (keyof SetupValues)[] {
@@ -270,6 +273,7 @@ export function systemReport(
       system_pieces: pg.system.length,
       final_pieces: final.filter((f) => !f.deleted && !f.ignored).length,
       kept_unchanged: 0,
+      confirmed_unchanged: 0,
       size_changed: 0,
       length_changed: 0,
       deleted_by_person: 0,
@@ -323,6 +327,7 @@ export function systemReport(
     system_pieces: sum('system_pieces'),
     final_pieces: sum('final_pieces'),
     kept_unchanged: sum('kept_unchanged'),
+    confirmed_unchanged: sum('confirmed_unchanged'),
     size_changed: sum('size_changed'),
     length_changed: sum('length_changed'),
     deleted_by_person: sum('deleted_by_person'),

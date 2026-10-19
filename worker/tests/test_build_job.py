@@ -204,6 +204,34 @@ def test_rebuild_keeps_ids_and_never_touches_an_edited_piece(dbp: DbProject) -> 
     assert kept["updated_at"] == edited["updated_at"] and kept["beam_line_id"] is not None
 
 
+def test_rebuild_never_changes_an_approved_piece(dbp: DbProject) -> None:
+    """Approve (a member edit row 'approved', Phase 11c) is a person's touch like any edit."""
+    plan_id, framing_id = _pdf(dbp)
+    _setup(dbp, plan_id, "column_plan", tos=False, pen=False)
+    _run(dbp, plan_id)
+    _setup(dbp, framing_id, "framing")
+    _run(dbp, framing_id)
+    before = {m["member_id"]: m for m in _members(dbp, framing_id)}
+    right = [m for m in before.values() if min(float(m["page_x0"]), float(m["page_x1"])) >= 520]
+    approved = right[0]
+    dbp.conn.execute(
+        "INSERT INTO member_edits (member_id, field_name, original_value, corrected_value,"
+        " review_status, reviewer) VALUES (%s, 'approved', %s, %s, 'edited', 'tester')",
+        (approved["id"], Jsonb(False), Jsonb(True)),
+    )
+    dbp.conn.execute(
+        "UPDATE build_views SET box = %s WHERE sheet_id = %s AND position = 1",
+        (Jsonb({"x0": 40, "y0": 40, "x1": 520, "y1": 760}), framing_id),
+    )
+    dbp.conn.commit()
+    _, out = _run(dbp, framing_id)
+    now = {m["member_id"]: m for m in _members(dbp, framing_id)}
+    assert out["removed"] > 0  # its untouched neighbours outside the crop went
+    kept = now[approved["member_id"]]  # outside the new crop, still there and unchanged
+    assert kept["id"] == approved["id"] and kept["updated_at"] == approved["updated_at"]
+    assert all(k == approved["member_id"] or k not in now for k in (m["member_id"] for m in right))
+
+
 def test_job_payload_and_unknown_run(dbp: DbProject) -> None:
     from src.build.job import BuildError, run_build_sheet
 

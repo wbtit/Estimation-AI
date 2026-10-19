@@ -5,6 +5,8 @@
 // deleted) plus the line-first fields kept here:
 //   studs, camber_raw   the size label's extras, as a person typed them
 //   ignored             on the page, grey, out of the BOM
+//   approved            a person confirmed the member as built (it stays approved through later
+//                       edits of its size, type, studs, camber or ends; Unapprove or Undo removes it)
 //   page_ends           { a: [x, y], b: [x, y] | null } a person moved an end (displayed page points)
 // Length = support-to-support: the 3D distance of the stored plan end points (both ends at the page
 // T.O.S., so with no T.O.S. it is the plan length), or after a moved end the page distance x the
@@ -31,6 +33,8 @@ export interface PieceView {
   studs: number | null;
   camber_raw: string | null;
   ignored: boolean;
+  /** A person confirmed it (Approve). */
+  approved: boolean;
   deleted: boolean;
   /** Drawn by a person in the review UI. */
   added: boolean;
@@ -93,7 +97,7 @@ export function lineFirstEdits(
 ): Map<string, unknown> {
   const out = new Map<string, unknown>();
   for (const r of rows)
-    if (['studs', 'camber_raw', 'ignored', 'page_ends'].includes(r.field_name))
+    if (['studs', 'camber_raw', 'ignored', 'approved', 'page_ends'].includes(r.field_name))
       out.set(r.field_name, r.corrected_value);
   return out;
 }
@@ -179,6 +183,7 @@ export async function loadPieces(
       studs: studs ?? null,
       camber_raw: camber ?? null,
       ignored: lf.has('ignored') ? lf.get('ignored') === true : r.ignored,
+      approved: lf.get('approved') === true,
       deleted: v.deleted,
       added: r.added_by !== null,
       edited: own.length > 0,
@@ -224,5 +229,6 @@ export function toBuiltPiece(p: PieceView): BuiltPiece {
     size_state: p.size_state,
     support_state: p.support_state,
     piece_index: p.piece_index,
+    approved: p.approved,
   };
 }

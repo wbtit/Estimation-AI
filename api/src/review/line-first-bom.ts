@@ -40,6 +40,8 @@ export interface BuiltPiece {
   size_state: string | null;
   support_state: string | null;
   piece_index: number | null;
+  /** A person confirmed it (Approve); optional for callers that do not know. */
+  approved?: boolean;
 }
 
 export interface LineFirstBomRow {
@@ -55,7 +57,10 @@ export interface LineFirstBomRow {
   weight_lb: number | null;
   unit_w_lb_ft: number | null;
   member: string;
+  /** The piece's row id (the review UI selects pieces by it). */
+  piece_id: string;
   sheet_id: string | null;
+  approved: boolean;
   build_state: BuiltPiece['build_state'];
   size_state: string | null;
   support_state: string | null;
@@ -141,7 +146,9 @@ export function lineFirstBom(
           : (shape.weight_lb_per_ft ??
             Math.round(((shape.weight_kg_per_m * 0.3048) / KG_PER_LB) * 1000) / 1000),
       member: p.member_id,
+      piece_id: p.id,
       sheet_id: p.sheet_id,
+      approved: p.approved === true,
       build_state: p.build_state,
       size_state: p.size_state,
       support_state: p.support_state,

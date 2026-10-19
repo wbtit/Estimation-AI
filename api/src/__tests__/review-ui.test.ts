@@ -117,6 +117,7 @@ function fin(over: Partial<PieceView>): PieceView {
     studs: null,
     camber_raw: null,
     ignored: false,
+    approved: false,
     deleted: false,
     added: false,
     edited: false,
@@ -177,6 +178,8 @@ describe('system vs final report', () => {
       sys({ member_id: 'del', page: [100, 180, 300, 180] }),
       sys({ member_id: 'ign', page: [100, 200, 300, 200] }),
       sys({ member_id: 'gone', page: [100, 400, 300, 400] }),
+      sys({ member_id: 'conf', page: [100, 220, 300, 220] }),
+      sys({ member_id: 'conf-size', page: [100, 240, 300, 240] }),
     ];
     const final = [
       fin({ member_id: 'kept', length_mm: 6096 + 20 }), // within 1 inch
@@ -185,6 +188,10 @@ describe('system vs final report', () => {
       fin({ member_id: 'both', profile: 'W18X35', length_mm: 5000 }),
       fin({ member_id: 'del', deleted: true }),
       fin({ member_id: 'ign', ignored: true }),
+      // approved, size and length the system's: confirmed unchanged by person
+      fin({ member_id: 'conf', approved: true, edited: true }),
+      // approved after a size change: a size change, not a confirmation
+      fin({ member_id: 'conf-size', approved: true, edited: true, profile: 'W21X44' }),
       fin({ member_id: 'drawn', added: true, a: [400, 0], b: [400, 300] }),
       fin({ member_id: 'rebuilt', a: [500, 0], b: [500, 300] }),
       fin({ member_id: 'drawn-del', added: true, deleted: true, a: [450, 0], b: [450, 300] }),
@@ -207,10 +214,11 @@ describe('system vs final report', () => {
     );
     const p = r.pages[0]!;
     expect(p).toMatchObject({
-      system_pieces: 7,
-      final_pieces: 6,
+      system_pieces: 9,
+      final_pieces: 8,
       kept_unchanged: 1,
-      size_changed: 2,
+      confirmed_unchanged: 1,
+      size_changed: 3,
       length_changed: 2,
       deleted_by_person: 1,
       ignored: 1,
@@ -221,10 +229,11 @@ describe('system vs final report', () => {
     });
     expect(p.setup_changed).toEqual(['pen_class', 'tos_mm']);
     expect(r.total.pages_with_setup_changes).toBe(1);
+    expect(r.total.confirmed_unchanged).toBe(1);
     const w16 = r.sizes.find((s) => s.size === 'W16X26')!;
-    expect(w16.system_count).toBe(7);
-    // final W16X26: kept, len, del (deleted, out), ign (ignored, out), drawn, rebuilt
-    expect(w16.final_count).toBe(4);
+    expect(w16.system_count).toBe(9);
+    // final W16X26: kept, len, conf, drawn, rebuilt (del and ign are out)
+    expect(w16.final_count).toBe(5);
   });
 
   it('counts minutes per page from gaps on the same page, capped at 5 minutes', () => {
@@ -637,6 +646,64 @@ describe('review UI routes (test database)', () => {
     expect(back.find((p) => p.id === ids.one)!.studs).toBeNull();
   });
 
+  it('approves members as one logged, undoable action; an edit keeps them approved', async () => {
+    const before = await pageOf(framingId);
+    const res = await post('/line-first/pieces/edit', {
+      who: WHO,
+      member_ids: [ids.one, ids.two],
+      approved: true,
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().pieces.map((p: PieceView) => p.approved)).toEqual([true, true]);
+    const logRow = await db
+      .selectFrom('count_actions')
+      .select(['action', 'who', 'member_id', 'detail', 'edit_action_id'])
+      .where('project_id', '=', projectId)
+      .orderBy('id', 'desc')
+      .executeTakeFirstOrThrow();
+    expect(logRow).toMatchObject({
+      action: 'approve',
+      who: WHO,
+      member_id: null,
+      detail: { members: 2, changed: 2, fields: ['approved'], approved: true },
+    });
+    expect(logRow.edit_action_id).toBeTruthy();
+    // approved members are out of the found / review / attention counts
+    const page = await pageOf(framingId);
+    expect(page.counts.approved).toBe(before.counts.approved + 2);
+    expect(page.counts.found + page.counts.needs_review + page.counts.attention).toBe(
+      before.counts.found + before.counts.needs_review + before.counts.attention - 2,
+    );
+    expect(page.pending_edits).toBe(before.pending_edits + 1);
+    // the BOM row says so
+    const bom = (await get('/line-first/bom')).json();
+    const row = bom.rows.find((r: { piece_id: string }) => r.piece_id === ids.one);
+    expect(row.approved).toBe(true);
+    // a size edit keeps it approved; undo takes back the edit, then the approval
+    const ed = await post('/line-first/pieces/edit', {
+      who: WHO,
+      member_ids: [ids.one],
+      profile_text: 'W21X44',
+    });
+    expect(ed.json().pieces[0]).toMatchObject({ profile: 'W21X44', approved: true });
+    await post('/undo', { who: WHO });
+    await post('/undo', { who: WHO });
+    const back = (await get(`/sheets/${framingId}/line-first`)).json().pieces as PieceView[];
+    expect(back.find((p) => p.id === ids.one)).toMatchObject({
+      profile: 'W16X26',
+      approved: false,
+    });
+    expect(back.find((p) => p.id === ids.two)!.approved).toBe(false);
+    // approving again and then unapproving with the button is its own action
+    await post('/line-first/pieces/edit', { who: WHO, member_ids: [ids.two], approved: true });
+    const un = await post('/line-first/pieces/edit', {
+      who: WHO,
+      member_ids: [ids.two],
+      approved: false,
+    });
+    expect(un.json().pieces[0].approved).toBe(false);
+  });
+
   it('a typed size, a new kind with a tag from the counter, ignore and delete', async () => {
     const r1 = await post('/line-first/pieces/edit', {
       who: WHO,
@@ -657,6 +724,13 @@ describe('review UI routes (test database)', () => {
     expect(del.json().deleted).toBe(1);
     const shown = (await get(`/sheets/${framingId}/line-first`)).json().pieces as PieceView[];
     expect(shown.map((p) => p.id)).not.toContain(ids.one);
+    // a deleted piece is not approved
+    const ap = await post('/line-first/pieces/edit', {
+      who: WHO,
+      member_ids: [ids.one],
+      approved: true,
+    });
+    expect(ap.json().changed).toBe(false);
     const bad = await post('/line-first/pieces/edit', {
       who: WHO,
       member_ids: [ids.three],

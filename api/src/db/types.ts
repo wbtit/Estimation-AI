@@ -397,7 +397,8 @@ export type CountActionName =
   | 'ignore'
   | 'save'
   | 'view'
-  | 'role';
+  | 'role'
+  | 'approve';
 
 export interface SheetLinesTable {
   sheet_id: string;

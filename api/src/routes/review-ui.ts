@@ -89,7 +89,7 @@ const whoBody = {
 } as const;
 
 /** Member edit actions counted as "pending" (since the last save) and undoable. */
-const EDIT_ACTIONS = ['edit', 'delete', 'add', 'ignore'] as const;
+const EDIT_ACTIONS = ['edit', 'delete', 'add', 'ignore', 'approve'] as const;
 const NOT_EDITS = ['view', 'save'] as const;
 
 type Sheet = Selectable<SheetsTable>;
@@ -354,9 +354,12 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
             runs.find((r) => r.sheet_id === page.id && (r.view_id ?? firstViewId) === v.row.id) ??
             null;
           const ps = (piecesOf.get(s.id) ?? []).filter(counted);
+          // approved members are confirmed: they are not counted as found, review or attention
           const stateCounts = (list: PieceView[]) => {
-            const byState = (st: string) => list.filter((p) => p.build_state === st).length;
+            const byState = (st: string) =>
+              list.filter((p) => !p.approved && p.build_state === st).length;
             return {
+              approved: list.filter((p) => p.approved).length,
               pieces: list.length,
               beams: list.filter((p) => p.type !== 'column' && p.type !== 'brace').length,
               columns: list.filter((p) => p.type === 'column').length,
@@ -614,7 +617,7 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
     projectId: string,
     editor: string,
     entries: EditEntry[],
-    action: 'edit' | 'delete' | 'add' | 'ignore',
+    action: 'edit' | 'delete' | 'add' | 'ignore' | 'approve',
     sheetId: string | null,
     detail: Record<string, unknown>,
   ): Promise<string | null> {
@@ -646,6 +649,7 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
       studs?: number | null;
       camber?: string | null;
       ignored?: boolean;
+      approved?: boolean;
     };
   }>(
     '/api/projects/:projectId/line-first/pieces/edit',
@@ -664,6 +668,7 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
             studs: { type: ['integer', 'null'], minimum: 0, maximum: 999 },
             camber: { type: ['string', 'null'], maxLength: 40 },
             ignored: { type: 'boolean' },
+            approved: { type: 'boolean' },
           },
         },
       },
@@ -709,15 +714,22 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
         if (b.camber !== undefined)
           push(p.id, 'camber_raw', p.camber_raw, b.camber?.trim() || null);
         if (b.ignored !== undefined) push(p.id, 'ignored', p.ignored, b.ignored);
+        // a deleted piece is not approved (it is not on the page)
+        if (b.approved !== undefined && !p.deleted) push(p.id, 'approved', p.approved, b.approved);
       }
-      const onlyIgnore = entries.length > 0 && entries.every((e) => e.field === 'ignored');
+      const only = (f: string) => entries.length > 0 && entries.every((e) => e.field === f);
       const actionId = await apply(
         projectId,
         editor,
         entries,
-        onlyIgnore ? 'ignore' : 'edit',
+        only('ignored') ? 'ignore' : only('approved') ? 'approve' : 'edit',
         pieces[0]?.sheet_id ?? null,
-        { members: pieces.length, fields: [...new Set(entries.map((e) => e.field))] },
+        {
+          members: pieces.length,
+          changed: new Set(entries.map((e) => e.memberId)).size,
+          fields: [...new Set(entries.map((e) => e.field))],
+          ...(b.approved !== undefined && { approved: b.approved }),
+        },
       );
       return {
         action_id: actionId,
@@ -1109,6 +1121,7 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
         'System pieces',
         'Final pieces',
         'Kept unchanged',
+        'Confirmed unchanged by person',
         'Size changed',
         'Length changed',
         'Deleted by person',
@@ -1128,6 +1141,7 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
           p.system_pieces,
           p.final_pieces,
           p.kept_unchanged,
+          p.confirmed_unchanged,
           p.size_changed,
           p.length_changed,
           p.deleted_by_person,
@@ -1146,6 +1160,7 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
         t.system_pieces,
         t.final_pieces,
         t.kept_unchanged,
+        t.confirmed_unchanged,
         t.size_changed,
         t.length_changed,
         t.deleted_by_person,
