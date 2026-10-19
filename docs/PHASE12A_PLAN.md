@@ -16,6 +16,7 @@ item 4 (no beam pen on column plans) is item 4 here.
 | 5 | marking (web) | `web/src/components/Canvas.tsx` | An undefined beam is a solid red line with a "?" badge. No overlay is dashed except view and crop boxes (grids, suggested excludes, deselected pen lines and the drawing rubber band are solid). |
 | 6 | `grid_marker` | `worker/src/build/base_plates.py` | A filled three-corner glyph within 6 pt of a grid line's axis and within 72 pt of its end or bubble (bow-tie end / break markers) is not a column glyph. |
 | 7 | `base_plate` | `worker/src/build/base_plates.py` | Rings (curved closed shapes, or closed loops of short segments, round within 20%, ≤ 3 in): four of about one size (25%) at a rectangle's corners (1 pt), sides 2 to 36 in, are ONE column at the centre. The plate = the bolt rectangle grown by 0.35 × its larger side; every pen line inside it is the column's, never a beam. The outline inside the bolts sets `section_type` (rectangle → HSS, I → W, else none); the size still comes from labels. No grid crossing within 30 pt → kept, `off_grid`, build state needs review. A glyph column inside a plate is that same column. |
+| 7b | `column_plan_supports` | `worker/src/build/supports.py` | On a column plan page every column found there (glyph or base plate) is a support node, so it is projected to the framing pages (added after the first results; section 4). |
 | 8 | counts | build run counts | Per page: `base_plates`, `base_plates_off_grid`, `base_plate_columns`, `columns`, `grid_crossings`, `removed_grid_markers`, `removed_dash_pattern_runs` / `_segments`, `removed_wall_lines`, `removed_base_plate_lines`, `removed_column_shape_lines`. |
 
 Order in the page build: grid markers are dropped from the glyphs; base plates are found; beam lines
@@ -64,7 +65,16 @@ phase11r-job-018 stays archived and intact.
   same centre. Now a ring inside a plate already found is part of that plate. No constant changed.
   The crashed copies were renamed `…-crashed` and archived; the after runs were redone on fresh
   copies (`p12a-after2-job-018`, `phase12-job-018`, `demo3-job-018`). job-015 and job-020 had no
-  failure; their first after runs stand.
+  failure.
+- Support fix after the second after-run, found FROM ITS RESULTS (job-018 page 16 lost 18 of its 19
+  projected column supports), so it is stated as post-hoc: (a) base-plate columns were never
+  support nodes on the column plan (the support glyph list was filtered from the page's glyphs,
+  which do not hold plate columns), a defect of the base_plate wiring; (b) with no beams on column
+  plans (rule 4), a column-plan column away from a grid crossing had no lines to make it a support
+  node, so it was never projected to the framing pages. New rule "column_plan_supports": on a column
+  plan page every column found there is a support node. No constant changed. All three jobs were
+  re-run on fresh copies (`p12a-after3-job-015`, `-018`, `-020`), and `phase12-job-018` /
+  `demo3-job-018` were made again; the superseded copies were renamed `…-superseded` and archived.
 
 - Rule 4 changes a proposal default of auto mode (column-plan pages: no beam pen).
 - Rules 1, 2, 3, 6, 7 change what the build finds (`RULES_VERSION` phase12a-build-v1); runs made with

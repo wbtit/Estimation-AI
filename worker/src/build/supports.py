@@ -2,7 +2,9 @@
 
 Support nodes come from, in this order (owner decision, Phase 11):
   a. column glyphs on the page inside the crop: a glyph is a support when it sits at a grid
-     crossing or when at least GLYPH_MIN_LINES beam lines touch it;
+     crossing or when at least GLYPH_MIN_LINES beam lines touch it; on a column plan page every
+     column found there is a support (Phase 12a, rule "column_plan_supports": the page has no
+     beams, so its columns are projected to the framing pages whatever touches them);
   b. columns projected from the column plan through the grid registration (skipped when the page
      has no registration); a projected column within NODE_MERGE_PT of a glyph node is that node;
   c. beam-to-beam intersections, found while the order below is worked out.
@@ -127,7 +129,10 @@ def _point_hit(ln: BeamLine, p: Pt) -> float | None:
 
 
 def column_nodes(
-    lines: list[BeamLine], glyphs: list[Glyph], projected: list[tuple[Pt, dict]]
+    lines: list[BeamLine],
+    glyphs: list[Glyph],
+    projected: list[tuple[Pt, dict]],
+    all_columns: bool = False,
 ) -> list[Node]:
     """Rules (a) and (b): the column support nodes of the page."""
     nodes: list[Node] = []
@@ -138,8 +143,15 @@ def column_nodes(
             for j in idx.near(g.centre, g.centre, g.half_diag + SNAP_COLUMN_PT)
             if _glyph_hit(lines[j], g) is not None
         ]
-        if g.at_grid or len(touching) >= GLYPH_MIN_LINES:
-            ev = {"rule": "at_grid" if g.at_grid else "lines_meet", "lines": len(touching)}
+        if all_columns or g.at_grid or len(touching) >= GLYPH_MIN_LINES:
+            rule = (
+                "at_grid"
+                if g.at_grid
+                else "lines_meet"
+                if len(touching) >= GLYPH_MIN_LINES
+                else "column_plan"
+            )
+            ev = {"rule": rule, "lines": len(touching)}
             if g.grid is not None:
                 ev["grid"] = [g.grid.n_label, g.grid.a_label]
             nodes.append(Node(len(nodes), g.centre, "glyph", g.half_diag, gi, ev))
@@ -190,9 +202,12 @@ def _merge_hits(hits: list[Hit]) -> list[Hit]:
 
 
 def build(
-    lines: list[BeamLine], glyphs: list[Glyph], projected: list[tuple[Pt, dict]]
+    lines: list[BeamLine],
+    glyphs: list[Glyph],
+    projected: list[tuple[Pt, dict]],
+    all_columns: bool = False,
 ) -> SupportResult:
-    nodes = column_nodes(lines, glyphs, projected)
+    nodes = column_nodes(lines, glyphs, projected, all_columns)
     col_idx: dict[int, list[Hit]] = {}
     pad = max([g.half_diag for g in glyphs] + [0.0]) + SNAP_COLUMN_PT
     node_cells: dict[tuple[int, int], list[Node]] = {}

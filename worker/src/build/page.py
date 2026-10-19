@@ -235,11 +235,11 @@ def build_page(
         lines = [replace(ln, id=k) for k, ln in enumerate(nb.lines)]
 
     # on the column plan, the columns found there are the column supports
-    support_glyphs = glyphs
-    if setup.role == "column_plan":
-        keep = {id(g) for g in columns}
-        support_glyphs = [g for g in glyphs if id(g) in keep]
-    sup = build(lines, support_glyphs, projected)
+    # on the column plan, the columns found there (glyphs and base plates) are the column supports,
+    # every one of them (Phase 12a: with no beams on a column plan, a column away from a grid
+    # crossing has no lines to make it a support)
+    support_glyphs = columns if setup.role == "column_plan" else glyphs
+    sup = build(lines, support_glyphs, projected, all_columns=setup.role == "column_plan")
     labels = find_labels(text, legend or {})
     piece_labels = attach_to_pieces([(p.a, p.b) for p in sup.pieces], labels)
     column_labels = attach_to_columns([g.centre for g in columns], labels)

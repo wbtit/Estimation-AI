@@ -301,3 +301,17 @@ def test_bow_tie_markers_near_the_bubble_are_not_columns_and_columns_at_crossing
     assert len(pb.columns) == 9
     assert all(round(g.centre[1]) in {round(v) for v in YS.values()} for g in pb.columns)
     assert pb.counts()["removed_grid_markers"] >= 3
+
+
+def test_every_column_of_a_column_plan_is_a_support_even_off_grid_with_no_lines():
+    doc, page = _page()
+    for c in ((300, 400), (600, 400), (800, 600)):
+        _base_plate(page, c, pen=False)
+    _glyph(page, (150, 150))
+    _glyph(page, (150, 650))
+    _glyph(page, (850, 150))
+    _glyph(page, (850, 300))  # four equal glyphs, no grid: the repeated-glyph rule
+    pb = _build(page, role="column_plan", ratio=QUARTER)
+    assert len(pb.columns) == 7 and pb.lines == []
+    nodes = [n for n in pb.supports.nodes if n.source == "glyph"]
+    assert len(nodes) == 7 and {n.evidence["rule"] for n in nodes} == {"column_plan"}

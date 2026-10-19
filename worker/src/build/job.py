@@ -579,8 +579,7 @@ def store(
 def _support_glyphs(pb: PageBuild) -> list:
     """The glyph list the supports were built from (the columns on a column plan)."""
     if pb.setup.role == "column_plan":
-        keep = {id(g) for g in pb.columns}
-        return [g for g in pb.glyphs if id(g) in keep]
+        return pb.columns
     return pb.glyphs
 
 
