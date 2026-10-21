@@ -18,7 +18,7 @@ import pymupdf
 from src.config import load_config
 from src.db import connect
 from tools.bbmeasure import bb_measure_ratio
-from tools.p12c_lib import JOBS, RATIO_MERGE, _frames
+from tools.p12c_lib import JOBS, RATIO_MERGE, _frames, project_name
 from tools.takeoff.common import PRIVATE, TAKEOFFS
 
 AGREE = 0.01
@@ -68,7 +68,7 @@ def main() -> None:
                 continue
             pid = conn.execute(
                 "SELECT id FROM projects WHERE name = %s ORDER BY created_at DESC LIMIT 1",
-                (f"p12c-{job}",),
+                (project_name(job),),
             ).fetchone()["id"]
             snaps = {
                 r["page_index"]: r["setup"]

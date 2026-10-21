@@ -26,7 +26,7 @@ from src.build.segments import crop, page_text_lines, parse_page
 from src.build.views import load_views, pick_view, role_name
 from src.config import load_config
 from src.db import connect
-from tools.p12c_lib import pages_to_build, their_pages
+from tools.p12c_lib import pages_to_build, project_name, their_pages
 
 MARKUP_SCALE_TEXT = "from estimator markup"
 TAG = "p12c_person_setup"
@@ -123,7 +123,7 @@ def main(argv: list[str]) -> None:
     cfg = load_config()
     with connect(cfg.database_url) as conn:
         row = conn.execute(
-            "SELECT id FROM projects WHERE name = %s AND NOT archived", (f"p12c-{job}",)
+            "SELECT id FROM projects WHERE name = %s AND NOT archived", (project_name(job),)
         ).fetchone()
         if row is None:
             print(json.dumps({"job": job, "error": "copy p12c-<job> not found"}))

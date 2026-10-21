@@ -24,7 +24,7 @@ from src.config import load_config
 from src.db import connect
 from src.linking.lines import page_lines
 from src.linking.structural import lines_in_box
-from tools.p12c_lib import BEAM, COLUMN, JOBS, TheirPage, group, their_pages
+from tools.p12c_lib import BEAM, COLUMN, JOBS, TheirPage, group, project_name, their_pages
 from tools.takeoff.common import PRIVATE, TAKEOFFS
 
 OUT = PRIVATE / "eval" / "p12c"
@@ -506,7 +506,7 @@ def main(argv: list[str]) -> None:
         for job in JOBS:
             row = conn.execute(
                 "SELECT id FROM projects WHERE name = %s ORDER BY created_at DESC LIMIT 1",
-                (f"p12c-{job}",),
+                (project_name(job),),
             ).fetchone()
             if row is None:
                 continue
@@ -608,7 +608,7 @@ def main(argv: list[str]) -> None:
                         "SELECT f.stored_path FROM projects p JOIN project_files f ON"
                         " f.project_id = p.id WHERE p.name = %s ORDER BY p.created_at DESC"
                         " LIMIT 1",
-                        (f"p12c-{job}",),
+                        (project_name(job),),
                     ).fetchone()["stored_path"]
                     tfile, tp = th.takeoff[0]
                     if tfile not in tdocs:

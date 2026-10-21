@@ -35,6 +35,15 @@ BEAM, COLUMN = "B", "C"
 RATIO_MERGE = 0.01  # markup ratios within 1% are one value (Phase 5v)
 
 
+# job-018: a person worked on p12c-job-018 before its build (auto mode refused); its run is on a
+# second fresh copy, so that person's work stays as it is (a deviation, see the results)
+PROJECT_NAME = {"job-018": "p12c-job-018-b"}
+
+
+def project_name(job: str) -> str:
+    return PROJECT_NAME.get(job, f"p12c-{job}")
+
+
 def group(job: str) -> str:
     return "seen" if job in SEEN else "dev" if job in DEV else "strict"
 
