@@ -349,7 +349,7 @@ def _font(n: int):
 
 
 def _render(page: pymupdf.Page, box, zoom: float) -> Image.Image:
-    clip = pymupdf.Rect(*box) * page.derotation_matrix
+    clip = pymupdf.Rect(*box)  # get_pixmap takes the clip in displayed coordinates
     pix = page.get_pixmap(matrix=pymupdf.Matrix(zoom, zoom), clip=clip, alpha=False)
     return Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
 
