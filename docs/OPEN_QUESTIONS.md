@@ -221,3 +221,11 @@ Answered by the Phase 9 request and now built: 115 (an unlinked size label is an
 Answered: 130 (migration 015 applied), 133 (one counting rule in tables and takeoff, built), 134 (lengths measurement-only in v1), 132 (decided; see 135).
 135. **Company-wide prefix default (decision 132).** Building it needs an additive migration 016 (a company-level prefix table; the project table becomes the override) and a loader change (a prefix given for two kinds is left unmapped and flagged instead of refusing the file). May I build it and, with a backup first, apply 016 to the real database? It only matters once `prefix_meanings.csv` exists.
 136. **Scale on pilot-01.** 21 of its 23 views have a guessed scale and none is confirmed (copied as stored from job-018). Should the estimator confirm them during the pilot (the runbook says so), or should I list the guessed scales for you to check first?
+
+### Phase 12c (owner decisions recorded 2026-10-21; see the Decision Log)
+137. **"37~20" and "85~20".** What do these summary box values mean (a range, two counts, a count and a length)? Phase 12b left them out of the comparison.
+138. **Counting sheet per kind.** For each kind, on which sheet do the estimators count it (column plan, framing plan, foundation plan)?
+139. **Spliced column.** Is a column spliced between levels counted as 1 or as 2?
+140. **Columns on framing pages.** Do the estimators also count columns on framing pages (job-018 has C symbols on two framing pages)?
+141. **Grid labels.** Are grid labels readable text on all pages, or are some drawn as outlines (not text)?
+142. **Length convention.** Work point to work point, or face to face?
