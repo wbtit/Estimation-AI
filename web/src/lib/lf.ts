@@ -14,6 +14,8 @@ export type Badge =
   | "Not confirmed"
   | "Built";
 
+export type Purpose = "real" | "demo" | "evaluation";
+
 export interface Project {
   id: string;
   name: string;
@@ -21,8 +23,13 @@ export interface Project {
   status: string;
   stage: "Estimating" | "Submitted" | "Won" | "Lost";
   archived: boolean;
+  /** Migration 025: real (default), demo or evaluation (measurement copies). */
+  purpose?: Purpose;
+  last_opened_at?: string | null;
   created_at: string;
   thumbnail_url?: string | null;
+  /** Card counts: plan pages, built pages, reviewed pages. */
+  pages?: { plans: number; built: number; reviewed: number };
   document: {
     original_filename: string;
     page_count: number | null;
@@ -32,6 +39,52 @@ export interface Project {
 }
 
 export const STAGES = ["Estimating", "Submitted", "Won", "Lost"] as const;
+
+/** The filter chips of the projects screen. A project shows when its purpose chip is on and, if it
+ * is archived, the Archived chip is on too; evaluation copies therefore never show unless the
+ * Evaluation chip is on. Default: Real and Demo. */
+export type ProjectChip = Purpose | "archived";
+export const PROJECT_CHIPS: { key: ProjectChip; label: string }[] = [
+  { key: "real", label: "Real" },
+  { key: "demo", label: "Demo" },
+  { key: "evaluation", label: "Evaluation" },
+  { key: "archived", label: "Archived" },
+];
+export const DEFAULT_CHIPS: ProjectChip[] = ["real", "demo"];
+
+export const purposeOf = (p: Project): Purpose => p.purpose ?? "real";
+
+export function projectsShown(
+  projects: Project[],
+  chips: ReadonlySet<ProjectChip>,
+  q: string,
+): Project[] {
+  const t = q.trim().toLowerCase();
+  return projects.filter(
+    (p) =>
+      chips.has(purposeOf(p)) &&
+      (!p.archived || chips.has("archived")) &&
+      (t === "" ||
+        p.name.toLowerCase().includes(t) ||
+        (p.number ?? "").toLowerCase().includes(t)),
+  );
+}
+
+/** Chip counts: each purpose counts its projects that are not archived; Archived counts every
+ * archived project. */
+export function chipCounts(projects: Project[]): Record<ProjectChip, number> {
+  const out: Record<ProjectChip, number> = {
+    real: 0,
+    demo: 0,
+    evaluation: 0,
+    archived: 0,
+  };
+  for (const p of projects) {
+    if (p.archived) out.archived += 1;
+    else out[purposeOf(p)] += 1;
+  }
+  return out;
+}
 
 export interface ScaleFound {
   raw: string;

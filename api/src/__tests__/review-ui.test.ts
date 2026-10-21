@@ -905,7 +905,7 @@ describe('review UI routes (test database)', () => {
     const archived = await app.inject({
       method: 'PATCH',
       url: `/api/projects/${id}`,
-      payload: { archived: true },
+      payload: { archived: true, who: 'Tester' },
     });
     expect(archived.json()).toMatchObject({ stage: 'Won', archived: true });
     const empty = await app.inject({ method: 'PATCH', url: `/api/projects/${id}`, payload: {} });

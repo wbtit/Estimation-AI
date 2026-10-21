@@ -1,6 +1,7 @@
 """Pilot preparation step 3: copy a project as a clean pilot project.
 
   PYTHONPATH=. .venv/bin/python -m tools.copy_project <job id or project id> <new name> [--apply]
+      [--purpose=real|demo|evaluation]   (default evaluation)
 
 Without --apply: a preview (what would be copied and what not, counts only; nothing written).
 With --apply: the copy (one transaction), then the proof that the source is unchanged (its row
@@ -29,7 +30,8 @@ def main(argv: list[str]) -> None:
     conn = connect(config.database_url)
     before = source_counts(conn, source)
     h_before = content_hash(conn, source)
-    out = copy_project(conn, config, source, args[1], apply="--apply" in argv)
+    purpose = next((a.split("=", 1)[1] for a in argv if a.startswith("--purpose=")), "evaluation")
+    out = copy_project(conn, config, source, args[1], apply="--apply" in argv, purpose=purpose)
     if out["applied"]:
         after = source_counts(conn, source)
         h_after = content_hash(conn, source)

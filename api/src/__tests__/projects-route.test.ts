@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { sql } from 'kysely';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from '../app.js';
 import { closeDatabaseConnection, getDb } from '../db/client.js';
@@ -105,6 +106,106 @@ describe('projects', () => {
       (await a.inject({ method: 'GET', url: `/api/projects/${crypto.randomUUID()}` })).statusCode,
     ).toBe(404);
     expect((await a.inject({ method: 'GET', url: '/api/projects/nope' })).statusCode).toBe(400);
+    await a.close();
+  });
+
+  it('a new project is real, never opened; opening it sets last opened and sorts it first', async () => {
+    const a = appWithTempDir();
+    const first = (await createProject(a)).json();
+    const second = (await createProject(a)).json();
+    expect(first).toMatchObject({ purpose: 'real', last_opened_at: null });
+    const opened = await a.inject({ method: 'POST', url: `/api/projects/${first.id}/opened` });
+    expect(opened.statusCode).toBe(200);
+    const list = (await a.inject({ method: 'GET', url: '/api/projects' })).json().projects as {
+      id: string;
+      last_opened_at: string | null;
+      pages: { plans: number; built: number; reviewed: number };
+    }[];
+    const ids = list.map((p) => p.id);
+    expect(ids.indexOf(first.id)).toBeLessThan(ids.indexOf(second.id));
+    expect(list.find((p) => p.id === first.id)?.last_opened_at).not.toBeNull();
+    expect(list.find((p) => p.id === first.id)?.pages).toEqual({ plans: 0, built: 0, reviewed: 0 });
+    // opening is not a logged action
+    const logged = await getDb()
+      .selectFrom('count_actions')
+      .select('id')
+      .where('project_id', '=', first.id)
+      .execute();
+    expect(logged).toHaveLength(0);
+    await a.close();
+  });
+
+  it('rename, change purpose and archive need who and are logged as project actions', async () => {
+    const a = appWithTempDir();
+    const p = (await createProject(a)).json();
+    const url = `/api/projects/${p.id}`;
+    const newName = uniqueLabel('renamed');
+    expect((await a.inject({ method: 'PATCH', url, payload: { name: newName } })).statusCode).toBe(
+      400,
+    );
+    const res = await a.inject({
+      method: 'PATCH',
+      url,
+      payload: { name: newName, purpose: 'demo', archived: true, who: 'Tester' },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ name: newName, purpose: 'demo', archived: true });
+    const log = await getDb()
+      .selectFrom('count_actions')
+      .select(['action', 'who', 'detail'])
+      .where('project_id', '=', p.id)
+      .orderBy('id')
+      .execute();
+    expect(log.map((r) => [r.action, r.who, (r.detail as { change: string }).change])).toEqual([
+      ['project', 'Tester', 'rename'],
+      ['project', 'Tester', 'purpose'],
+      ['project', 'Tester', 'archive'],
+    ]);
+    // the stage alone needs no who and is not logged (unchanged behaviour)
+    expect((await a.inject({ method: 'PATCH', url, payload: { stage: 'Won' } })).statusCode).toBe(
+      200,
+    );
+    expect(
+      (await a.inject({ method: 'PATCH', url, payload: { purpose: 'other', who: 'T' } }))
+        .statusCode,
+    ).toBe(400);
+    await a.close();
+  });
+
+  it('duplicate as demo queues one copy job with purpose demo and logs who asked', async () => {
+    const a = appWithTempDir();
+    const p = (await createProject(a)).json();
+    const res = await a.inject({
+      method: 'POST',
+      url: `/api/projects/${p.id}/duplicate`,
+      payload: { who: 'Tester' },
+    });
+    expect(res.statusCode).toBe(202);
+    expect(res.json().name).toBe(`${p.name as string} (demo)`);
+    const jobs = await getDb()
+      .selectFrom('jobs')
+      .selectAll()
+      .where('type', '=', 'copy_project')
+      .where(sql<boolean>`payload->>'project_id' = ${p.id as string}`)
+      .execute();
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0]!.payload).toMatchObject({ purpose: 'demo', name: `${p.name as string} (demo)` });
+    const log = await getDb()
+      .selectFrom('count_actions')
+      .select(['action', 'who', 'detail'])
+      .where('project_id', '=', p.id)
+      .execute();
+    expect(log).toHaveLength(1);
+    expect(log[0]!.detail).toMatchObject({ change: 'duplicate_as_demo', job_id: jobs[0]!.id });
+    expect(
+      (
+        await a.inject({
+          method: 'POST',
+          url: `/api/projects/${p.id}/duplicate`,
+          payload: { who: 'Tester', name: p.name },
+        })
+      ).statusCode,
+    ).toBe(409);
     await a.close();
   });
 });

@@ -12,6 +12,9 @@ What is NOT copied: members a person added (manual, including count clicks), eve
 (person corrections), the count action log, measurements, pipeline job rows and the project's prefix
 mapping. The source project is only read.
 
+A copy's purpose (migration 025) is "evaluation" unless given: evaluation tools make measurement
+copies, and the projects screen hides them by default.
+
 `apply=False` is a preview (counts only, nothing written). The copy runs in ONE transaction.
 """
 
@@ -31,6 +34,9 @@ from src.config import WorkerConfig
 SHEET_TABLES = ("sheet_edits", "sheet_views", "sheet_lines", "text_items", "build_views")
 VIEW_TABLES = ("view_pens", "view_exclusions", "view_deselections")
 NOT_COPIED = ("member_edits", "count_actions", "measurements", "project_prefix_kinds")
+# migration 025: a copy is an evaluation copy unless the caller says otherwise ("Duplicate as demo")
+EVALUATION = "evaluation"
+PURPOSES = ("real", "demo", "evaluation")
 
 
 def source_counts(conn: psycopg.Connection, project_id: str) -> dict[str, int]:
@@ -130,7 +136,10 @@ def copy_project(
     name: str,
     *,
     apply: bool = False,
+    purpose: str = EVALUATION,
 ) -> dict[str, Any]:
+    if purpose not in PURPOSES:
+        raise ValueError("purpose must be one of " + ", ".join(PURPOSES))
     src = conn.execute("SELECT id FROM projects WHERE id = %s", (source_id,)).fetchone()
     if src is None:
         raise ValueError("source project not found")
@@ -166,7 +175,12 @@ def copy_project(
     file = conn.execute(
         "SELECT stored_path FROM project_files WHERE project_id = %s", (source_id,)
     ).fetchone()
-    p: dict[str, Any] = {"src": uuid.UUID(source_id), "dst": uuid.UUID(new_id), "name": name}
+    p: dict[str, Any] = {
+        "src": uuid.UUID(source_id),
+        "dst": uuid.UUID(new_id),
+        "name": name,
+        "purpose": purpose,
+    }
     new_pdf = None
     conn.commit()  # end the reads above, so the copy below is one top-level transaction
     with conn.transaction():
@@ -199,6 +213,8 @@ def copy_project(
                 "name": sql.Placeholder("name"),
                 "count_mode": sql.SQL("false"),
                 "archived": sql.SQL("false"),  # a new copy is for use, even of an archived project
+                "purpose": sql.Placeholder("purpose"),
+                "last_opened_at": sql.SQL("NULL"),
                 "created_at": now,
                 "updated_at": now,
             },

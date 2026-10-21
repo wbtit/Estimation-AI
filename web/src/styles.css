@@ -356,6 +356,72 @@ h4 {
   opacity: 0.7;
 }
 
+.projects .chips {
+  display: flex;
+  gap: 8px;
+  margin-left: 8px;
+}
+
+.projects .chip {
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--muted);
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.projects .chip.on {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.projects .chip .count {
+  font-weight: 500;
+  opacity: 0.75;
+  margin-left: 2px;
+}
+
+.projects .notice {
+  margin-bottom: 12px;
+  color: var(--muted);
+}
+
+.card .icon-btn {
+  border: none;
+  background: transparent;
+  padding: 2px 4px;
+  border-radius: 6px;
+  color: var(--muted);
+  display: grid;
+  place-items: center;
+}
+
+.card .icon-btn:hover {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.card .card-stats {
+  display: grid;
+  gap: 1px;
+  font-size: 12px;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.badge.purpose-demo {
+  background: #e0f5f3;
+  color: #0b6b62;
+}
+
+.badge.purpose-evaluation {
+  background: #f3eee2;
+  color: #7a5a12;
+}
+
 .card.add {
   border-style: dashed;
   min-height: 220px;

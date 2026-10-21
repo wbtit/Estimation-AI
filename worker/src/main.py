@@ -21,6 +21,8 @@ from src.review.auto_run import JOB_TYPE as AUTO_RUN
 from src.review.auto_run import run_auto_run
 from src.review.classes_job import JOB_TYPE as CLASSES_VIEW
 from src.review.classes_job import run_classes_view
+from src.review.copy_job import JOB_TYPE as COPY_PROJECT
+from src.review.copy_job import run_copy_project
 from src.review.link_job import JOB_TYPE as LINK_VIEW
 from src.review.link_job import run_link_view
 from src.review.sheet_lines_job import JOB_TYPE as SHEET_LINES
@@ -41,6 +43,7 @@ HANDLERS: dict[str, Handler] = {
     SHEET_LINES: run_sheet_lines,
     BUILD_SHEET: run_build_sheet,
     AUTO_BUILD: run_auto_build,
+    COPY_PROJECT: run_copy_project,
 }
 
 

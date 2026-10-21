@@ -8,7 +8,9 @@ import pytest
 from db_fixtures import DbProject
 from pdf_factory import new_doc, vector_page
 
-from src.review.copy_project import content_hash, copy_project, source_counts
+from src.queue import Job
+from src.review.copy_job import JOB_TYPE, run_copy_project
+from src.review.copy_project import content_hash, copy_project, remove_copy_files, source_counts
 
 
 def build(dbp: DbProject) -> dict[str, str]:
@@ -149,9 +151,13 @@ def test_copy_is_clean_and_the_source_is_unchanged(dbp: DbProject):
         assert got["members"] == 1 and got["members_manual"] == 0
         assert got["member_edits"] == 0 and got["count_actions"] == 0 and got["measurements"] == 0
         p = dbp.conn.execute(
-            "SELECT name, count_mode, archived FROM projects WHERE id = %s", (new,)
+            "SELECT name, count_mode, archived, purpose, last_opened_at FROM projects"
+            " WHERE id = %s",
+            (new,),
         ).fetchone()
-        assert p == {"name": "pilot-test-copy", "count_mode": False, "archived": False}
+        # migration 025: a copy is an evaluation copy by default, never opened yet
+        assert p == {"name": "pilot-test-copy", "count_mode": False, "archived": False,
+                     "purpose": "evaluation", "last_opened_at": None}  # fmt: skip
         m = dbp.conn.execute(
             "SELECT m.count_state, m.count_source, s.project_id AS sheet_project,"
             " v.sheet_id = m.sheet_id AS view_on_sheet, l.project_id AS legend_project,"
@@ -209,3 +215,22 @@ def test_copy_is_clean_and_the_source_is_unchanged(dbp: DbProject):
         dbp.conn.rollback()
         dbp.conn.execute("DELETE FROM projects WHERE id = %s", (new,))
         dbp.conn.commit()
+
+
+def test_a_copy_takes_the_purpose_it_is_given(dbp: DbProject):
+    build(dbp)
+    with pytest.raises(ValueError):
+        copy_project(dbp.conn, dbp.config, dbp.project_id, "pilot-test-bad", purpose="other")
+    # "Duplicate as demo" runs as the copy_project job
+    payload = {"project_id": dbp.project_id, "name": "pilot-test-demo", "purpose": "demo"}
+    job = Job("00000000-0000-0000-0000-000000000000", JOB_TYPE, payload, 0, 3)
+    r = run_copy_project(dbp.conn, job, dbp.config)
+    new = r["project_id"]
+    try:
+        got = dbp.conn.execute("SELECT purpose FROM projects WHERE id = %s", (new,)).fetchone()
+        assert got["purpose"] == "demo"
+    finally:
+        dbp.conn.rollback()
+        dbp.conn.execute("DELETE FROM projects WHERE id = %s", (new,))
+        dbp.conn.commit()
+        remove_copy_files(dbp.config, new)

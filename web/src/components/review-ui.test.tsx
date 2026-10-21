@@ -199,21 +199,101 @@ describe("projects screen", () => {
     expect(onOpen).toHaveBeenCalledWith("p2");
   });
 
-  it("hides archived projects unless Show archived is on", async () => {
+  it("filter chips: real and demo by default, evaluation and archived only when on", async () => {
     stubFetch({
       "/api/projects": {
         projects: [
           project({}),
-          project({ id: "p2", name: "Old test", archived: true }),
+          project({ id: "p2", name: "Walkthrough", purpose: "demo" }),
+          project({ id: "p3", name: "Copy 1", purpose: "evaluation" }),
+          project({
+            id: "p4",
+            name: "Old copy",
+            purpose: "evaluation",
+            archived: true,
+          }),
+          project({ id: "p5", name: "Old real", archived: true }),
         ],
       },
     });
     render(<ProjectsScreen onOpen={() => undefined} />);
     await screen.findByText("Alpha");
-    expect(screen.queryByText("Old test")).toBeNull();
-    fireEvent.click(screen.getByLabelText("show archived"));
-    expect(screen.getByText("Old test")).toBeTruthy();
-    expect(screen.getByText("Archived")).toBeTruthy();
+    expect(screen.getByText("Walkthrough")).toBeTruthy();
+    expect(document.querySelectorAll(".badge.purpose-demo")).toHaveLength(1);
+    expect(document.querySelectorAll(".badge.purpose-real")).toHaveLength(0); // real: no badge
+    expect(screen.queryByText("Copy 1")).toBeNull();
+    expect(screen.queryByText("Old copy")).toBeNull();
+    expect(screen.queryByText("Old real")).toBeNull();
+    expect(screen.queryByLabelText("show archived")).toBeNull();
+    const chip = (name: RegExp) => screen.getByRole("button", { name });
+    expect(chip(/^Evaluation 1$/).getAttribute("aria-pressed")).toBe("false");
+    expect(chip(/^Archived 2$/)).toBeTruthy();
+    fireEvent.click(chip(/^Archived/));
+    expect(screen.getByText("Old real")).toBeTruthy();
+    expect(screen.queryByText("Old copy")).toBeNull(); // evaluation still off
+    fireEvent.click(chip(/^Evaluation/));
+    expect(screen.getByText("Copy 1")).toBeTruthy();
+    expect(screen.getByText("Old copy")).toBeTruthy();
+  });
+
+  it("a card shows pages built / plans, review progress and last opened; open records it", async () => {
+    const calls = stubFetch({
+      "/api/projects": {
+        projects: [
+          project({
+            pages: { plans: 6, built: 4, reviewed: 1 },
+            last_opened_at: "2026-10-20T09:00:00Z",
+          }),
+        ],
+      },
+      "/api/projects/p1/opened": { ok: true },
+    });
+    const onOpen = vi.fn();
+    render(<ProjectsScreen onOpen={onOpen} />);
+    await screen.findByText("Alpha");
+    expect(screen.getByText("built 4 / plans 6")).toBeTruthy();
+    expect(screen.getByText("reviewed 1 of 4 pages")).toBeTruthy();
+    expect(screen.getByText(/^Opened /)).toBeTruthy();
+    fireEvent.click(screen.getByText("Alpha"));
+    expect(onOpen).toHaveBeenCalledWith("p1");
+    expect(
+      calls.some(
+        (c) => c.url === "/api/projects/p1/opened" && c.init?.method === "POST",
+      ),
+    ).toBe(true);
+  });
+
+  it("the card menu renames with the person's name and never opens the project", async () => {
+    const calls = stubFetch({
+      "/api/projects": { projects: [project({})] },
+      "/api/projects/p1": project({ name: "Alpha 2" }),
+    });
+    const onOpen = vi.fn();
+    render(<ProjectsScreen onOpen={onOpen} />);
+    await screen.findByText("Alpha");
+    fireEvent.click(screen.getByLabelText("actions for Alpha"));
+    expect(screen.getByText("Change purpose")).toBeTruthy();
+    expect(screen.getByText("Archive")).toBeTruthy();
+    expect(screen.getByText("Duplicate as demo")).toBeTruthy();
+    fireEvent.click(screen.getByText("Rename"));
+    expect(onOpen).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText("new name"), {
+      target: { value: "Alpha 2" },
+    });
+    fireEvent.change(screen.getByLabelText("your name"), {
+      target: { value: "Tester" },
+    });
+    fireEvent.click(screen.getByText("Save"));
+    await waitFor(() =>
+      expect(
+        calls.some(
+          (c) =>
+            c.url === "/api/projects/p1" &&
+            c.init?.method === "PATCH" &&
+            c.init?.body === JSON.stringify({ name: "Alpha 2", who: "Tester" }),
+        ),
+      ).toBe(true),
+    );
   });
 
   it("create dialog: the name comes from the file; Create sends name, number and status", async () => {

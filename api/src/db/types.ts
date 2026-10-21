@@ -26,11 +26,15 @@ export interface ProjectsTable {
   // Phase 11b (migration 017)
   stage: Generated<ProjectStage>;
   archived: Generated<boolean>;
+  // migration 025
+  purpose: Generated<ProjectPurpose>;
+  last_opened_at: Timestamp | null;
   created_at: Timestamp;
   updated_at: Timestamp;
 }
 
 export type ProjectStage = 'Estimating' | 'Submitted' | 'Won' | 'Lost';
+export type ProjectPurpose = 'real' | 'demo' | 'evaluation';
 
 export type SheetKind = 'plan' | 'schedule' | 'detail' | 'notes' | 'other';
 export type BuildStatus = 'not_built' | 'building' | 'built' | 'failed';
@@ -398,7 +402,8 @@ export type CountActionName =
   | 'save'
   | 'view'
   | 'role'
-  | 'approve';
+  | 'approve'
+  | 'project';
 
 export interface SheetLinesTable {
   sheet_id: string;

@@ -17,6 +17,11 @@ import {
   visible,
   type BomRow,
   type Piece,
+  chipCounts,
+  DEFAULT_CHIPS,
+  projectsShown,
+  type Project,
+  type ProjectChip,
 } from "./lf";
 
 function piece(over: Partial<Piece>): Piece {
@@ -287,5 +292,54 @@ describe("misc", () => {
       "#/p/abc/report",
     ])
       expect(routeHash(parseRoute(h))).toBe(h);
+  });
+});
+
+describe("projects screen filters (migration 025)", () => {
+  const p = (
+    id: string,
+    purpose: Project["purpose"],
+    archived = false,
+  ): Project => ({
+    id,
+    name: id,
+    number: null,
+    status: "scanned",
+    stage: "Estimating",
+    archived,
+    purpose,
+    created_at: "2026-10-01T00:00:00Z",
+    document: null,
+  });
+  const all = [
+    p("r", "real"),
+    p("d", "demo"),
+    p("e", "evaluation"),
+    p("ea", "evaluation", true),
+    p("ra", "real", true),
+    p("old", undefined), // before the migration: counts as real
+  ];
+  const ids = (chips: ProjectChip[], q = "") =>
+    projectsShown(all, new Set(chips), q).map((x) => x.id);
+
+  it("default chips show real and demo projects that are not archived", () => {
+    expect(ids(DEFAULT_CHIPS)).toEqual(["r", "d", "old"]);
+  });
+
+  it("evaluation copies show only with the Evaluation chip; archived only with Archived", () => {
+    expect(ids(["real", "demo", "archived"])).toEqual(["r", "d", "ra", "old"]);
+    expect(ids(["evaluation"])).toEqual(["e"]);
+    expect(ids(["evaluation", "archived"])).toEqual(["e", "ea"]);
+    expect(ids(["archived"])).toEqual([]);
+    expect(ids(["real", "evaluation", "archived"], "e")).toEqual(["e", "ea"]);
+  });
+
+  it("chip counts: purposes count projects not archived; Archived counts every archived one", () => {
+    expect(chipCounts(all)).toEqual({
+      real: 2,
+      demo: 1,
+      evaluation: 1,
+      archived: 2,
+    });
   });
 });

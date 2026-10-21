@@ -1,19 +1,39 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Plus, Search } from "lucide-react";
-import { api, ApiError, send } from "../lib/api";
-import { nameFromFile, STAGES, type Project } from "../lib/lf";
+import { MoreVertical, Plus, Search } from "lucide-react";
+import { api, ApiError, getWho, send, setWho } from "../lib/api";
+import {
+  chipCounts,
+  DEFAULT_CHIPS,
+  nameFromFile,
+  PROJECT_CHIPS,
+  projectsShown,
+  purposeOf,
+  STAGES,
+  type Project,
+  type ProjectChip,
+  type Purpose,
+} from "../lib/lf";
 
-/** The projects screen: search, a card per project, "Add new project"; archived projects (old test
- * projects) only with "Show archived". */
+/** The projects screen: filter chips (Real · Demo · Evaluation · Archived; Real and Demo by
+ * default, so measurement copies never crowd it), search, "Add new project" first, then a card per
+ * project sorted by last opened. Each card has a ⋮ menu: Rename, Change purpose,
+ * Archive/Unarchive, Duplicate as demo (each asks who and is logged by the API). */
 export const ProjectsScreen: React.FC<{ onOpen: (id: string) => void }> = ({
   onOpen,
 }) => {
   const [projects, setProjects] = useState<Project[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [q, setQ] = useState("");
-  const [showArchived, setShowArchived] = useState(false);
+  const [chips, setChips] = useState<Set<ProjectChip>>(
+    () => new Set(DEFAULT_CHIPS),
+  );
   const [creating, setCreating] = useState(false);
   const [processing, setProcessing] = useState<string | null>(null);
+  const [action, setAction] = useState<{
+    kind: ActionKind;
+    project: Project;
+  } | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const load = () =>
     api<{ projects: Project[] }>("/api/projects").then(
@@ -25,17 +45,27 @@ export const ProjectsScreen: React.FC<{ onOpen: (id: string) => void }> = ({
     void load();
   }, []);
 
-  const shown = useMemo(() => {
-    const t = q.trim().toLowerCase();
-    return (projects ?? []).filter(
-      (p) =>
-        (showArchived || !p.archived) &&
-        (t === "" ||
-          p.name.toLowerCase().includes(t) ||
-          (p.number ?? "").toLowerCase().includes(t)),
-    );
-  }, [projects, q, showArchived]);
-  const archived = (projects ?? []).filter((p) => p.archived).length;
+  const shown = useMemo(
+    () => projectsShown(projects ?? [], chips, q),
+    [projects, q, chips],
+  );
+  const counts = useMemo(() => chipCounts(projects ?? []), [projects]);
+  const toggle = (k: ProjectChip) =>
+    setChips((c) => {
+      const n = new Set(c);
+      if (n.has(k)) n.delete(k);
+      else n.add(k);
+      return n;
+    });
+  const open = (p: Project) => {
+    if (p.document && p.document.scan_status !== "done") {
+      setProcessing(p.id);
+      return;
+    }
+    // last opened (no log row); opening never waits for it
+    void send("POST", `/api/projects/${p.id}/opened`).catch(() => undefined);
+    onOpen(p.id);
+  };
 
   return (
     <div>
@@ -47,18 +77,19 @@ export const ProjectsScreen: React.FC<{ onOpen: (id: string) => void }> = ({
       <div className="projects">
         <div className="head">
           <h2>Projects</h2>
+          <div className="chips" role="group" aria-label="filters">
+            {PROJECT_CHIPS.map((c) => (
+              <button
+                key={c.key}
+                className={`chip${chips.has(c.key) ? " on" : ""}`}
+                aria-pressed={chips.has(c.key)}
+                onClick={() => toggle(c.key)}
+              >
+                {c.label} <span className="count">{counts[c.key]}</span>
+              </button>
+            ))}
+          </div>
           <span className="grow" />
-          {archived > 0 && (
-            <label>
-              <input
-                type="checkbox"
-                aria-label="show archived"
-                checked={showArchived}
-                onChange={(e) => setShowArchived(e.target.checked)}
-              />
-              Show archived ({archived})
-            </label>
-          )}
           <span className="row" style={{ position: "relative" }}>
             <Search
               size={15}
@@ -74,6 +105,7 @@ export const ProjectsScreen: React.FC<{ onOpen: (id: string) => void }> = ({
           </span>
         </div>
         {error && <div className="muted">{error}</div>}
+        {notice && <div className="notice">{notice}</div>}
         <div className="cards">
           <div
             className="card add"
@@ -90,11 +122,8 @@ export const ProjectsScreen: React.FC<{ onOpen: (id: string) => void }> = ({
             <ProjectCard
               key={p.id}
               p={p}
-              onOpen={() =>
-                p.document && p.document.scan_status !== "done"
-                  ? setProcessing(p.id)
-                  : onOpen(p.id)
-              }
+              onOpen={() => open(p)}
+              onAction={(kind) => setAction({ kind, project: p })}
             />
           ))}
         </div>
@@ -119,44 +148,257 @@ export const ProjectsScreen: React.FC<{ onOpen: (id: string) => void }> = ({
           onOpen={() => onOpen(processing)}
         />
       )}
+      {action && (
+        <ProjectActionDialog
+          kind={action.kind}
+          project={action.project}
+          onClose={() => setAction(null)}
+          onDone={(msg) => {
+            setAction(null);
+            setNotice(msg);
+            void load();
+          }}
+        />
+      )}
     </div>
   );
 };
 
-const ProjectCard: React.FC<{ p: Project; onOpen: () => void }> = ({
-  p,
-  onOpen,
-}) => (
-  <div
-    className={`card${p.archived ? " archived" : ""}`}
-    role="button"
-    tabIndex={0}
-    onClick={onOpen}
-    onKeyDown={(e) => e.key === "Enter" && onOpen()}
-  >
-    <div className="thumb">
-      {p.thumbnail_url ? (
-        <img src={p.thumbnail_url} alt="" />
-      ) : (
-        <span className="muted">No drawing</span>
-      )}
-    </div>
-    <div className="body">
-      <div className="row">
-        <span className="muted" style={{ fontSize: 11 }}>
-          {new Date(p.created_at).toLocaleDateString()}
-        </span>
-        <span className="grow" />
-        {p.archived && <span className="badge Archived">Archived</span>}
-        <span className={`badge ${p.stage}`}>{p.stage}</span>
+export const PURPOSE_LABEL: Record<Purpose, string> = {
+  real: "Real",
+  demo: "Demo",
+  evaluation: "Evaluation",
+};
+
+const fmtDate = (d: string | null | undefined) =>
+  d ? new Date(d).toLocaleDateString() : null;
+
+type ActionKind = "rename" | "purpose" | "archive" | "duplicate";
+
+export const ProjectCard: React.FC<{
+  p: Project;
+  onOpen: () => void;
+  onAction: (kind: ActionKind) => void;
+}> = ({ p, onOpen, onAction }) => {
+  const [menu, setMenu] = useState(false);
+  const purpose = purposeOf(p);
+  const pages = p.pages;
+  const opened = fmtDate(p.last_opened_at);
+  const pick = (k: ActionKind) => (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setMenu(false);
+    onAction(k);
+  };
+  return (
+    <div
+      className={`card${p.archived ? " archived" : ""}`}
+      role="button"
+      tabIndex={0}
+      onClick={onOpen}
+      onKeyDown={(e) => e.key === "Enter" && onOpen()}
+    >
+      <div className="thumb">
+        {p.thumbnail_url ? (
+          <img src={p.thumbnail_url} alt="" />
+        ) : (
+          <span className="muted">No drawing</span>
+        )}
       </div>
-      <div className="name" title={p.name}>
-        {p.name}
+      <div className="body">
+        <div className="row">
+          {purpose !== "real" && (
+            <span className={`badge purpose-${purpose}`}>
+              {PURPOSE_LABEL[purpose]}
+            </span>
+          )}
+          {p.archived && <span className="badge Archived">Archived</span>}
+          <span className={`badge ${p.stage}`}>{p.stage}</span>
+          <span className="grow" />
+          <span style={{ position: "relative" }}>
+            <button
+              className="icon-btn"
+              aria-label={`actions for ${p.name}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                setMenu((m) => !m);
+              }}
+            >
+              <MoreVertical size={16} />
+            </button>
+            {menu && (
+              <div
+                className="menu"
+                role="menu"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <button role="menuitem" onClick={pick("rename")}>
+                  Rename
+                </button>
+                <button role="menuitem" onClick={pick("purpose")}>
+                  Change purpose
+                </button>
+                <button role="menuitem" onClick={pick("archive")}>
+                  {p.archived ? "Unarchive" : "Archive"}
+                </button>
+                <hr />
+                <button role="menuitem" onClick={pick("duplicate")}>
+                  Duplicate as demo
+                </button>
+              </div>
+            )}
+          </span>
+        </div>
+        <div className="name" title={p.name}>
+          {p.name}
+        </div>
+        {p.number && <div className="muted">#{p.number}</div>}
+        {pages && (
+          <div className="card-stats">
+            <span>
+              built {pages.built} / plans {pages.plans}
+            </span>
+            <span>
+              reviewed {pages.reviewed} of {pages.built} pages
+            </span>
+          </div>
+        )}
+        <div className="muted" style={{ fontSize: 11 }}>
+          {opened ? `Opened ${opened}` : "Never opened"}
+        </div>
       </div>
-      {p.number && <div className="muted">#{p.number}</div>}
     </div>
-  </div>
-);
+  );
+};
+
+/** Rename, Change purpose, Archive/Unarchive, Duplicate as demo: one small dialog that asks for
+ * the value (if any) and the person's name, then calls the API (which logs the change). */
+export const ProjectActionDialog: React.FC<{
+  kind: ActionKind;
+  project: Project;
+  onClose: () => void;
+  onDone: (message: string) => void;
+}> = ({ kind, project, onClose, onDone }) => {
+  const [who, setWhoField] = useState(getWho());
+  const [name, setName] = useState(
+    kind === "duplicate" ? `${project.name} (demo)` : project.name,
+  );
+  const [purpose, setPurpose] = useState<Purpose>(purposeOf(project));
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const title =
+    kind === "rename"
+      ? "Rename project"
+      : kind === "purpose"
+        ? "Change purpose"
+        : kind === "archive"
+          ? project.archived
+            ? "Unarchive project"
+            : "Archive project"
+          : "Duplicate as demo";
+  const go = async () => {
+    if (who.trim() === "") return;
+    setBusy(true);
+    setError(null);
+    try {
+      const url = `/api/projects/${project.id}`;
+      let msg: string;
+      if (kind === "duplicate") {
+        const r = await send<{ name: string }>("POST", `${url}/duplicate`, {
+          who: who.trim(),
+          name: name.trim(),
+        });
+        msg = `Copying as demo: "${r.name}" appears when the copy finishes.`;
+      } else {
+        const body =
+          kind === "rename"
+            ? { name: name.trim() }
+            : kind === "purpose"
+              ? { purpose }
+              : { archived: !project.archived };
+        await send("PATCH", url, { ...body, who: who.trim() });
+        msg = "Saved.";
+      }
+      setWho(who.trim());
+      onDone(msg);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "could not save");
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="modal-back" role="dialog" aria-label={title}>
+      <div className="modal">
+        <h3>{title}</h3>
+        {(kind === "rename" || kind === "duplicate") && (
+          <label>
+            {kind === "duplicate" ? "Name of the copy" : "Name"}
+            <input
+              aria-label="new name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+          </label>
+        )}
+        {kind === "purpose" && (
+          <label>
+            Purpose
+            <select
+              aria-label="purpose"
+              value={purpose}
+              onChange={(e) => setPurpose(e.target.value as Purpose)}
+            >
+              {(Object.keys(PURPOSE_LABEL) as Purpose[]).map((k) => (
+                <option key={k} value={k}>
+                  {PURPOSE_LABEL[k]}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        {kind === "archive" && (
+          <div className="muted">
+            {project.archived
+              ? "The project comes back to its purpose's list."
+              : "The project moves under Archived. Nothing is deleted."}
+          </div>
+        )}
+        <label>
+          Your name
+          <input
+            aria-label="your name"
+            value={who}
+            onChange={(e) => setWhoField(e.target.value)}
+          />
+        </label>
+        {error && <div style={{ color: "var(--red)" }}>{error}</div>}
+        <div className="row">
+          <span className="grow" />
+          <button onClick={onClose} disabled={busy}>
+            Cancel
+          </button>
+          <button
+            className="primary"
+            onClick={go}
+            disabled={
+              busy ||
+              who.trim() === "" ||
+              ((kind === "rename" || kind === "duplicate") &&
+                name.trim() === "")
+            }
+          >
+            {kind === "archive"
+              ? project.archived
+                ? "Unarchive"
+                : "Archive"
+              : kind === "duplicate"
+                ? "Duplicate"
+                : "Save"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 /** Create dialog: File, Name (from the file name), Project Number, Status. */
 export const CreateDialog: React.FC<{
