@@ -424,13 +424,20 @@ def summarise(pages: list[dict], boxes: dict) -> dict[str, Any]:
 
     out: dict[str, Any] = {}
     sets = {
-        "seen": {"seen"},
-        "dev": {"dev"},
-        "strict": {"strict"},
-        "dev+strict": {"dev", "strict"},
+        "seen": ({"seen"}, False),
+        "dev": ({"dev"}, False),
+        "strict": ({"strict"}, False),
+        "dev+strict": ({"dev", "strict"}, False),
+        "dev+strict, scale suspect out": ({"dev", "strict"}, True),
+        "seen, scale suspect out": ({"seen"}, True),
+        "strict, scale suspect out": ({"strict"}, True),
     }
-    for name, gs in sets.items():
-        ps = [p for p in pages if p["group"] in gs and p["built"]]
+    for name, (gs, drop) in sets.items():
+        ps = [
+            p
+            for p in pages
+            if p["group"] in gs and p["built"] and not (drop and p.get("scale_suspect"))
+        ]
         fr = [p for p in ps if p["role"] == "framing"]
         cp = [p for p in ps if p["role"] == "column_plan"]
         out[name] = {
@@ -573,6 +580,16 @@ def main(argv: list[str]) -> None:
                 },
             }
             doc.close()
+        # the /BBMeasure check (tools/p12c_scale_check.py): a page whose scale disagreed with
+        # every calibration of theirs on it is "scale suspect"
+        sc = OUT / "scale_check.json"
+        suspect = (
+            {(r["job"], r["page"]) for r in json.loads(sc.read_text()) if r.get("agree") is False}
+            if sc.exists()
+            else set()
+        )
+        for p in pages:
+            p["scale_suspect"] = (p["job"], p["page"]) in suspect
         summary = summarise(pages, boxes)
         made = []
         if "--gallery" in argv:

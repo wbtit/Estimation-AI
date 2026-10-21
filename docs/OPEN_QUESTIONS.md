@@ -229,3 +229,4 @@ Answered: 130 (migration 015 applied), 133 (one counting rule in tables and take
 140. **Columns on framing pages.** Do the estimators also count columns on framing pages (job-018 has C symbols on two framing pages)?
 141. **Grid labels.** Are grid labels readable text on all pages, or are some drawn as outlines (not text)?
 142. **Length convention.** Work point to work point, or face to face?
+143. **Scale on the setup screen (Phase 12c finding, not built).** Of the 36 marked plan pages with no scale from any source: 21 show several scales or one scale plus an NTS note (job-004, 015, 020), so setup must show the scales found, pre-select the plan's own and let the person confirm; 15 show no readable value (all job-012), so setup must ask for it with a two-click calibration on a known dimension. Candidate rule for later: one numeric scale + NTS on a sheet -> use the numeric scale for the plan view, flagged for review. Agree?
