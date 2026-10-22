@@ -281,9 +281,13 @@ h4 {
   flex: none;
 }
 
-/* projects screen -------------------------------------------------------------------------------- */
+/* projects screen: the dark navy of the workspace side panels (`.left`, `.props`); cards are the
+   Plans list's page cards (`.page-card`); the drawing thumbnail stays white on an inset. The ⋮ menu
+   and the dialogs stay white, like the workspace menus and dialogs. ----------------------------- */
 .projects {
   padding: 22px 28px;
+  min-height: calc(100vh - 52px);
+  background: var(--shell-2);
 }
 
 .projects .head {
@@ -297,8 +301,12 @@ h4 {
   display: flex;
   align-items: center;
   gap: 6px;
-  color: var(--muted);
+  color: var(--shell-muted);
   white-space: nowrap;
+}
+
+.projects input::placeholder {
+  color: var(--shell-muted);
 }
 
 .cards {
@@ -308,28 +316,28 @@ h4 {
 }
 
 .card {
-  background: var(--card);
-  border: 1px solid var(--line);
+  background: var(--shell-3);
+  color: var(--shell-text);
+  border: 1px solid var(--shell-line);
   border-radius: 12px;
-  overflow: hidden;
   cursor: pointer;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 1px 2px rgba(15, 26, 46, 0.06);
 }
 
 .card:hover {
-  border-color: #b9bfd0;
-  box-shadow: 0 4px 14px rgba(15, 26, 46, 0.1);
+  border-color: rgba(255, 255, 255, 0.14);
 }
 
 .card .thumb {
   height: 150px;
-  background: #f2f4f8;
+  margin: 6px 6px 0;
+  background: var(--page);
+  border: 1px solid var(--shell-line);
+  border-radius: 8px;
   display: grid;
   place-items: center;
   overflow: hidden;
-  border-bottom: 1px solid var(--line);
 }
 
 .card .thumb img {
@@ -337,6 +345,17 @@ h4 {
   height: 100%;
   object-fit: cover;
   object-position: top;
+}
+
+/* the badge row wraps, so three badges (archived evaluation copies) never push ⋮ off the card */
+.card .body > .row:first-child {
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+
+/* "No drawing" sits on the white thumbnail, so it keeps the light-surface muted text */
+.card .thumb .muted {
+  color: var(--muted);
 }
 
 .card .body {
@@ -352,8 +371,9 @@ h4 {
   white-space: nowrap;
 }
 
-.card.archived {
-  opacity: 0.7;
+/* archived: only the drawing is dimmed, so the text keeps AA contrast on the dark card */
+.card.archived .thumb {
+  opacity: 0.55;
 }
 
 .projects .chips {
@@ -363,19 +383,20 @@ h4 {
 }
 
 .projects .chip {
-  border: 1px solid var(--line);
-  background: var(--card);
-  color: var(--muted);
+  border: 1px solid var(--shell-line);
+  background: transparent;
+  color: var(--shell-muted);
   border-radius: 999px;
   padding: 4px 12px;
   font-size: 13px;
   font-weight: 600;
 }
 
-.projects .chip.on {
-  background: var(--accent-soft);
-  border-color: var(--accent);
-  color: var(--accent);
+.projects .chip.on,
+.projects .chip.on:hover:not(:disabled) {
+  background: var(--shell-on);
+  border-color: var(--shell-on);
+  color: #fff;
 }
 
 .projects .chip .count {
@@ -386,7 +407,7 @@ h4 {
 
 .projects .notice {
   margin-bottom: 12px;
-  color: var(--muted);
+  color: var(--shell-muted);
 }
 
 .card .icon-btn {
@@ -394,21 +415,21 @@ h4 {
   background: transparent;
   padding: 2px 4px;
   border-radius: 6px;
-  color: var(--muted);
+  color: var(--shell-muted);
   display: grid;
   place-items: center;
 }
 
-.card .icon-btn:hover {
-  background: var(--accent-soft);
-  color: var(--text);
+.card .icon-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--shell-text);
 }
 
 .card .card-stats {
   display: grid;
   gap: 1px;
   font-size: 12px;
-  color: var(--text);
+  color: var(--shell-text);
   white-space: nowrap;
 }
 
@@ -422,15 +443,65 @@ h4 {
   color: #7a5a12;
 }
 
+/* badges on the dark cards: tinted like the page-card setup chips (`.page-card .chip`) */
+.projects .badge {
+  background: var(--shell-input);
+  color: var(--shell-muted);
+  border: 1px solid var(--shell-line);
+}
+
+.projects .badge.Estimating,
+.projects .badge.Built {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: color-mix(in srgb, var(--accent) 35%, var(--shell-text));
+  border-color: color-mix(in srgb, var(--accent) 50%, transparent);
+}
+
+.projects .badge.Submitted,
+.projects .badge.Building {
+  background: color-mix(in srgb, var(--orange) 16%, transparent);
+  color: color-mix(in srgb, var(--orange) 55%, var(--shell-text));
+  border-color: color-mix(in srgb, var(--orange) 45%, transparent);
+}
+
+.projects .badge.Won,
+.projects .badge.purpose-demo {
+  background: color-mix(in srgb, var(--green) 16%, transparent);
+  color: color-mix(in srgb, var(--green) 55%, var(--shell-text));
+  border-color: color-mix(in srgb, var(--green) 45%, transparent);
+}
+
+.projects .badge.Lost {
+  background: color-mix(in srgb, var(--red) 16%, transparent);
+  color: color-mix(in srgb, var(--red) 45%, var(--shell-text));
+  border-color: color-mix(in srgb, var(--red) 45%, transparent);
+}
+
+.projects .badge.purpose-evaluation {
+  background: color-mix(in srgb, var(--amber) 16%, transparent);
+  color: color-mix(in srgb, var(--amber) 70%, var(--shell-text));
+  border-color: color-mix(in srgb, var(--amber) 45%, transparent);
+}
+
+.projects .badge.Archived {
+  background: var(--shell-input);
+  color: var(--shell-muted);
+  border-color: var(--shell-line);
+}
+
 .card.add {
-  border-style: dashed;
+  border: 1px dashed rgba(255, 255, 255, 0.3);
   min-height: 220px;
   display: grid;
   place-items: center;
-  color: var(--accent);
+  /* the accent, lifted 15% toward the shell text: plain --accent is 3.9:1 on the navy (AA 4.5) */
+  color: color-mix(in srgb, var(--accent) 85%, var(--shell-text));
   font-weight: 600;
   background: transparent;
-  box-shadow: none;
+}
+
+.card.add:hover {
+  border-color: var(--accent);
 }
 
 .badge {

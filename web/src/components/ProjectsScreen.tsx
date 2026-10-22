@@ -74,7 +74,7 @@ export const ProjectsScreen: React.FC<{ onOpen: (id: string) => void }> = ({
           <span className="brand">Estimation</span>
         </div>
       </div>
-      <div className="projects">
+      <div className="projects dark">
         <div className="head">
           <h2>Projects</h2>
           <div className="chips" role="group" aria-label="filters">
@@ -93,7 +93,11 @@ export const ProjectsScreen: React.FC<{ onOpen: (id: string) => void }> = ({
           <span className="row" style={{ position: "relative" }}>
             <Search
               size={15}
-              style={{ position: "absolute", left: 9, color: "var(--muted)" }}
+              style={{
+                position: "absolute",
+                left: 9,
+                color: "var(--shell-muted)",
+              }}
             />
             <input
               aria-label="search projects"
