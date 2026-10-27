@@ -27,3 +27,11 @@ fixtures/**/*.PDF
 .idea/
 .vscode/
 *.swp
+
+# local notes, not in git: Claude/context notes and all docs stay on this machine only
+# (README.md files stay tracked)
+CLAUDE.md
+.claude/
+docs/
+*.md
+!README.md
