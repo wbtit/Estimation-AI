@@ -34,7 +34,7 @@ worker:
 	cd worker && .venv/bin/python -m src.main
 
 web:
-	npm --prefix web run dev
+	npm --prefix web run dev -- --host   
 
 # Regenerate schema/contract.v0.schema.json from the Zod contract.
 schema:
