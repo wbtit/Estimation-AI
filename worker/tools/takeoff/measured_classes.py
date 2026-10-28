@@ -5,14 +5,13 @@ usage (from worker/): PYTHONPATH=. .venv/bin/python -m tools.takeoff.measured_cl
 from __future__ import annotations
 
 import collections
-import json
 
 import numpy as np
 import pymupdf
 
 from src.linking.lines import page_lines
 from src.linking.structural import class_table, lines_in_box, suggest_classes
-from tools.takeoff.common import TAKEOFFS, drawing_documents
+from tools.takeoff.common import TAKEOFFS, drawing_documents, takeoff_inventory
 from tools.takeoff.geometry_study import (
     MATCH_SHARE,
     dist_points_segments,
@@ -24,7 +23,7 @@ from tools.takeoff.geometry_study import (
 
 
 def main() -> None:
-    inv = json.loads((TAKEOFFS / "inventory.json").read_text())
+    inv = takeoff_inventory()
     draws = drawing_documents()
     out = collections.Counter()
     heavy = collections.Counter()

@@ -26,7 +26,7 @@ from src.linking.lines import page_lines
 from src.linking.rules import propose
 from src.linking.structural import class_table, lines_in_box, suggest_classes
 from src.review.auto_run import whole_sheet_box
-from tools.takeoff.common import TAKEOFFS
+from tools.takeoff.common import TAKEOFFS, takeoff_inventory
 
 RUNS = TAKEOFFS / "phase6b_projects.json"
 
@@ -186,7 +186,7 @@ def align(a: dict, b: dict) -> dict:
 
 
 def frame_check(job: str) -> dict:
-    inv = json.loads((TAKEOFFS / "inventory.json").read_text())
+    inv = takeoff_inventory()
     runs = json.loads(RUNS.read_text())
     conn = connect()
     path = stored_pdf(conn, runs[job]["project_id"])

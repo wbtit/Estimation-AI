@@ -32,7 +32,6 @@ import csv
 import datetime
 import hashlib
 import json
-import math
 import re
 import shutil
 import stat
@@ -43,7 +42,6 @@ from pathlib import Path
 import pymupdf
 
 from src.pdf_scan.analyze import analyze_page
-from src.pdf_scan.textlines import page_words_and_lines
 from tools.bbmeasure import measure_ratio
 from tools.takeoff.colour_study import colour_key
 from tools.takeoff.common import PRIVATE, ROOT, TAKEOFFS, drawing_documents, fingerprint
@@ -71,25 +69,6 @@ SUMMARY_FALLBACK = re.compile(r"ESTIMATED\s+BY|INCLU(?:DES|SIONS)", re.I)
 YELLOW_MIN_RG, YELLOW_MAX_B = 0.9, 0.6
 LIKELY_SHARED_PAGES = 2 / 3  # share of the smaller document's text pages with the same text hash
 RATIO_MERGE = 0.01  # calibrations within 1% are one scale
-
-# Firm of record: a title-block line; STRUCTURAL lines first, the other keywords only if none.
-FIRM_STRUCTURAL = re.compile(r"\bSTRUCTURAL\b")
-FIRM_OTHER = re.compile(
-    r"\b(ENGINEER(S|ING)?|ASSOCIATES|CONSULTING|CONSULTANTS|INC|LLC|PLLC|P\.?C)\b"
-)
-FIRM_GENERIC = set(
-    "STRUCTURAL ENGINEER ENGINEERS ENGINEERING OF RECORD THE AND FOR BY & NOTES NOTE PLAN PLANS "
-    "DETAILS DETAIL SECTIONS SECTION GENERAL DRAWINGS DRAWING SHEET SHEETS STEEL FRAMING "
-    "FOUNDATION ROOF FLOOR LEVEL CONSULTANT CONSULTANTS SEAL STAMP SCHEDULE SCHEDULES ELEVATIONS "
-    "ELEVATION TYPICAL INFORMATION SPECIAL INSPECTIONS INSPECTION OBSERVATION LOADS DESIGN "
-    "CRITERIA REVISIONS PROJECT NO NUMBER DATE ISSUE ISSUED CONSTRUCTION SET PERMIT BID "
-    "CONTACT LICENSE LICENSED PROFESSIONAL REGISTERED CERTIFICATE STATE".split()
-)
-FIRM_MIN_SHARE = 0.5  # share of the (S-)sheets a firm line must repeat on
-FIRM_MIN_S_SHEETS = 2
-FIRM_MAX_WORDS = 8  # a longer line is a sentence (a note or disclaimer), not a firm name
-FIRM_SUFFIX = re.compile(r"\b(INC|LLC|PLLC|LTD|CORP|CORPORATION|CO|P ?C|LLP|PA)\b")
-
 
 # --- pure rules (synthetic tests in tests/test_markups_intake.py) -------------------------------
 
@@ -140,54 +119,27 @@ def summary_counts(pairs: list[dict]) -> dict[str, int]:
     return dict(c)
 
 
-def normalise_firm(line: str) -> str | None:
-    """A firm-name key: upper case, no punctuation, no company suffix; None for a generic line or
-    one with digits (an address, phone or sheet title)."""
-    up = re.sub(r"[^A-Z& ]+", " ", line.upper().replace(".", ""))
-    if re.search(r"\d", line):
-        return None
-    up = FIRM_SUFFIX.sub(" ", up)
-    words = up.split()
-    if not 2 <= len(words) <= FIRM_MAX_WORDS or all(w in FIRM_GENERIC for w in words):
-        return None
-    return " ".join(words)
-
-
-def firm_of(
-    lines_per_page: list[list[str]], sheet_numbers: list[str | None] | None = None
-) -> tuple[str | None, str | None, int]:
-    """(firm key, rule, pages). The firm of record repeats in every sheet's title block, so a key
-    counts only when it is on at least FIRM_MIN_SHARE of the text pages (of the S-sheets when the
-    set has FIRM_MIN_S_SHEETS or more of them). STRUCTURAL lines first, the other keywords only if
-    none; the key on the most pages, ties by key."""
-    pages_used = [lines for lines in lines_per_page if lines]
-    if sheet_numbers:
-        s_pages = [
-            lines
-            for lines, n in zip(lines_per_page, sheet_numbers, strict=True)
-            if lines and n and n.upper().startswith("S")
-        ]
-        if len(s_pages) >= FIRM_MIN_S_SHEETS:
-            pages_used = s_pages
-    need = max(1, math.ceil(FIRM_MIN_SHARE * len(pages_used))) if len(pages_used) > 1 else 1
-    for rule, rx in (("structural", FIRM_STRUCTURAL), ("other_keyword", FIRM_OTHER)):
-        pages: collections.Counter = collections.Counter()
-        for lines in pages_used:
-            keys = {k for t in lines if rx.search(t.upper()) and (k := normalise_firm(t))}
-            pages.update(keys)
-        ok = {k: n for k, n in pages.items() if n >= need}
-        if ok:
-            key, n = min(ok.items(), key=lambda kv: (-kv[1], kv[0]))
-            return key, rule, n
-    return None, None, 0
-
-
 def merge_ratios(values: list[float]) -> list[float]:
     out: list[float] = []
     for r in sorted(values):
         if not out or abs(r - out[-1]) / out[-1] > RATIO_MERGE:
             out.append(r)
     return [round(v, 3) for v in out]
+
+
+FIRM_ID = re.compile(r"^firm-[A-Z]{1,2}$")
+
+
+def firm_label(value: str | None) -> str:
+    """The report's firm: the hand-filled id, firm-? when empty; a value that is not an id (a
+    name typed by mistake) is never printed."""
+    if not value:
+        return "firm-?"
+    return value if FIRM_ID.match(value) else "firm-? (not an id)"
+
+
+def firm_manual(mapping: dict) -> dict[str, str | None]:
+    return {j: info.get("firm_manual") for j, info in mapping["jobs"].items()}
 
 
 @dataclass
@@ -381,7 +333,8 @@ def place(apply: bool) -> None:
         shutil.copy2(f, bdir / f.name)
     DEST.mkdir(parents=True, exist_ok=True)
     inv = json.loads(TAKEOFF_INV.read_text())
-    mapping: dict = {"source": "fixtures/MARKUPS", "jobs": {}, "firms": {}}
+    # firm_names (firm id -> real name) and each job's firm_manual are filled by hand
+    mapping: dict = {"source": "fixtures/MARKUPS", "jobs": {}, "firm_names": {}}
     for r in plan:
         dpath, tpath = DEST / f"{r['job']}.pdf", TAKEOFFS / r["takeoff"]
         if dpath.exists() or tpath.exists():
@@ -397,6 +350,7 @@ def place(apply: bool) -> None:
             "markup": f"takeoffs/{tpath.name}",
             "drawing_sha256": sha256(dpath),
             "markup_sha256": sha256(tpath),
+            "firm_manual": None,
         }
         with open(INVENTORY_MAP, "a") as f:
             f.write(
@@ -436,19 +390,8 @@ def place(apply: bool) -> None:
 # --- inventory -----------------------------------------------------------------------------------
 
 
-def _page_lines(page: pymupdf.Page) -> list[str]:
-    """The text lines of a page (the repeat test of `firm_of` finds the title block wherever it
-    sits on the sheet)."""
-    try:
-        _, lines = page_words_and_lines(page)
-    except Exception:  # noqa: BLE001 - an unreadable text layer gives no firm line
-        return []
-    return [ln.text for ln in lines]
-
-
 def _drawing(job: str, path: Path) -> dict:
     pages = []
-    tb_lines = []
     with pymupdf.open(path) as doc:
         for pg in doc:
             s = analyze_page(pg)
@@ -467,9 +410,7 @@ def _drawing(job: str, path: Path) -> dict:
                     "scale_parsed_ratio": s.scale_parsed_ratio,
                 }
             )
-            tb_lines.append(_page_lines(pg) if s.has_text_layer else [])
-    firm, rule, n = firm_of(tb_lines, [p["sheet_number"] for p in pages])
-    return {"pages": pages, "firm_key": firm, "firm_rule": rule, "firm_pages": n}
+    return {"pages": pages}
 
 
 def _markup(path: Path) -> dict:
@@ -599,9 +540,6 @@ def _job(job: str, info: dict, dups: list[dict]) -> dict:
         "markup_bytes": (PRIVATE / info["markup"]).stat().st_size,
         "page_kinds": dict(kinds_pages),
         "text": dict(text_pages),
-        "firm_key": d["firm_key"],
-        "firm_rule": d["firm_rule"],
-        "firm_pages": d["firm_pages"],
         "marked_pages": marked,
         "symbol_kinds": dict(sym_kinds),
         "unmapped_prefixes": dict(unmapped),
@@ -630,12 +568,8 @@ def _job(job: str, info: dict, dups: list[dict]) -> dict:
 def inventory() -> None:
     mapping = json.loads(MAPPING.read_text())
     jobs = []
-    firms: dict[str, str] = {}
     for job, info in sorted(mapping["jobs"].items()):
         r = _job(job, info, mapping["duplicates"].get(job, []))
-        if r["firm_key"]:
-            firms.setdefault(r["firm_key"], f"firm-{chr(ord('A') + len(firms))}")
-        r["firm"] = firms.get(r["firm_key"], "firm-?")
         dup_existing = [x for x in r["duplicates"] if x["where"] == "existing"]
         earlier_new = [x for x in r["duplicates"] if x["where"] == "new" and x["with"] < job]
         r["duplicate_flag"] = (
@@ -649,12 +583,8 @@ def inventory() -> None:
             end=" ",
         )
         dup = r["duplicate_flag"] or "no"
-        print(f"summary {'yes' if r['summary'] else 'no'}, {r['firm']}, dup {dup}")
-    mapping["firms"] = {v: k for k, v in firms.items()}
-    MAPPING.write_text(json.dumps(mapping, indent=1))
+        print(f"summary {'yes' if r['summary'] else 'no'}, dup {dup}")
     OUT.parent.mkdir(parents=True, exist_ok=True)
-    for r in jobs:
-        r["firm_key"] = None  # the name stays in MAPPING.json only
     OUT.write_text(json.dumps(jobs, indent=1, default=str))
     locked = [r for r in jobs if r["duplicate_flag"] == ""]
     LOCK.write_text(
@@ -676,8 +606,8 @@ def inventory() -> None:
             indent=1,
         )
     )
-    DOC.write_text(report(jobs))
-    print(f"jobs {len(jobs)} | firms {len(firms)} | locked {len(locked)}", end=" | ")
+    DOC.write_text(report(jobs, firm_manual(mapping)))
+    print(f"jobs {len(jobs)} | locked {len(locked)}", end=" | ")
     print(f"wrote {OUT.relative_to(ROOT)}, {DOC.relative_to(ROOT)}, {LOCK.relative_to(ROOT)}")
 
 
@@ -721,9 +651,9 @@ read-only. Locked list: fixtures/private/markups/heldout_test.lock.
 Rules: symbol kinds only from the owner-named prefixes B (beam), C (column), VB / HB
 (brace); every other prefix is unmapped (no company-wide mapping exists yet). Summary
 box: a yellow FreeText with count pairs, else a front-sheet FreeText with ESTIMATED BY /
-INCLUDES / INCLUSIONS. Firm of record: a title-block line repeated on at least half of
-the text pages (of the S-sheets when there are two or more), STRUCTURAL lines first,
-else ENGINEER(S/ING) / ASSOCIATES / CONSULTING / INC / LLC / PC; 2 to 8 words, no digits.
+INCLUDES / INCLUSIONS. Firm: the hand-filled `firm_manual` of each job in MAPPING.json
+(an id such as firm-A), else firm-?; never detected or guessed. The private `firm_names`
+map (id -> name) is never read here.
 Text none = a vector page without a text layer (text drawn as paths, or no text).
 """
 
@@ -738,13 +668,10 @@ NOTES = """\
   only: not usable as a column / beam answer key.
 - Page maps: a markup page without a text layer has no page-map entry (the existing loader
   rule); 19 such pages in 3 jobs.
-- Firm ids: 6 jobs have no repeated title-block line with a firm keyword (a logo drawn as
-  paths, or a name without a keyword); they stay firm-? rather than guessed.
-- Leakage: existing tools that read every registered job without a job list now see these
-  jobs too (tools/takeoff: inventory.py, prefix_inventory.py, m7_study.py, phase6b_report.py,
-  target_tie.py, target_tie_posthoc.py, shared_lines_job005.py, and common.py's loaders).
-  Re-running tools/takeoff/inventory.py rewrites inventory.json from scratch. Any later study
-  must filter by heldout_test.lock.
+- Lock in code (tools/jobs.py): the shared loaders (`drawing_documents()`,
+  `takeoff_files()`, `takeoff_inventory()`) return DEV jobs only; the locked jobs only with
+  `--include-test --prereg <document>`, which prints a warning. tools/takeoff/inventory.py
+  keeps the locked entries of inventory.json unchanged when it regenerates the file.
 """
 
 
@@ -755,7 +682,8 @@ HEADER = (
 )
 
 
-def report(jobs: list[dict]) -> str:
+def report(jobs: list[dict], manual: dict[str, str | None]) -> str:
+    jobs = [{**r, "firm": firm_label(manual.get(r["job"]))} for r in jobs]
     lines = [
         INTRO,
         HEADER,
@@ -780,8 +708,8 @@ def totals(jobs: list[dict]) -> str:
         kinds.update(r["symbol_kinds"])
         unmapped.update(r["unmapped_prefixes"])
     firms = sorted({r["firm"] for r in jobs})
-    named = [f for f in firms if f != "firm-?"]
-    unresolved = _count(jobs, lambda r: r["firm"] == "firm-?")
+    named = [f for f in firms if FIRM_ID.match(f)]
+    unresolved = _count(jobs, lambda r: not FIRM_ID.match(r["firm"]))
     per_firm = ", ".join(f"{f} {_count(jobs, lambda r, f=f: r['firm'] == f)}" for f in firms)
     usable = [r["job"] for r in jobs if r["usable_answer_key"]]
     not_usable = [r["job"] for r in jobs if not r["usable_answer_key"]]
@@ -809,7 +737,11 @@ def totals(jobs: list[dict]) -> str:
         f"- Jobs: {len(jobs)}; pages {pages}: scanned (raster) {scanned}; vector pages without a"
         f" real text layer {no_text} (in {no_text_jobs} jobs).",
         f"- Firms of record: {len(named)} distinct"
-        + (f", plus {unresolved} job(s) unresolved (firm-?)" if unresolved else "")
+        + (
+            f", plus {unresolved} job(s) without a hand-filled firm id (firm-?)"
+            if unresolved
+            else ""
+        )
         + f"; jobs per firm: {per_firm}.",
         f"- Count marks: columns {kinds.get('column', 0)}, beams {kinds.get('beam', 0)},"
         f" braces {kinds.get('brace', 0)}; unmapped {sum(unmapped.values())} over"
@@ -837,7 +769,9 @@ def main(argv: list[str]) -> None:
     if argv[0] == "place":
         place("--apply" in argv)
     elif argv[0] == "report":  # the doc again from the saved JSON (no re-read of the PDFs)
-        DOC.write_text(report(json.loads(OUT.read_text())))
+        DOC.write_text(
+            report(json.loads(OUT.read_text()), firm_manual(json.loads(MAPPING.read_text())))
+        )
     else:
         inventory()
 

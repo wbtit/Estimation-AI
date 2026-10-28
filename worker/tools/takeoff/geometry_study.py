@@ -25,7 +25,7 @@ from src.linking.structural import class_table, lines_in_box, suggest_classes
 from src.pdf_scan.analyze import analyze_page
 from src.text_layer.parsers.dimension import find_dimensions
 from src.text_layer.parsers.profile import find_profiles
-from tools.takeoff.common import PRIVATE, TAKEOFFS, drawing_documents
+from tools.takeoff.common import PRIVATE, TAKEOFFS, drawing_documents, takeoff_inventory
 
 TOLS = (6.0, 3.0, 12.0)  # primary first
 MATCH_SHARE = 0.8
@@ -371,7 +371,7 @@ def ms_to_mm(ms: tuple[float, str]) -> float:
 
 
 def main(argv: list[str]) -> None:
-    inv = json.loads((TAKEOFFS / "inventory.json").read_text())
+    inv = takeoff_inventory()
     draws = drawing_documents()
     out = {}
     for name, info in sorted(inv.items()):

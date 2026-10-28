@@ -22,7 +22,7 @@ from pathlib import Path
 
 import pymupdf
 
-from tools.takeoff.common import TAKEOFFS, drawing_documents
+from tools.takeoff.common import TAKEOFFS, drawing_documents, takeoff_inventory
 
 API = os.environ.get("STAGE1_API", "http://127.0.0.1:3000")
 POLL_S = 3.0
@@ -234,7 +234,7 @@ def run_job(job: str, takeoff: Path, info: dict, drawing: Path) -> dict:
 
 
 def main(argv: list[str]) -> None:
-    inv = json.loads((TAKEOFFS / "inventory.json").read_text())
+    inv = takeoff_inventory()
     draws = drawing_documents()
     results = []
     for name, info in sorted(inv.items()):

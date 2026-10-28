@@ -20,7 +20,7 @@ import pymupdf
 
 from src.config import load_config
 from src.db import connect
-from tools.takeoff.common import TAKEOFFS
+from tools.takeoff.common import TAKEOFFS, takeoff_inventory
 from tools.takeoff.geometry_study import vertices_of
 from tools.takeoff.phase6c_trace import RUNS
 
@@ -60,7 +60,7 @@ def page_symbols(doc: pymupdf.Document, page: pymupdf.Page) -> list[dict]:
 
 
 def import_job(job: str, mapping: dict[str, str]) -> tuple[list[dict], dict]:
-    inv = json.loads((TAKEOFFS / "inventory.json").read_text())
+    inv = takeoff_inventory()
     name, info = next((n, i) for n, i in sorted(inv.items()) if i.get("match") == job)
     rows = []
     counts: collections.Counter = collections.Counter()

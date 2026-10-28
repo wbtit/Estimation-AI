@@ -23,7 +23,7 @@ from src.linking.lines import page_lines
 from src.linking.structural import class_table, lines_in_box, suggest_classes
 from src.review.auto_run import whole_sheet_box
 from tools.takeoff import phase6c_lib as L
-from tools.takeoff.common import TAKEOFFS
+from tools.takeoff.common import TAKEOFFS, takeoff_inventory
 from tools.takeoff.phase6b_study import their_symbols
 from tools.takeoff.phase6c_trace import RUNS, connect, stored_pdf
 
@@ -38,7 +38,7 @@ def out_path(corrected: bool):
 def page_plan(corrected: bool) -> list[dict]:
     """(job, takeoff file, takeoff page, drawing page, stored 6b symbol flags or None) in the order
     of the Phase 6b records."""
-    inv = json.loads((TAKEOFFS / "inventory.json").read_text())
+    inv = takeoff_inventory()
     study = json.loads(STUDY.read_text())["pages"]
     shift: dict[tuple[str, int], int] = {}
     if corrected:

@@ -9,13 +9,13 @@ import pymupdf
 from tools.markups_intake import (
     Doc,
     _markup,
-    firm_of,
+    firm_label,
     is_yellow,
     mark_kind,
     merge_ratios,
-    normalise_firm,
     pair,
     parse_summary,
+    report,
     shared_share,
     summary_counts,
 )
@@ -47,34 +47,20 @@ def test_yellow_and_the_named_prefixes_only():
     ]
 
 
-def test_firm_names_are_normalised_and_generic_lines_dropped():
-    assert normalise_firm("Acme Structural Engineers, Inc.") == "ACME STRUCTURAL ENGINEERS"
-    assert normalise_firm("ACME STRUCTURAL ENGINEERS LLC") == "ACME STRUCTURAL ENGINEERS"
-    assert normalise_firm("STRUCTURAL ENGINEER OF RECORD") is None  # generic words only
-    assert normalise_firm("Structural Engineers 123 Main St") is None  # digits: an address
-    assert (
-        normalise_firm("THE ENGINEER SHALL REVIEW ALL SHOP DRAWINGS BEFORE ANY WORK BEGINS") is None
-    )
-
-
-def test_the_firm_repeats_on_half_the_sheets_structural_first():
-    firm = "ACME STRUCTURAL ENGINEERS"
-    other = "BETA ENGINEERING"
-    pages = [[firm, other]] * 3 + [["FOUNDATION PLAN", "ZED STRUCTURAL GROUP"]] + [[other]] * 2
-    assert firm_of(pages) == (firm, "structural", 3)
-    # a STRUCTURAL line on one page of six does not repeat: the other keyword wins
-    pages = [[other]] * 5 + [["ZED STRUCTURAL GROUP"]]
-    assert firm_of(pages) == (other, "other_keyword", 5)
-    # with two or more S-sheets only those count
-    pages = [
-        [firm],
-        [firm],
-        ["GAMMA ARCHITECTS INC"],
-        ["GAMMA ARCHITECTS INC"],
-        ["GAMMA ARCHITECTS INC"],
-    ]
-    assert firm_of(pages, ["S-1", "S-2", "A-1", "A-2", "A-3"]) == (firm, "structural", 2)
-    assert firm_of([[], []]) == (None, None, 0)
+def test_the_firm_is_only_the_hand_filled_id_and_never_a_name():
+    assert firm_label(None) == "firm-?" and firm_label("") == "firm-?"
+    assert firm_label("firm-A") == "firm-A" and firm_label("firm-AB") == "firm-AB"
+    assert firm_label("Acme Structural Engineers") == "firm-? (not an id)"
+    jobs = [
+        {"job": j, "pages": 1, "page_kinds": {"vector": 1}, "text": {"real": 1},
+         "marked_pages": [], "symbol_kinds": {}, "unmapped_prefixes": {}, "summary": None,
+         "summary_counts": {}, "summary_odd": [], "calibrated_pages": 0, "duplicate_flag": "",
+         "usable_answer_key": False, "summary_vs_symbols": {}}
+        for j in ("job-901", "job-902", "job-903")
+    ]  # fmt: skip
+    doc = report(jobs, {"job-901": "firm-A", "job-902": "Acme Inc", "job-903": None})
+    assert "| firm-A |" in doc and "Acme" not in doc
+    assert "Firms of record: 1 distinct, plus 2 job(s)" in doc
 
 
 def test_pairing_needs_the_same_page_count_and_a_unique_best_match():

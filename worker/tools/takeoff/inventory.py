@@ -2,16 +2,55 @@
 
 Counts only on stdout; the file-to-job map is written to the git-ignored private folder.
 usage (from worker/): PYTHONPATH=. .venv/bin/python -m tools.takeoff.inventory
+
+DEV jobs only: the entries of the locked held-out TEST jobs (tools/jobs.py) are never recomputed,
+dropped or changed; they are copied over as they are (merge, not overwrite), and the run stops
+before writing if one would differ. The three registers are backed up first.
 """
 
 from __future__ import annotations
 
 import collections
+import datetime
 import json
+import shutil
 
 import pymupdf
 
-from tools.takeoff.common import TAKEOFFS, drawing_documents, fingerprint, takeoff_files
+from tools.jobs import is_locked, test_jobs
+from tools.takeoff.common import (
+    PRIVATE,
+    TAKEOFFS,
+    drawing_documents,
+    fingerprint,
+    takeoff_files,
+)
+
+INVENTORY = TAKEOFFS / "inventory.json"
+REGISTERS = (INVENTORY, TAKEOFFS / "PRIVATE_MAP.csv", PRIVATE / "inventory_map.csv")
+
+
+def merge_inventory(dev: dict[str, dict], old: dict[str, dict], locked) -> dict[str, dict]:
+    """The regenerated DEV entries plus every locked entry of `old` exactly as it was."""
+    keep = {
+        n: i
+        for n, i in old.items()
+        if is_locked(n, locked) or (i.get("match") and is_locked(i["match"], locked))
+    }
+    merged = {n: i for n, i in dev.items() if n not in keep}
+    merged.update(keep)
+    if any(merged.get(n) != i for n, i in keep.items()):
+        raise SystemExit("a locked inventory entry would change; nothing written")
+    return dict(sorted(merged.items()))
+
+
+def backup_registers() -> None:
+    stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    out = PRIVATE / "backups" / f"registers-before-inventory-{stamp}"
+    out.mkdir(parents=True)
+    for f in REGISTERS:
+        if f.exists():
+            shutil.copy2(f, out / f.name)
 
 
 def main() -> None:
@@ -85,7 +124,12 @@ def main() -> None:
             f"{p.name}: {f['pages']} pages ({hashed} with text), {annots} annotations, "
             f"match {m['match']} on {m['matched_pages']} pages (exact {votes.get(m['match'], 0)}), same page count {m['same_page_count']}, same sizes {m['same_page_sizes']}"
         )
-    (TAKEOFFS / "inventory.json").write_text(json.dumps(mapping, indent=1))
+    backup_registers()
+    old = json.loads(INVENTORY.read_text()) if INVENTORY.exists() else {}
+    locked = test_jobs()
+    merged = merge_inventory(mapping, old, locked)
+    INVENTORY.write_text(json.dumps(merged, indent=1))
+    print("locked entries kept unchanged:", sum(is_locked(n, locked) for n in merged))
     jobs = collections.Counter(m["match"] for m in mapping.values() if m["match"])
     print("jobs with a takeoff:", dict(jobs))
     print("takeoff PDFs matching no job:", sum(1 for m in mapping.values() if not m["match"]))

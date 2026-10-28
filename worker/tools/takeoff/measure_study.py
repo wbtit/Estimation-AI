@@ -18,7 +18,7 @@ from src.linking.lines import page_lines
 from src.linking.structural import class_table, lines_in_box, suggest_classes
 from src.pdf_scan.analyze import analyze_page
 from src.text_layer.parsers.dimension import find_dimensions
-from tools.takeoff.common import PRIVATE, TAKEOFFS, drawing_documents
+from tools.takeoff.common import PRIVATE, TAKEOFFS, drawing_documents, takeoff_inventory
 from tools.takeoff.geometry_study import (
     MIN_MARKUP_PT,
     measure_scale,
@@ -125,7 +125,7 @@ def structural_lines(dpage, scan, classes_by_page, dp, which):
 
 
 def q1_q2_q3() -> dict:
-    inv = json.loads((TAKEOFFS / "inventory.json").read_text())
+    inv = takeoff_inventory()
     draws = drawing_documents()
     rows, pages = [], []
     for name, info in sorted(inv.items()):
@@ -301,7 +301,7 @@ def q5() -> dict:
     """Feasibility only: written dimension strings against the drawn dimension line x scale."""
     from src.linking.candidates import rect_segment_distance
 
-    inv = json.loads((TAKEOFFS / "inventory.json").read_text())
+    inv = takeoff_inventory()
     jobs = sorted({i["match"] for i in inv.values() if i.get("match")})
     draws = drawing_documents()
     out = {"pages": 0, "strings": 0, "clear_line": 0, "agree": 0, "rows": []}

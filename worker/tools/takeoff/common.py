@@ -1,25 +1,33 @@
-"""Shared helpers: paths, drawing-document list, text fingerprints. Read-only."""
+"""Shared helpers: paths, drawing-document list, text fingerprints. Read-only.
+
+The loaders return DEV jobs only; the locked held-out TEST jobs (tools/jobs.py) only with
+`include_test=True` (a command line: --include-test --prereg <document>)."""
 
 from __future__ import annotations
 
 import csv
 import hashlib
+import json
 from pathlib import Path
 
 import pymupdf
+
+from tools.jobs import is_locked, test_jobs
 
 ROOT = Path(__file__).resolve().parents[3]
 PRIVATE = ROOT / "fixtures" / "private"
 TAKEOFFS = PRIVATE / "takeoffs"
 
 
-def drawing_documents() -> dict[str, Path]:
-    """job id -> PDF path of the unique drawing documents (kept ones plus job-001)."""
+def drawing_documents(include_test: bool = False) -> dict[str, Path]:
+    """job id -> PDF path of the unique drawing documents (kept ones plus job-001); DEV jobs only
+    unless `include_test`."""
+    locked = None if include_test else test_jobs()
     out: dict[str, Path] = {}
     home = Path.home() / "Downloads"
     for raw in csv.DictReader(open(PRIVATE / "inventory_map.csv")):
         r = {k.strip(): (v or "").strip() for k, v in raw.items()}  # the file is column-padded
-        if r["status"] != "kept":
+        if r["status"] != "kept" or (locked and is_locked(r["id"], locked)):
             continue
         for base in (home, PRIVATE):
             p = base / r["relative_path"]
@@ -40,12 +48,29 @@ def drawing_documents() -> dict[str, Path]:
     return dict(sorted(out.items()))
 
 
-def takeoff_files() -> list[Path]:
+def takeoff_files(include_test: bool = False) -> list[Path]:
+    """The estimators' takeoff files; DEV jobs only unless `include_test`."""
+    locked = None if include_test else test_jobs()
     return sorted(
         p
         for p in TAKEOFFS.glob("takeoff-*")
         if p.suffix.lower() in {".pdf", ".xlsx", ".csv", ".xml"}
+        and not (locked and is_locked(p.name, locked))
     )
+
+
+def takeoff_inventory(include_test: bool = False) -> dict[str, dict]:
+    """takeoffs/inventory.json (takeoff file -> match, page_map, ...); without the entries of the
+    locked jobs (by file name or by match) unless `include_test`."""
+    inv = json.loads((TAKEOFFS / "inventory.json").read_text())
+    if include_test:
+        return inv
+    locked = test_jobs()
+    return {
+        n: i
+        for n, i in inv.items()
+        if not is_locked(n, locked) and not (i.get("match") and is_locked(i["match"], locked))
+    }
 
 
 def page_words(page: pymupdf.Page) -> list[str]:

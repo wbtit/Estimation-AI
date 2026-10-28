@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 import pymupdf
 
 from src.text_layer.parsers.dimension import find_dimensions
-from tools.takeoff.common import TAKEOFFS
+from tools.takeoff.common import TAKEOFFS, takeoff_inventory
 from tools.takeoff.geometry_study import (
     MIN_MARKUP_PT,
     measure_scale,
@@ -104,7 +104,7 @@ def _frames() -> dict[tuple[str, int], tuple[int, float, float]]:
 
 def their_pages(job: str) -> dict[int, TheirPage]:
     """Drawing page index -> their markup on it."""
-    inv = json.loads((TAKEOFFS / "inventory.json").read_text())
+    inv = takeoff_inventory()
     frames = _frames()
     out: dict[int, TheirPage] = collections.defaultdict(TheirPage)
     for name, info in sorted(inv.items()):
