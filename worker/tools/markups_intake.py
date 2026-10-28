@@ -44,7 +44,14 @@ import pymupdf
 from src.pdf_scan.analyze import analyze_page
 from tools.bbmeasure import measure_ratio
 from tools.takeoff.colour_study import colour_key
-from tools.takeoff.common import PRIVATE, ROOT, TAKEOFFS, drawing_documents, fingerprint
+from tools.takeoff.common import (
+    PRIVATE,
+    ROOT,
+    TAKEOFFS,
+    drawing_documents,
+    effective_page_map,
+    fingerprint,
+)
 from tools.takeoff.import_markups import page_symbols
 from tools.takeoff.prefix_inventory import prefix_of
 
@@ -495,12 +502,8 @@ def _markup(path: Path) -> dict:
 def _job(job: str, info: dict, dups: list[dict]) -> dict:
     d = _drawing(job, PRIVATE / info["drawing"])
     m = _markup(PRIVATE / info["markup"])
-    page_map = {
-        int(k): v
-        for k, v in json.loads(TAKEOFF_INV.read_text())[Path(info["markup"]).name][
-            "page_map"
-        ].items()
-    }
+    entry = json.loads(TAKEOFF_INV.read_text())[Path(info["markup"]).name]
+    page_map = {int(k): v for k, v in effective_page_map(entry)[0].items()}
     marked = []
     sym_kinds: collections.Counter = collections.Counter()
     unmapped: collections.Counter = collections.Counter()

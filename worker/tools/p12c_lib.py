@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 import pymupdf
 
 from src.text_layer.parsers.dimension import find_dimensions
-from tools.takeoff.common import TAKEOFFS, takeoff_inventory
+from tools.takeoff.common import PAGE_MAP_INDEX, TAKEOFFS, takeoff_inventory
 from tools.takeoff.geometry_study import (
     MIN_MARKUP_PT,
     measure_scale,
@@ -113,6 +113,8 @@ def their_pages(job: str) -> dict[int, TheirPage]:
         with pymupdf.open(TAKEOFFS / name) as tdoc:
             for tp, dp in sorted((int(k), v) for k, v in info["page_map"].items()):
                 off, dx, dy = frames.get((job, tp), (0, 0.0, 0.0))
+                if info.get("page_map_rule") == PAGE_MAP_INDEX:
+                    off = 0  # the Phase 6c page offset corrects the text-hash map only
                 page = tdoc[tp]
                 tp_out = out[dp + off]
                 tp_out.takeoff.append((name, tp))

@@ -59,17 +59,42 @@ def takeoff_files(include_test: bool = False) -> list[Path]:
     )
 
 
+PAGE_MAP_INDEX = "index"  # same page count: page N -> page N
+PAGE_MAP_TEXT_HASH = "text_hash"  # different page counts: the stored content match
+
+
 def takeoff_inventory(include_test: bool = False) -> dict[str, dict]:
     """takeoffs/inventory.json (takeoff file -> match, page_map, ...); without the entries of the
-    locked jobs (by file name or by match) unless `include_test`."""
+    locked jobs (by file name or by match) unless `include_test`. `page_map` is the effective map
+    (`effective_page_map`)."""
     inv = json.loads((TAKEOFFS / "inventory.json").read_text())
-    if include_test:
-        return inv
-    locked = test_jobs()
+    if not include_test:
+        locked = test_jobs()
+        inv = {
+            n: i
+            for n, i in inv.items()
+            if not is_locked(n, locked) and not (i.get("match") and is_locked(i["match"], locked))
+        }
+    return {n: with_page_map(i) for n, i in inv.items()}
+
+
+def effective_page_map(info: dict) -> tuple[dict[str, int], str]:
+    """(markup page -> drawing page, rule). A markup with the same page count as its drawing maps
+    page N to page N (every page, also those without text, and near-identical sheets stay apart);
+    only when the counts differ is the stored text-hash map used (Phase 13a)."""
+    if info.get("match") and info.get("same_page_count") and info.get("pages"):
+        return {str(k): k for k in range(int(info["pages"]))}, PAGE_MAP_INDEX
+    return dict(info.get("page_map") or {}), PAGE_MAP_TEXT_HASH
+
+
+def with_page_map(info: dict) -> dict:
+    """The entry with its effective `page_map` (the stored one is kept as `page_map_text_hash`)."""
+    pm, rule = effective_page_map(info)
     return {
-        n: i
-        for n, i in inv.items()
-        if not is_locked(n, locked) and not (i.get("match") and is_locked(i["match"], locked))
+        **info,
+        "page_map": pm,
+        "page_map_rule": rule,
+        "page_map_text_hash": info.get("page_map"),
     }
 
 
