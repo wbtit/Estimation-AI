@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 
-from tools.bbmeasure import bb_measure_ratio
+from tools.bbmeasure import bb_measure_ratio, measure_ratio
 
 FMT = "<< /Type /NumberFormat /U ({u}) /C {c} /F /F /D 4 /FD true /SS () >>"
 MEASURE = "<< /Type /Measure /Subtype /RL /R (scale) /X [ {x} ] /D [ ] >>"
@@ -37,3 +37,16 @@ def test_missing_or_unknown_parts_give_none():
     assert bb_measure_ratio(bad_unit, _none) is None
     zero = "<< /BBMeasure " + MEASURE.format(x=FMT.format(u="'", c="0")) + " >>"
     assert bb_measure_ratio(zero, _none) is None
+
+
+def test_the_standard_measure_key_of_an_annotation_or_a_page_viewport():
+    fmt = FMT.format(u="'", c=".05555556")
+    annot = "<< /Subtype /Line /Measure " + MEASURE.format(x=fmt) + " >>"
+    assert math.isclose(measure_ratio(annot, _none), 48.0, rel_tol=1e-6)
+    viewport = "<< /Type /Viewport /BBox [ 0 0 9 9 ] /Measure 12 0 R >>"
+    objs = {12: MEASURE.format(x=fmt)}
+    assert math.isclose(measure_ratio(viewport, objs.__getitem__), 48.0, rel_tol=1e-6)
+    # /Measure is never read inside /BBMeasure (there it is only the /Type value)
+    bb_only = "<< /BBMeasure " + MEASURE.format(x=fmt) + " >>"
+    assert measure_ratio(bb_only, _none) is None
+    assert math.isclose(measure_ratio(bb_only, _none, "/BBMeasure"), 48.0, rel_tol=1e-6)
