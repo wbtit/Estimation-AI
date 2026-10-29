@@ -16,7 +16,9 @@
     "kinds:load-abbreviations": "tsx src/scripts/load-kind-abbreviations.ts",
     "seed:synthetic": "tsx src/scripts/seed-synthetic.ts",
     "test-db": "tsx src/scripts/ensure-test-db.ts",
-    "prefixes:load": "tsx src/scripts/load-prefix-meanings.ts"
+    "prefixes:load": "tsx src/scripts/load-prefix-meanings.ts",
+    "session:export": "tsx src/scripts/session-export.ts",
+    "session:report": "tsx src/scripts/session-report.ts"
   },
   "dependencies": {
     "@fastify/multipart": "^10.1.2",
