@@ -585,7 +585,7 @@ export function processingSteps(
       share: pipeState === "done" ? 1 : 0,
     },
     {
-      name: "Auto build",
+      name: "Suggest setup",
       state: autoState,
       detail: auto?.pages ? `${auto.pages_done}/${auto.pages}` : "",
       share:
