@@ -38,11 +38,13 @@ from src.build.columns import (
     GLYPH_LONG_MIN,
     GLYPH_MAX_VERTS,
     GLYPH_SHORT_MIN,
+    STROKE_GAP_PT,
     Glyph,
     _TextIndex,
     column_like,
     column_plan_columns,
     find_glyphs,
+    stroke_glyphs,
 )
 from src.build.geom import clip_segment, in_box
 from src.build.not_beams import not_beams
@@ -119,6 +121,7 @@ COL_STEPS = (
 )
 
 Seg = tuple[float, float, float, float]
+SAME_PLAN = object()  # Census: the page's own column plan
 Pt = tuple[float, float]
 
 
@@ -328,9 +331,23 @@ def collinear_span(segs: np.ndarray, i: int) -> float:
 class Census:
     """The engine's steps of one page re-run with C's pen, keeping what each step took away."""
 
-    def __init__(self, pg: Page, pen: str | None, as_stored: bool):
+    def __init__(
+        self,
+        pg: Page,
+        pen: str | None,
+        as_stored: bool,
+        box=None,
+        flags: frozenset[str] = frozenset(),
+        gap: float = STROKE_GAP_PT,
+        plan: Any = SAME_PLAN,
+    ):
+        """Phase 13c: `box`, `flags`, `gap` and `plan` give a configuration's crop, build flags,
+        stroke end gap and column plan (defaults: the page's own, as in 13b)."""
         self.pg, self.pen = pg, pen
-        page, box = pg.page, pg.box
+        self.box = box = pg.box if box is None else box
+        self.plan = pg.plan if plan is SAME_PLAN else plan
+        self.flags, self.gap = frozenset(flags), gap
+        page = pg.page
         setup = Setup(
             box,
             pg.ratio,
@@ -339,9 +356,11 @@ class Census:
             pg.role,
             str(pg.inputs.get("crossing_rule") or "family"),
             pens=pg.view_pens if as_stored else ((pen,) if pen else ()),
+            flags=self.flags,
+            stroke_gap_pt=gap,
         )
         self.setup = setup
-        self.pb = build_page(page, setup, pg.text, pg.legend, pg.plan)
+        self.pb = build_page(page, setup, pg.text, pg.legend, self.plan)
         self.pieces = pieces_of(self.pb, pg.ratio)
         text_all = pg.text if pg.text is not None else page_text_lines(page)
         self.text = [t for t in text_all if in_box(t.centre, box)]
@@ -406,11 +425,11 @@ class Census:
         # the not-beams step with the build's own column points
         projected = []
         reg = pb.registration
-        if self.pg.plan is not None and reg is not None and reg.ok:
+        if self.plan is not None and reg is not None and reg.ok:
             pts = project_columns(
-                [p for p, _ in self.pg.plan.columns], self.pg.plan.ratio, reg, self.pg.ratio
+                [p for p, _ in self.plan.columns], self.plan.ratio, reg, self.pg.ratio
             )
-            projected = [p for p in pts if in_box(p, self.pg.box)]
+            projected = [p for p in pts if in_box(p, self.box)]
         nb = not_beams(
             self.pre,
             ps,
@@ -418,6 +437,7 @@ class Census:
             self.pg.ratio,
             [g.centre for g in pb.glyphs] + projected + [p.centre for p in pb.plates],
             pb.plates,
+            wall_same_pen="wall_same_pen" in self.flags,
         )
         if len(nb.lines) != len(pb.lines):
             raise SystemExit("not-beams step differs from the engine's")
@@ -566,12 +586,28 @@ class Census:
     # ---- columns ----
     def _column_steps(self) -> None:
         pb = self.pb
-        self.glyphs_all = find_glyphs(self.ps, self.pg.box, pb.bubbles, self.text, pb.crossings)
+        self.glyphs_all = find_glyphs(self.ps, self.box, pb.bubbles, self.text, pb.crossings)
+        if "column_strokes" in self.flags:
+            self.glyphs_all += stroke_glyphs(
+                self.ps,
+                pb.cleaned.keep,
+                self.box,
+                pb.bubbles,
+                self.text,
+                pb.crossings,
+                list(self.glyphs_all),
+                self.gap,
+            )
         kept = {tuple(g.shape_ids) for g in pb.glyphs}
         self.markers = {tuple(g.shape_ids) for g in self.glyphs_all} - kept
         self.col_keys = {tuple(g.shape_ids) for g in pb.columns if g.shape_ids}
         has_grid = len(pb.crossings) >= MIN_CROSSINGS
-        chosen, _ = column_plan_columns(pb.glyphs, has_grid, self.pg.ratio)
+        chosen, _ = column_plan_columns(
+            pb.glyphs,
+            has_grid,
+            self.pg.ratio,
+            {sh.id: sh for sh in self.ps.shapes} if "column_off_grid" in self.flags else None,
+        )
         self.chosen = {tuple(g.shape_ids) for g in chosen}
         self.grid_rule = (pb.column_rule or "").startswith("glyph_at_grid")
         self.col_pts = [(p["page"][0], p["page"][1]) for p in self.pieces if p["type"] == "column"]
@@ -615,7 +651,7 @@ class Census:
         f: dict[str, Any] = {"matched": k in matched}
         if f["matched"]:
             return {**f, "category": "matched"}
-        if not in_box(m, self.pg.box):
+        if not in_box(m, self.box):
             return {**f, "category": "outside_crop"}
         mine = {v: s for s, v in matched.items()}
         if any(math.dist(m, p) <= r and mine.get(j, k) != k for j, p in enumerate(self.col_pts)):
