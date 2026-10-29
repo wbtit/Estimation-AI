@@ -38,7 +38,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from src.build.base_plates import BasePlate, plate_line
-from src.build.beam_lines import BeamLine
+from src.build.beam_lines import BeamLine, dash_ids
 from src.build.clean import Cleaned
 from src.build.geom import Pt
 from src.build.segments import PageSegments
@@ -60,6 +60,12 @@ WALL_FILL_SPACING_PT = 48.0
 WALL_BAND_MARGIN_PT = 0.5
 FILLED_BAND_MIN_PT = 3.0
 FILLED_BAND_ASPECT = 4.0
+
+# Phase 13c flag "wall_same_pen" (F2, off by default): both faces the same solid pen, a typical
+# wall spacing, and no member of another pen drawn inside the band
+SAME_PEN_WALL_MIN_IN = 5.5  # 6 in - 0.5 in
+SAME_PEN_WALL_MAX_IN = 16.5  # 16 in + 0.5 in
+INSIDE_MEMBER_COVER = 0.5
 
 COLUMN_SHAPE_MAX_IN = 36.0
 COLUMN_SHAPE_T_MIN = 0.15
@@ -118,9 +124,11 @@ class _Page:
     hatch: np.ndarray
     small: np.ndarray  # centres of small shapes (dots, triangles)
     bands: list[tuple[float, float, float, float]]  # filled closed shapes, bbox
+    pen: list[tuple[str, str]] = field(default_factory=list)  # flag wall_same_pen only
+    dashed: np.ndarray = field(default_factory=lambda: np.zeros(0, dtype=bool))
 
     @classmethod
-    def of(cls, ps: PageSegments, cleaned: Cleaned) -> _Page:
+    def of(cls, ps: PageSegments, cleaned: Cleaned, pens: bool = False) -> _Page:
         s = ps.seg if len(ps) else np.zeros((0, 4))
         mid = np.stack([(s[:, 0] + s[:, 2]) / 2, (s[:, 1] + s[:, 3]) / 2], axis=1)
         small = [
@@ -142,7 +150,20 @@ class _Page:
             else np.zeros(len(s), bool),
             small=np.asarray(small, dtype=float).reshape(-1, 2),
             bands=bands,
+            pen=[ps.pen(i) for i in range(len(ps))] if pens else [],
+            dashed=_dashed(ps) if pens else np.zeros(len(s), dtype=bool),
         )
+
+
+def _dashed(ps: PageSegments) -> np.ndarray:
+    """Segments with a PDF dash array or a dash under the engine's dash rules, per pen."""
+    out = ps.pdf_dashed.astype(bool).copy() if len(ps) else np.zeros(0, dtype=bool)
+    by_pen: dict[tuple[str, str], list[int]] = {}
+    for i in range(len(ps)):
+        by_pen.setdefault(ps.pen(i), []).append(i)
+    for key in sorted(by_pen):
+        out[sorted(dash_ids(ps, by_pen[key])[0])] = True
+    return out
 
 
 def _angle_diff(a: np.ndarray, b: float) -> np.ndarray:
@@ -154,11 +175,16 @@ def _line_angle(ln: BeamLine) -> float:
     return math.degrees(math.atan2(ln.p1[1] - ln.p0[1], ln.p1[0] - ln.p0[0])) % 180.0
 
 
-def is_wall_face(ln: BeamLine, pg: _Page, ratio: float) -> bool:
-    """Rule "wall_band" (module note)."""
-    lo, hi = real_pt(WALL_MIN_IN, ratio), real_pt(WALL_MAX_IN, ratio)
+def is_wall_face(ln: BeamLine, pg: _Page, ratio: float, same_pen: bool = False) -> bool:
+    """Rule "wall_band" (module note); with `same_pen` the Phase 13c F2 rule (constants above):
+    the partner face is the line's own solid pen at 5.5 to 16.5 real inches, a filled band counts
+    only along its edge, and a parallel segment of another pen inside the band keeps the line."""
+    if same_pen:
+        lo, hi = real_pt(SAME_PEN_WALL_MIN_IN, ratio), real_pt(SAME_PEN_WALL_MAX_IN, ratio)
+    else:
+        lo, hi = real_pt(WALL_MIN_IN, ratio), real_pt(WALL_MAX_IN, ratio)
     _, _, _, _, length = _frame(ln)
-    if _filled_band(ln, pg, lo, hi):
+    if _filled_band(ln, pg, lo, hi, edge_only=same_pen):
         return True
     own = set(ln.seg_ids)
     par = (
@@ -166,6 +192,9 @@ def is_wall_face(ln: BeamLine, pg: _Page, ratio: float) -> bool:
         & (pg.length >= WALL_PARTNER_MIN_PT)
         & (_angle_diff(pg.angle, _line_angle(ln)) <= WALL_PARALLEL_DEG)
     )
+    line_pen = pg.pen[ln.seg_ids[0]] if same_pen and ln.seg_ids else None
+    if same_pen:
+        par &= np.asarray([p == line_pen for p in pg.pen], dtype=bool) & ~pg.dashed
     idx = [int(i) for i in np.flatnonzero(par) if int(i) not in own]
     if not idx:
         return False
@@ -190,7 +219,9 @@ def is_wall_face(ln: BeamLine, pg: _Page, ratio: float) -> bool:
                 off = float(np.mean([abs(d[j]) for j in g]))
                 if lo <= off <= hi:
                     span = (min(s[0] for s in spans), max(s[1] for s in spans))
-                    if _band_filled(ln, pg, side, off, span):
+                    if _band_filled(ln, pg, side, off, span) and not (
+                        same_pen and _member_inside(ln, pg, side, off, line_pen)
+                    ):
                         return True
                 break
             k += len(g)
@@ -228,8 +259,34 @@ def _band_filled(
     return int(inside.sum()) >= need
 
 
-def _filled_band(ln: BeamLine, pg: _Page, lo: float, hi: float) -> bool:
-    """The line runs along a closed filled band of wall thickness (axis-aligned bbox)."""
+def _member_inside(
+    ln: BeamLine, pg: _Page, side: float, off: float, pen: tuple[str, str] | None
+) -> bool:
+    """F2: segments of another pen parallel to the line inside the band cover at least
+    INSIDE_MEMBER_COVER of it (a member drawn on the wall)."""
+    other = np.asarray([p != pen for p in pg.pen], dtype=bool)
+    idx = np.flatnonzero(other & (_angle_diff(pg.angle, _line_angle(ln)) <= WALL_PARALLEL_DEG))
+    if len(idx) == 0:
+        return False
+    length = ln.length
+    a_t, a_d = _local(pg.seg[idx][:, 0:2], ln)
+    b_t, b_d = _local(pg.seg[idx][:, 2:4], ln)
+    m = WALL_BAND_MARGIN_PT
+    spans = []
+    for k in range(len(idx)):
+        da, db = a_d[k] * side, b_d[k] * side
+        if not (m < da < off - m and m < db < off - m):
+            continue
+        t0 = max(0.0, min(a_t[k], b_t[k]))
+        t1 = min(length, max(a_t[k], b_t[k]))
+        if t1 > t0:
+            spans.append((float(t0), float(t1)))
+    return _union(spans) >= INSIDE_MEMBER_COVER * length
+
+
+def _filled_band(ln: BeamLine, pg: _Page, lo: float, hi: float, edge_only: bool = False) -> bool:
+    """The line runs along a closed filled band of wall thickness (axis-aligned bbox); with
+    `edge_only` (F2) its midpoint must lie on a long edge of the band, not inside it."""
     ang = _line_angle(ln)
     horiz = min(ang, 180.0 - ang) <= WALL_PARALLEL_DEG
     vert = abs(ang - 90.0) <= WALL_PARALLEL_DEG
@@ -244,6 +301,14 @@ def _filled_band(ln: BeamLine, pg: _Page, lo: float, hi: float) -> bool:
         m = WALL_BAND_MARGIN_PT
         if not (x0 - m <= mx <= x1 + m and y0 - m <= my <= y1 + m):
             continue
+        if edge_only:
+            on_edge = (
+                (abs(my - y0) <= m or abs(my - y1) <= m)
+                if horiz
+                else (abs(mx - x0) <= m or abs(mx - x1) <= m)
+            )
+            if not on_edge:
+                continue
         a, b = (ln.p0[0], ln.p1[0]) if horiz else (ln.p0[1], ln.p1[1])
         c0, c1 = (x0, x1) if horiz else (y0, y1)
         overlap = min(max(a, b), c1) - max(min(a, b), c0)
@@ -302,19 +367,20 @@ def not_beams(
     ratio: float,
     column_points: list[Pt],
     plates: list[BasePlate] | None = None,
+    wall_same_pen: bool = False,
 ) -> Removed:
     """The beam lines without the wall faces, the lines of base plates (src/build/base_plates.py,
     rule "base_plate") and column-shape edges (ids kept as they were)."""
     if not lines:
         return Removed(lines=[])
-    pg = _Page.of(ps, cleaned)
+    pg = _Page.of(ps, cleaned, pens=wall_same_pen)
     positions = np.asarray(column_points, dtype=float).reshape(-1, 2)
     out = Removed(lines=[])
     for ln in lines:
         # a base plate first: its parallel edges with bolts between would read as a wall
         if plates and plate_line(plates, ln.p0, ln.p1):
             out.base_plate.append(ln.id)
-        elif is_wall_face(ln, pg, ratio):
+        elif is_wall_face(ln, pg, ratio, wall_same_pen):
             out.wall.append(ln.id)
         elif is_column_shape_edge(ln, pg, positions, ratio):
             out.column_shape.append(ln.id)

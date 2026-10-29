@@ -20,7 +20,7 @@ from src.build import RULES_VERSION
 from src.build.base_plates import BasePlate, find_base_plates, in_plate, is_grid_marker, plate_glyph
 from src.build.beam_lines import BeamLine, beam_lines, pen_segments
 from src.build.clean import Cleaned, clean
-from src.build.columns import Glyph, column_plan_columns, find_glyphs
+from src.build.columns import STROKE_GAP_PT, Glyph, column_plan_columns, find_glyphs, stroke_glyphs
 from src.build.geom import Box, Pt, in_box
 from src.build.grids import Bubble, Crossing, GridLine, crossings, find_bubbles, find_grid_lines
 from src.build.inputs import deselect, drop_text, exclude
@@ -31,6 +31,9 @@ from src.build.segments import PageSegments, TextLine, crop, page_text_lines, pa
 from src.build.supports import SupportResult, build
 
 MIN_CROSSINGS = 4  # a page "has a grid" with at least this many crossings
+# Phase 13c build flags (all off by default): F2 "wall_same_pen" (src/build/not_beams.py), F4a
+# "column_strokes" and F4b "column_off_grid" (src/build/columns.py)
+FLAGS = ("wall_same_pen", "column_strokes", "column_off_grid")
 
 
 @dataclass
@@ -45,6 +48,8 @@ class Setup:
     pens: tuple[str, ...] = ()  # all beam pens in order; empty = (pen_class,) if set
     excludes: tuple[Box, ...] = ()
     deselected: tuple[tuple[float, float, float, float], ...] = ()
+    flags: frozenset[str] = frozenset()  # Phase 13c build flags (FLAGS); empty = as before
+    stroke_gap_pt: float = STROKE_GAP_PT  # F4a end gap
 
     def beam_pens(self) -> list[str]:
         if self.pens:
@@ -163,7 +168,15 @@ def build_page(
     has_grid = len(cross) >= MIN_CROSSINGS
     if not grid:
         notes.append("no_grid")
+    unknown = set(setup.flags) - set(FLAGS)
+    if unknown:
+        raise ValueError(f"unknown build flags {sorted(unknown)}")
     glyphs = find_glyphs(ps, setup.crop, bubbles, text, cross)
+    if "column_strokes" in setup.flags:
+        glyphs += stroke_glyphs(
+            ps, cleaned.keep, setup.crop, bubbles, text, cross, glyphs, setup.stroke_gap_pt
+        )
+        glyphs.sort(key=lambda g: (round(g.centre[1], 1), round(g.centre[0], 1)))
     # Phase 12a rule "grid_marker": bow-tie end / break markers on grid lines are not glyphs
     removed: dict[str, int] = {}
     markers = [g for g in glyphs if is_grid_marker(g, ps, grid)]
@@ -194,7 +207,12 @@ def build_page(
     columns: list[Glyph] = []
     column_rule: str | None = None
     if setup.role == "column_plan":
-        columns, column_rule = column_plan_columns(glyphs, has_grid, setup.ratio)
+        columns, column_rule = column_plan_columns(
+            glyphs,
+            has_grid,
+            setup.ratio,
+            {sh.id: sh for sh in ps.shapes} if "column_off_grid" in setup.flags else None,
+        )
         if plates:
             # one column per base plate at its centre; a glyph column inside a plate is that column
             columns = [g for g in columns if not in_plate(plates, g.centre)] + [
@@ -227,6 +245,7 @@ def build_page(
         setup.ratio,
         [g.centre for g in glyphs] + [p for p, _ in projected] + [p.centre for p in plates],
         plates,
+        wall_same_pen="wall_same_pen" in setup.flags,
     )
     removed["wall_lines"] = len(nb.wall)
     removed["base_plate_lines"] = len(nb.base_plate)
