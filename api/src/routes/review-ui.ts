@@ -1055,11 +1055,30 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
       .limit(1)
       .executeTakeFirst();
     if (!auto) throw new HttpError(409, { error: 'no system version: auto mode has not run' });
-    const snaps = await db()
+    const autoSnaps = await db()
       .selectFrom('build_snapshots')
       .selectAll()
       .where('auto_build_id', '=', auto.id)
       .execute();
+    // session preparation: auto mode only suggests, so a page's system version is the snapshot of
+    // its first person Build frozen before any edit, unless auto mode built the page
+    const personSnaps = await db()
+      .selectFrom('build_snapshots')
+      .selectAll()
+      .where('project_id', '=', projectId)
+      .where('mode', '=', 'person')
+      .where('before_user_edit', '=', true)
+      .orderBy('created_at')
+      .execute();
+    const bySheet = new Map(autoSnaps.map((sn) => [sn.sheet_id, sn]));
+    const firstPerson = new Set<string>();
+    for (const sn of personSnaps) {
+      const have = bySheet.get(sn.sheet_id);
+      if (firstPerson.has(sn.sheet_id) || (have && have.setup.built === true)) continue;
+      bySheet.set(sn.sheet_id, sn);
+      firstPerson.add(sn.sheet_id);
+    }
+    const snaps = [...bySheet.values()];
     const rawSheets = await db()
       .selectFrom('sheets')
       .selectAll()
@@ -1111,10 +1130,26 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
     async (request) => report(request.params.projectId),
   );
 
-  app.get<{ Params: { projectId: string } }>(
+  app.get<{ Params: { projectId: string }; Querystring: { who?: string } }>(
     '/api/projects/:projectId/report.xlsx',
-    { schema: { params: projectParams } },
+    {
+      schema: {
+        params: projectParams,
+        querystring: {
+          type: 'object',
+          additionalProperties: false,
+          properties: { who: { type: 'string', maxLength: 100 } },
+        },
+      },
+    },
     async (request, reply) => {
+      // session preparation: a download is logged (actor and session from the open session)
+      await logCountAction(db(), {
+        projectId: request.params.projectId,
+        action: 'export',
+        who: request.query.who?.trim() || 'unknown',
+        detail: { file: 'report.xlsx' },
+      }).catch(() => undefined);
       const r = await report(request.params.projectId);
       const wb = new ExcelJS.Workbook();
       const pages = wb.addWorksheet('Pages');

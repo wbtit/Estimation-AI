@@ -226,6 +226,9 @@ export interface ProjectGradeRulesTable {
 }
 
 export interface SheetEditsTable {
+  /** Migration 027: filled by the database from the project's open work session. */
+  actor: Tagged;
+  session_id: Tagged;
   id: Generated<string>;
   sheet_id: string;
   field_name: string;
@@ -267,6 +270,9 @@ export type StatusColor = 'green' | 'amber' | 'red';
 export type ReviewStatus = 'unreviewed' | 'approved' | 'edited' | 'rejected';
 
 export interface MembersTable {
+  /** Migration 027: filled by the database from the project's open work session. */
+  actor: Tagged;
+  session_id: Tagged;
   id: Generated<string>;
   project_id: string;
   sheet_id: string | null;
@@ -403,7 +409,33 @@ export type CountActionName =
   | 'view'
   | 'role'
   | 'approve'
-  | 'project';
+  | 'project'
+  | 'session'
+  | 'export';
+
+/** actor / session_id (migration 027): the trigger fills them; code may leave them out. */
+type Tagged = ColumnType<string | null, string | null | undefined, never>;
+
+export interface WorkSessionsTable {
+  id: Generated<string>;
+  project_id: string;
+  actor: 'owner' | 'estimator';
+  started_by: string;
+  started_at: Generated<Date>;
+  ended_at: Date | null;
+  ended_by: string | null;
+}
+
+export interface PageEventsTable {
+  id: Generated<string>;
+  project_id: string;
+  sheet_id: string;
+  kind: 'active' | 'leave';
+  who: string;
+  created_at: Generated<Date>;
+  actor: Tagged;
+  session_id: Tagged;
+}
 
 export interface SheetLinesTable {
   sheet_id: string;
@@ -415,6 +447,9 @@ export interface SheetLinesTable {
 }
 
 export interface CountActionsTable {
+  /** Migration 027: filled by the database from the project's open work session. */
+  actor: Tagged;
+  session_id: Tagged;
   id: Generated<string>;
   project_id: string;
   sheet_id: string | null;
@@ -427,6 +462,9 @@ export interface CountActionsTable {
 }
 
 export interface MeasurementsTable {
+  /** Migration 027: filled by the database from the project's open work session. */
+  actor: Tagged;
+  session_id: Tagged;
   id: Generated<string>;
   project_id: string;
   sheet_id: string;
@@ -442,6 +480,9 @@ export interface MeasurementsTable {
 }
 
 export interface MemberEditsTable {
+  /** Migration 027: filled by the database from the project's open work session. */
+  actor: Tagged;
+  session_id: Tagged;
   id: Generated<string>;
   member_id: string;
   field_name: string;
@@ -520,6 +561,9 @@ export interface ProjectPrefixKindsTable {
 export type BuildRunStatus = 'pending' | 'running' | 'done' | 'failed' | 'refused';
 
 export interface BuildRunsTable {
+  /** Migration 027: filled by the database from the project's open work session. */
+  actor: Tagged;
+  session_id: Tagged;
   id: Generated<string>;
   project_id: string;
   sheet_id: string;
@@ -556,11 +600,17 @@ export interface AutoBuildsTable {
 
 /** The SYSTEM VERSION of a page: written once by an auto run, never changed (a trigger refuses). */
 export interface BuildSnapshotsTable {
+  /** Migration 027: filled by the database from the project's open work session. */
+  actor: Tagged;
+  session_id: Tagged;
   id: Generated<string>;
   project_id: string;
-  auto_build_id: string;
+  auto_build_id: string | null;
   sheet_id: string;
   build_run_id: string | null;
+  mode: ColumnType<'auto' | 'person', 'auto' | 'person' | undefined, never>;
+  view_id: string | null;
+  before_user_edit: boolean | null;
   setup: ColumnType<Record<string, unknown>, string, never>;
   pieces: ColumnType<SnapshotPiece[], string, never>;
   counts: ColumnType<Record<string, unknown>, string | undefined, never>;
@@ -704,6 +754,9 @@ export interface ViewPensTable {
 }
 
 export interface ViewExclusionsTable {
+  /** Migration 027: filled by the database from the project's open work session. */
+  actor: Tagged;
+  session_id: Tagged;
   id: Generated<string>;
   view_id: string;
   box: Json;
@@ -716,6 +769,9 @@ export interface ViewExclusionsTable {
 }
 
 export interface ViewDeselectionsTable {
+  /** Migration 027: filled by the database from the project's open work session. */
+  actor: Tagged;
+  session_id: Tagged;
   id: Generated<string>;
   view_id: string;
   x0: Numeric;
@@ -729,6 +785,9 @@ export interface ViewDeselectionsTable {
 }
 
 export interface ViewUndoTable {
+  /** Migration 027: filled by the database from the project's open work session. */
+  actor: Tagged;
+  session_id: Tagged;
   id: Generated<string>;
   project_id: string;
   sheet_id: string;
@@ -773,4 +832,6 @@ export interface Database {
   view_exclusions: ViewExclusionsTable;
   view_deselections: ViewDeselectionsTable;
   view_undo: ViewUndoTable;
+  work_sessions: WorkSessionsTable;
+  page_events: PageEventsTable;
 }

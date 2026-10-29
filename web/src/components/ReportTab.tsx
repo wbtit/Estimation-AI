@@ -55,7 +55,10 @@ const COLS: [keyof PageReport, string][] = [
 ];
 
 /** Report: SYSTEM VERSION vs SAVED FINAL, per page and in total, and per size. */
-export const ReportTab: React.FC<{ projectId: string }> = ({ projectId }) => {
+export const ReportTab: React.FC<{ projectId: string; who?: string }> = ({
+  projectId,
+  who = "",
+}) => {
   const [r, setR] = useState<Report | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
@@ -73,7 +76,9 @@ export const ReportTab: React.FC<{ projectId: string }> = ({ projectId }) => {
         <a href={`/api/projects/${projectId}/answer-key.json`}>
           <button>Answer key</button>
         </a>
-        <a href={`/api/projects/${projectId}/report.xlsx`}>
+        <a
+          href={`/api/projects/${projectId}/report.xlsx?who=${encodeURIComponent(who)}`}
+        >
           <button className="primary">Export to Excel</button>
         </a>
       </div>

@@ -43,6 +43,7 @@ from src.build.labels import Attached
 from src.build.page import ColumnPlanRef, PageBuild, Setup, build_page
 from src.build.pieces import build_state, length_mm, plan_mm, stable_member_id
 from src.build.segments import TextLine
+from src.build.snapshots import person_snapshot
 from src.build.views import View, load_views, pick_view, view_as_sheet
 from src.config import WorkerConfig
 from src.queue import Job
@@ -308,6 +309,8 @@ def build_sheet(conn: psycopg.Connection, config: WorkerConfig, run_id: str) -> 
             "UPDATE build_views SET built_at = now(), registration = %s WHERE id = %s",
             (reg, view.id),
         )
+        if run["mode"] == "person":  # the frozen system version of this Build, before any edit
+            person_snapshot(conn, project_id, sheet_id, run_id, view.id, sheet, counts)
         conn.commit()
     except Exception as err:
         conn.rollback()

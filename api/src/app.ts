@@ -11,6 +11,7 @@ import { pipelineRoutes } from './routes/pipeline.js';
 import { tableRoutes } from './routes/tables.js';
 import { projectRoutes } from './routes/projects.js';
 import { reviewRoutes } from './routes/review.js';
+import { sessionRoutes } from './routes/sessions.js';
 import { sheetRoutes } from './routes/sheets.js';
 import { takeoffRoutes } from './routes/takeoff.js';
 import { textItemRoutes } from './routes/text-items.js';
@@ -48,5 +49,6 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
   app.register(buildRoutes, {});
   app.register(buildViewRoutes, {});
   app.register(reviewUiRoutes, {});
+  app.register(sessionRoutes, {});
   return app;
 }

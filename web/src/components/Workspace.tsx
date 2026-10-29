@@ -26,6 +26,8 @@ import { Canvas, type PickMode, type Tool } from "./Canvas";
 import { PageCard, type PageActions } from "./PageCard";
 import { PropertiesPanel, type Kind, type PieceEdit } from "./PropertiesPanel";
 import { ReportTab } from "./ReportTab";
+import { SessionControl } from "./SessionControl";
+import { pingDue } from "../lib/session";
 
 type WsRoute = Extract<Route, { view: "workspace" }>;
 
@@ -173,6 +175,45 @@ export const Workspace: React.FC<{
       who,
     }).catch(() => undefined);
   }, [projectId, sheetId, who, loadData]);
+
+  // time per page (migration 027): 'active' pings while there is input on the page, 'leave' when
+  // the page is left or the tab hidden; the open is the 'view' row above
+  useEffect(() => {
+    if (!sheetId) return;
+    const url = `/api/projects/${projectId}/sheets/${sheetId}/page-event`;
+    const ping = (kind: "active" | "leave") =>
+      fetch(url, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ kind, who }),
+        keepalive: true,
+      }).catch(() => undefined);
+    let lastInput = 0;
+    let lastPing = Date.now(); // the open was just logged
+    const input = () => {
+      lastInput = Date.now();
+    };
+    const tick = window.setInterval(() => {
+      const now = Date.now();
+      if (pingDue(now, lastInput, lastPing)) {
+        lastPing = now;
+        void ping("active");
+      }
+    }, 5000);
+    const hidden = () => {
+      if (document.visibilityState === "hidden") void ping("leave");
+      else input();
+    };
+    const kinds = ["pointerdown", "pointermove", "keydown", "wheel"] as const;
+    kinds.forEach((k) => window.addEventListener(k, input, { passive: true }));
+    document.addEventListener("visibilitychange", hidden);
+    return () => {
+      window.clearInterval(tick);
+      kinds.forEach((k) => window.removeEventListener(k, input));
+      document.removeEventListener("visibilitychange", hidden);
+      void ping("leave");
+    };
+  }, [projectId, sheetId, who]);
 
   // while a page builds, look again every two seconds
   const building = pages.some((p) => p.badge === "Building");
@@ -474,10 +515,14 @@ export const Workspace: React.FC<{
             </button>
             {exportOpen && (
               <div className="menu" onClick={() => setExportOpen(false)}>
-                <a href={`/api/projects/${projectId}/line-first/bom.xlsx`}>
+                <a
+                  href={`/api/projects/${projectId}/line-first/bom.xlsx?who=${encodeURIComponent(who)}`}
+                >
                   <button>BOM (Excel)</button>
                 </a>
-                <a href={`/api/projects/${projectId}/report.xlsx`}>
+                <a
+                  href={`/api/projects/${projectId}/report.xlsx?who=${encodeURIComponent(who)}`}
+                >
                   <button>Report (Excel)</button>
                 </a>
                 <a href={`/api/projects/${projectId}/answer-key.json`}>
@@ -486,13 +531,14 @@ export const Workspace: React.FC<{
               </div>
             )}
           </span>
+          <SessionControl projectId={projectId} who={who} onError={fail} />
           <span className="avatar" title={who}>
             {initials(who)}
           </span>
         </div>
       </div>
-      {tab === "bom" && <BomTab bom={bom} projectId={projectId} />}
-      {tab === "report" && <ReportTab projectId={projectId} />}
+      {tab === "bom" && <BomTab bom={bom} projectId={projectId} who={who} />}
+      {tab === "report" && <ReportTab projectId={projectId} who={who} />}
       {tab === "plans" && (
         <div className="ws-body">
           <div className="left dark">

@@ -1,6 +1,14 @@
 """The `auto_build` job: auto mode, "let the system do its job first" (Phase 11b).
 
-Payload: {"project_id": "<uuid>", "auto_build_id": "<uuid>" (optional), "crossing_rule": ...}.
+Payload: {"project_id": "<uuid>", "auto_build_id": "<uuid>" (optional), "crossing_rule": ...,
+"build_pages": bool (default false)}.
+
+SUGGEST ONLY by default (session preparation): a queued auto run (after the upload's scan, or the
+review UI's "auto mode") proposes and stores every page's setup and builds nothing; a page is built
+when a person presses Build on it (mode 'person', inside its crop), and that build freezes its own
+snapshot (src/build/snapshots.py). Only `build_pages` true (or a direct `auto_build()` call by an
+evaluation tool, whose default stays the old behaviour) builds every page as below.
+
 For every page of the project it proposes the setup (src/build/propose.py) and stores it as SYSTEM
 values on the page's first view (Phase 11c; every *_confirmed_by stays NULL; pen source
 'suggested', T.O.S. source 'read'; Phase 12a: no beam pen on a column plan page), then
@@ -17,7 +25,6 @@ never overwrites a person's work. Logs counts only, never page text.
 from __future__ import annotations
 
 import logging
-import math
 from typing import Any
 
 import psycopg
@@ -37,6 +44,7 @@ from src.build.propose import (
     propose_tos,
 )
 from src.build.segments import crop, page_text_lines, parse_page
+from src.build.snapshots import piece_counts, snapshot_pieces, snapshot_setup
 from src.build.views import load_views, pick_view, role_name, view_as_sheet
 from src.config import WorkerConfig
 from src.queue import Job
@@ -60,6 +68,9 @@ def run_auto_build(conn: psycopg.Connection, job: Job, config: WorkerConfig) -> 
         job.payload.get("auto_build_id"),
         str(job.payload.get("crossing_rule") or "family"),
         job_id=str(job.id),
+        # session preparation: a queued auto run only SUGGESTS (no page is built) unless the job
+        # says otherwise; pages are built when a person presses Build on a page
+        build_pages=bool(job.payload.get("build_pages", False)),
     )
 
 
@@ -236,6 +247,7 @@ def auto_build(
     auto_id: str | None = None,
     crossing_rule: str = "family",
     job_id: str | None = None,
+    build_pages: bool = True,
 ) -> dict[str, Any]:
     done = conn.execute(
         "SELECT 1 FROM auto_builds WHERE project_id = %s AND status = 'done' LIMIT 1",
@@ -261,7 +273,7 @@ def auto_build(
     auto_id = _start(conn, project_id, auto_id, job_id, len(sheets))
     conn.commit()
     try:
-        out = _run(conn, config, project_id, auto_id, sheets, pdf_path, crossing_rule)
+        out = _run(conn, config, project_id, auto_id, sheets, pdf_path, crossing_rule, build_pages)
     except Exception as err:
         conn.rollback()
         msg = str(err) if isinstance(err, AutoBuildError) else type(err).__name__
@@ -272,6 +284,9 @@ def auto_build(
         )
         conn.commit()
         raise
+    if not build_pages:
+        log.info("auto suggestions: %s pages", out["pages"])
+        return {"auto_build_id": auto_id, **out}
     log.info(
         "auto build: %s pages, %s built, %s not built, %s pieces",
         out["pages"], out["built"], out["not_built"], out["pieces"],
@@ -279,7 +294,18 @@ def auto_build(
     return {"auto_build_id": auto_id, **out}
 
 
-def _run(conn, config, project_id, auto_id, sheets, pdf_path, crossing_rule) -> dict[str, Any]:
+def _paths(evidence: dict[str, dict[str, Any]]) -> dict[str, int]:
+    return {
+        "scale_from_dimensions": sum(e["scale_rule"] == "dimensions" for e in evidence.values()),
+        "scale_needed": sum(e["scale_rule"] == "scale_needed" for e in evidence.values()),
+        "not_a_plan": sum(e["role_rule"] != "plan_text" for e in evidence.values()),
+        "pile_plans": sum(bool(e["pile_plan"]) for e in evidence.values()),
+    }
+
+
+def _run(
+    conn, config, project_id, auto_id, sheets, pdf_path, crossing_rule, build_pages=True
+) -> dict[str, Any]:
     evidence: dict[str, dict[str, Any]] = {}
     with pymupdf.open(pdf_path) as doc:
         for s in sheets:
@@ -298,6 +324,16 @@ def _run(conn, config, project_id, auto_id, sheets, pdf_path, crossing_rule) -> 
         if s["page_kind"] == "vector" and str(s["id"]) not in have:
             sheet_lines(conn, config, str(s["id"]))
             conn.commit()
+
+    if not build_pages:  # suggestions only: setup values stored as system values, nothing built
+        totals = {"pages": len(sheets), "suggested": len(sheets), "built": 0, **_paths(evidence)}
+        conn.execute(
+            "UPDATE auto_builds SET status = 'done', finished_at = now(), pages_done = %s,"
+            " counts = %s WHERE id = %s",
+            (len(sheets), Jsonb({**totals, "mode": "suggest"}), auto_id),
+        )
+        conn.commit()
+        return totals
 
     runs: dict[str, str] = {}  # sheet id -> build run id
     results: dict[str, dict[str, Any]] = {}
@@ -345,12 +381,7 @@ def _run(conn, config, project_id, auto_id, sheets, pdf_path, crossing_rule) -> 
         choice = {"column_plan_sheet_id": plan} if plan else {"no_column_plan": True}
         build(s, {**base, **choice})
     skipped = sum(1 for s in sheets if roles[str(s["id"])] is None)
-    paths = {
-        "scale_from_dimensions": sum(e["scale_rule"] == "dimensions" for e in evidence.values()),
-        "scale_needed": sum(e["scale_rule"] == "scale_needed" for e in evidence.values()),
-        "not_a_plan": sum(e["role_rule"] != "plan_text" for e in evidence.values()),
-        "pile_plans": sum(bool(e["pile_plan"]) for e in evidence.values()),
-    }
+    paths = _paths(evidence)
     conn.execute(
         "UPDATE auto_builds SET pages_done = pages_done + %s WHERE id = %s", (skipped, auto_id)
     )
@@ -380,7 +411,7 @@ def _run(conn, config, project_id, auto_id, sheets, pdf_path, crossing_rule) -> 
             "INSERT INTO build_snapshots (project_id, auto_build_id, sheet_id, build_run_id,"
             " setup, pieces, counts) VALUES (%s, %s, %s, %s, %s, %s, %s)",
             (project_id, auto_id, sid, runs.get(sid), Jsonb(snapshot_setup(s, ev, res)),
-             Jsonb(pieces), Jsonb(_piece_counts(pieces))),
+             Jsonb(pieces), Jsonb(piece_counts(pieces))),
         )  # fmt: skip
     conn.execute(
         "UPDATE auto_builds SET status = 'done', finished_at = now(), counts = %s WHERE id = %s",
@@ -388,89 +419,6 @@ def _run(conn, config, project_id, auto_id, sheets, pdf_path, crossing_rule) -> 
     )
     conn.commit()
     return totals
-
-
-def snapshot_setup(sheet: dict[str, Any], evidence: dict[str, Any], result: dict | None) -> dict:
-    """Every setup value of the page with its source ('system' while not confirmed by a person)."""
-
-    def src(col: str) -> str:
-        return "person" if sheet.get(col) else SYSTEM
-
-    def num(v) -> float | None:
-        return None if v is None else float(v)
-
-    return {
-        "role": {"value": sheet["build_role"] or "skip", "source": src("role_confirmed_by")},
-        "crop": {"value": sheet["crop_region"], "source": src("crop_confirmed_by")},
-        "scale": {
-            "value": num(sheet["build_scale_ratio"]),
-            "text": sheet["build_scale_text"],
-            "source": src("scale_confirmed_by"),
-        },
-        "pen_class": {"value": sheet["pen_class"], "source": src("pen_class_confirmed_by")},
-        "tos": {"value_mm": num(sheet["tos_mm"]), "source": src("tos_confirmed_by")},
-        "column_plan": {
-            "value": None if sheet["column_plan_sheet_id"] is None
-            else str(sheet["column_plan_sheet_id"]),
-            "source": src("column_plan_confirmed_by"),
-        },
-        "evidence": evidence,
-        "refused": (result or {}).get("refused"),
-        "failed": (result or {}).get("failed"),
-        "built": result is not None and "refused" not in result and "failed" not in result,
-    }  # fmt: skip
-
-
-def _xyz(x, y, z) -> list[float] | None:
-    if x is None or y is None:
-        return None
-    return [float(x), float(y), 0.0 if z is None else float(z)]
-
-
-def snapshot_pieces(conn, sheet_id: str) -> list[dict[str, Any]]:
-    """Every built piece of the page as it is now (right after the auto build)."""
-    out = []
-    for r in conn.execute(
-        "SELECT * FROM members WHERE sheet_id = %s AND build_run_id IS NOT NULL ORDER BY member_id",
-        (sheet_id,),
-    ):
-        a = _xyz(r["start_x_mm"], r["start_y_mm"], r["start_z_mm"])
-        b = _xyz(r["end_x_mm"], r["end_y_mm"], r["end_z_mm"])
-        length = None if a is None or b is None else round(math.dist(a, b), 1)
-        page = (
-            None if r["page_x0"] is None
-            else [float(r["page_x0"]), float(r["page_y0"]),
-                  float(r["page_x1"] if r["page_x1"] is not None else r["page_x0"]),
-                  float(r["page_y1"] if r["page_y1"] is not None else r["page_y0"])]
-        )  # fmt: skip
-        out.append(
-            {
-                "member_id": r["member_id"],
-                "kind": r["kind"],
-                "type": r["type"],
-                "tag": None if r["tag_number"] is None
-                else f"{r['tag_prefix'] or '?'}{r['tag_number']}",  # the API's tag text
-                "profile": r["profile"],
-                "profile_raw": r["profile_raw"],
-                "page": page,
-                "start": a,
-                "end": b,
-                "length_mm": length if length else None,
-                "build_state": r["build_state"],
-                "size_state": r["size_state"],
-                "support_state": r["support_state"],
-                "piece_index": r["piece_index"],
-            }
-        )  # fmt: skip
-    return out
-
-
-def _piece_counts(pieces: list[dict[str, Any]]) -> dict[str, int]:
-    out: dict[str, int] = {"pieces": len(pieces)}
-    for p in pieces:
-        out[f"kind:{p['kind']}"] = out.get(f"kind:{p['kind']}", 0) + 1
-        out[f"state:{p['build_state']}"] = out.get(f"state:{p['build_state']}", 0) + 1
-    return out
 
 
 __all__ = ["JOB_TYPE", "auto_build", "person_actions", "run_auto_build", "snapshot_pieces"]

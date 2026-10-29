@@ -1026,10 +1026,26 @@ export const buildRoutes: FastifyPluginAsync<BuildRouteOptions> = async (app, op
     async (request) => bom(request.params.projectId),
   );
 
-  app.get<{ Params: { projectId: string } }>(
+  app.get<{ Params: { projectId: string }; Querystring: { who?: string } }>(
     '/api/projects/:projectId/line-first/bom.xlsx',
-    { schema: { params: projectParams } },
+    {
+      schema: {
+        params: projectParams,
+        querystring: {
+          type: 'object',
+          additionalProperties: false,
+          properties: { who: { type: 'string', maxLength: 100 } },
+        },
+      },
+    },
     async (request, reply) => {
+      // session preparation: a download is logged (actor and session from the open session)
+      await logCountAction(db(), {
+        projectId: request.params.projectId,
+        action: 'export',
+        who: request.query.who?.trim() || 'unknown',
+        detail: { file: 'bom.xlsx' },
+      }).catch(() => undefined);
       const b = await bom(request.params.projectId);
       const wb = new ExcelJS.Workbook();
       const ws = wb.addWorksheet('BOM');

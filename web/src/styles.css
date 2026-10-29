@@ -2085,3 +2085,38 @@ table.grid tr.total td {
   padding-left: 3px;
   padding-right: 3px;
 }
+
+/* Session control (migration 027): who the actions count for, always visible in the header */
+.session-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 8px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  white-space: nowrap;
+  background: var(--shell-3);
+  border: 1px solid var(--shell-line);
+  color: var(--shell-muted);
+}
+.session-chip .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--shell-muted);
+}
+.session-chip.on {
+  color: var(--shell-text);
+  border-color: var(--shell-on);
+}
+.session-chip.on .dot {
+  background: var(--ok);
+}
+.session-chip.on.estimator {
+  background: var(--shell-on);
+}
+.session-menu {
+  right: 0;
+  min-width: 220px;
+}

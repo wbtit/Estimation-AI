@@ -22,10 +22,11 @@ const STATUS_NAME: Record<string, string> = {
 /** BOM: a Filters panel (category, section, status), the table (Status, Main, Category, Piecemark,
  * Qty, Section Type, Section, Length, Grade, Weight) sorted by Category, then Section, then
  * Piecemark, and the project summary. */
-export const BomTab: React.FC<{ bom: Bom | null; projectId: string }> = ({
-  bom,
-  projectId,
-}) => {
+export const BomTab: React.FC<{
+  bom: Bom | null;
+  projectId: string;
+  who?: string;
+}> = ({ bom, projectId, who = "" }) => {
   const [category, setCategory] = useState("");
   const [section, setSection] = useState("");
   const [status, setStatus] = useState("");
@@ -116,7 +117,9 @@ export const BomTab: React.FC<{ bom: Bom | null; projectId: string }> = ({
             <h3>Bill of Materials</h3>
             <span className="count-pill">{rows.length}</span>
             <span className="grow" />
-            <a href={`/api/projects/${projectId}/line-first/bom.xlsx`}>
+            <a
+              href={`/api/projects/${projectId}/line-first/bom.xlsx?who=${encodeURIComponent(who)}`}
+            >
               <button className="row" style={{ gap: 6 }}>
                 <Download size={15} /> Export to Excel
               </button>
