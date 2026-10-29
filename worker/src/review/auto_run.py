@@ -57,11 +57,19 @@ def most_frequent_scale(scales: list[dict[str, Any]]) -> dict[str, Any] | None:
 def run_auto_run(conn: psycopg.Connection, job: Job, config: WorkerConfig) -> dict[str, Any]:
     project_id = str(job.payload.get("project_id", ""))
     document_id = str(job.payload.get("document_id", ""))
-    return auto_run(conn, config, project_id, document_id)
+    # session preparation: the label-first linking (members from labels, Phase 6a) runs only when
+    # the job asks for it; a new upload reads the text and builds nothing
+    return auto_run(
+        conn, config, project_id, document_id, bool(job.payload.get("link_labels", False))
+    )
 
 
 def auto_run(
-    conn: psycopg.Connection, config: WorkerConfig, project_id: str, document_id: str
+    conn: psycopg.Connection,
+    config: WorkerConfig,
+    project_id: str,
+    document_id: str,
+    link_labels: bool = False,
 ) -> dict[str, Any]:
     totals: Counter = Counter()
     read_project(conn, config, project_id, document_id, config.glyph_font_id)
@@ -107,6 +115,9 @@ def auto_run(
                     totals["scale_needed"] += 1
             classes_view(conn, config, view_id)
             conn.commit()
+            if not link_labels:  # no members from labels: pieces come only from a person's Build
+                totals["views_not_linked"] += 1
+                continue
             try:
                 result = link_view(conn, config, view_id)
             except Exception as err:  # one view must not stop the others

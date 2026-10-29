@@ -923,4 +923,45 @@ describe('review UI routes (test database)', () => {
     expect(auto.statusCode).toBe(409); // no PDF scanned
     await deleteProject(db, id);
   });
+
+  it('a drawn piece, its edit and its delete carry the session actor and id (migration 027)', async () => {
+    const start = await post('/session/start', { actor: 'estimator', who: WHO });
+    const session = start.json().session.id as string;
+    const res = await post(`/sheets/${framingId}/line-first/pieces`, {
+      who: WHO,
+      kind: 'Beams',
+      a: [100, 560],
+      b: [172, 560],
+      profile_text: 'W12X19',
+    });
+    expect(res.statusCode).toBe(201);
+    const id = (res.json() as PieceView).id;
+    const tagged = { actor: 'estimator', session_id: session };
+    const member = await db
+      .selectFrom('members')
+      .select(['origin', 'actor', 'session_id'])
+      .where('id', '=', id)
+      .executeTakeFirstOrThrow();
+    expect(member).toEqual({ origin: 'manual', ...tagged });
+    await post('/line-first/pieces/edit', { who: WHO, member_ids: [id], profile_text: 'W14X22' });
+    await post('/line-first/pieces/delete', { who: WHO, member_ids: [id] });
+    const edits = await db
+      .selectFrom('member_edits')
+      .select(['field_name', 'actor', 'session_id'])
+      .where('member_id', '=', id)
+      .execute();
+    expect(edits.length).toBeGreaterThanOrEqual(2);
+    for (const e of edits) expect({ actor: e.actor, session_id: e.session_id }).toEqual(tagged);
+    // every log row written in the session (an edit row may cover many members: no member_id)
+    const logs = await db
+      .selectFrom('count_actions')
+      .select(['action', 'actor', 'session_id'])
+      .where('project_id', '=', projectId)
+      .where('created_at', '>=', new Date(start.json().session.started_at))
+      .execute();
+    for (const a of ['session', 'add', 'edit', 'delete'])
+      expect(logs.map((l) => l.action)).toContain(a);
+    for (const l of logs) expect({ actor: l.actor, session_id: l.session_id }).toEqual(tagged);
+    await post('/session/end', { who: WHO });
+  });
 });

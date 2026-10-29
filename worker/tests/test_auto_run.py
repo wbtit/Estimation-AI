@@ -26,7 +26,7 @@ def test_the_pipeline_makes_a_view_guesses_and_links_without_any_confirmation(
 ) -> None:
     build_pdf(dbp)
     dbp.scan()
-    result = auto_run(dbp.conn, dbp.config, dbp.project_id, dbp.document_id)
+    result = auto_run(dbp.conn, dbp.config, dbp.project_id, dbp.document_id, link_labels=True)
     assert result["sheets_in_takeoff"] == 1 and result["views_created"] == 1
     assert result["views_linked"] == 1 and result["members_created"] > 0
     view = dbp.conn.execute(
@@ -45,7 +45,7 @@ def test_the_pipeline_makes_a_view_guesses_and_links_without_any_confirmation(
 def test_a_second_run_keeps_the_view_and_everything_a_person_did(dbp: DbProject) -> None:
     build_pdf(dbp)
     dbp.scan()
-    auto_run(dbp.conn, dbp.config, dbp.project_id, dbp.document_id)
+    auto_run(dbp.conn, dbp.config, dbp.project_id, dbp.document_id, link_labels=True)
     dbp.conn.execute(
         "UPDATE sheet_views SET scale_ratio = 48, scale_confirmed = TRUE, scale_source ="
         " 'user_confirmed', classes_confirmed = TRUE"
@@ -55,11 +55,29 @@ def test_a_second_run_keeps_the_view_and_everything_a_person_did(dbp: DbProject)
     ).fetchone()["id"]
     dbp.conn.execute("UPDATE members SET review_status = 'approved' WHERE id = %s", (first,))
     dbp.conn.commit()
-    again = auto_run(dbp.conn, dbp.config, dbp.project_id, dbp.document_id)
+    again = auto_run(dbp.conn, dbp.config, dbp.project_id, dbp.document_id, link_labels=True)
     assert "views_created" not in again and again.get("members_created", 0) == 0
     assert again["members_kept"] >= 1
     view = dbp.conn.execute("SELECT * FROM sheet_views").fetchone()
     assert float(view["scale_ratio"]) == 48 and view["scale_confirmed"] is True
+
+
+def test_by_default_the_pipeline_reads_the_text_and_creates_no_members(dbp: DbProject) -> None:
+    # session preparation: label linking only when asked; pieces come only from a person's Build
+    build_pdf(dbp)
+    dbp.scan()
+    result = auto_run(dbp.conn, dbp.config, dbp.project_id, dbp.document_id)
+    assert result["views_not_linked"] == 1 and "views_linked" not in result
+    n = dbp.conn.execute(
+        "SELECT count(*) AS n FROM members WHERE project_id = %s", (dbp.project_id,)
+    ).fetchone()["n"]
+    assert n == 0
+    items = dbp.conn.execute(
+        "SELECT count(*) AS n FROM text_items t JOIN sheets s ON s.id = t.sheet_id"
+        " WHERE s.project_id = %s",
+        (dbp.project_id,),
+    ).fetchone()["n"]
+    assert items > 0  # the label text is still read and stored
 
 
 def test_every_vector_sheet_is_in_by_default_even_a_detail_sheet(dbp: DbProject) -> None:
