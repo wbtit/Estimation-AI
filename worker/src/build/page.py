@@ -21,7 +21,7 @@ from src.build import RULES_VERSION
 from src.build.base_plates import BasePlate, find_base_plates, in_plate, is_grid_marker, plate_glyph
 from src.build.beam_lines import BeamLine, beam_lines, pen_segments
 from src.build.clean import Cleaned, clean
-from src.build.col_symbols import V2_RULES, ColumnResult, Symbol, label_columns
+from src.build.col_symbols import V3_RULES, ColumnResult, Symbol, label_columns
 from src.build.columns import (
     AT_GRID_PT,
     STROKE_GAP_PT,
@@ -64,8 +64,8 @@ class Setup:
     stroke_gap_pt: float = STROKE_GAP_PT  # F4a end gap
     # Phase 14b: page points of user-drawn columns used as examples when no label gives one
     clicks: tuple[Pt, ...] = ()
-    # Phase 14b v2 rules in force (docs/PHASE14B2_PREREGISTRATION.md); empty = v1
-    col_rules: frozenset[str] = V2_RULES
+    # column rules in force: V3_RULES (Phase 14c, default), V2_RULES = 14b v2, empty = 14b v1
+    col_rules: frozenset[str] = V3_RULES
 
     def beam_pens(self) -> list[str]:
         if self.pens:

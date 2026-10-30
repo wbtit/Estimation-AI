@@ -36,7 +36,7 @@ import pymupdf
 from psycopg.types.json import Jsonb
 
 from src.build import RULES_VERSION
-from src.build.col_symbols import V2_RULES, find_symbols, symbol_json
+from src.build.col_symbols import find_symbols, symbol_json
 from src.build.duplicates import mark_duplicate_columns
 from src.build.geom import Pt, angle_deg, angle_diff, project
 from src.build.grids import CROSSING_RULES, Bubble, GridLine
@@ -387,18 +387,19 @@ def _size_fields(att: Attached) -> dict[str, Any]:
 
 
 def store_symbols(conn, sheet_id: str, run_id: str, view_id: str, pb: PageBuild) -> None:
-    """The page's candidate column symbols (real-size filter and v2 rules, whatever the flags)."""
+    """The page's candidate column symbols (real-size filter and the Build's column rules, v3 by
+    default, whatever the flags)."""
     syms = (
         pb.col_result.symbols
         if pb.col_result is not None
         else find_symbols(pb.segments, pb.cleaned.keep, pb.setup.crop,
-                          pb.text, pb.bubbles, pb.setup.ratio, True)
+                          pb.text, pb.bubbles, pb.setup.ratio, True, rules=pb.setup.col_rules)
     )  # fmt: skip
     conn.execute(
         "INSERT INTO page_symbols (build_run_id, sheet_id, view_id, ratio, rules, symbols)"
         " VALUES (%s, %s, %s, %s, %s, %s) ON CONFLICT (build_run_id) DO UPDATE SET"
         " symbols = EXCLUDED.symbols",
-        (run_id, sheet_id, view_id, pb.setup.ratio, ",".join(sorted(V2_RULES)),
+        (run_id, sheet_id, view_id, pb.setup.ratio, ",".join(sorted(pb.setup.col_rules)),
          Jsonb([symbol_json(s) for s in syms])),
     )  # fmt: skip
 

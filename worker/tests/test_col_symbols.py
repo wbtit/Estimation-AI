@@ -1,5 +1,6 @@
-"""Phase 14b: columns from labels, find similar, real-size filter, symbol families (SYNTHETIC
-geometry only; scale 1/4" = 1'-0", so 1 real inch = 1.5 pt)."""
+"""Phase 14b (v2 rules pinned; v3 in test_col_symbols_v3.py): columns from labels, find similar,
+real-size filter, symbol families (SYNTHETIC geometry only; scale 1/4" = 1'-0", so 1 real inch =
+1.5 pt)."""
 
 from __future__ import annotations
 
@@ -9,6 +10,7 @@ import pytest
 
 from src.build.col_symbols import (
     STUD_KIND,
+    V2_RULES,
     cross_check,
     find_callouts,
     find_symbols,
@@ -68,9 +70,11 @@ def c_shape(page, x, y, w=4 * IN, h=12 * IN, t=1 * IN, opening="right"):
     poly(page, pts)
 
 
-def symbols_of(page, text=(), real_size=True):
+def symbols_of(page, text=(), real_size=True, rules=V2_RULES):
     ps = parse_page(page)
-    return find_symbols(ps, np.ones(len(ps), dtype=bool), CROP, list(text), [], RATIO, real_size)
+    return find_symbols(
+        ps, np.ones(len(ps), dtype=bool), CROP, list(text), [], RATIO, real_size, rules=rules
+    )
 
 
 def family_at(page, x, y):
@@ -296,9 +300,11 @@ def test_v2_arrowheads_by_paper_size_and_unknown_symbols_never_match(page):
     flags = frozenset({"col_labels", "col_similar", "col_real_size"})
     v1 = label_columns(ps, keep, CROP, text, [], ratio, flags, rules=frozenset())
     assert v1.examples and v1.examples[0].symbol.family == "unknown"  # the arrowhead
-    v2 = label_columns(ps, keep, CROP, text, [], ratio, flags)
+    v2 = label_columns(ps, keep, CROP, text, [], ratio, flags, rules=V2_RULES)
     assert [h.symbol.family for h in v2.hits] == ["hss_square", "hss_square"]
-    clicked = label_columns(ps, keep, CROP, [], [], ratio, flags, clicks=[(604, 403)])
+    clicked = label_columns(
+        ps, keep, CROP, [], [], ratio, flags, clicks=[(604, 403)], rules=V2_RULES
+    )
     assert clicked.hits == []  # a click on an unknown symbol is no example under v2
 
 

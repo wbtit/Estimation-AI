@@ -5,6 +5,9 @@ Flags (src/build/page.py, all off by default, column-plan pages only):
   col_labels     a column / stud callout's leader ends at a symbol: a confirmed example (2a);
   col_similar    symbols of an example's family and real size become members of its kind (2b).
 A family (2d) only names a symbol; a symbol becomes a column or stud only by matching an example.
+Rules (`col_rules`): V3_RULES by default (Phase 14c, docs/PHASE14C_PREREGISTRATION.md: the five
+families, grid pieces not symbol elements, a solid shape only as a clicked example); V2_RULES = 14b
+v2; empty = 14b v1.
 Pure functions over the page's segments and text; deterministic.
 """
 
@@ -15,8 +18,10 @@ import re
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 
+import numpy as np
+
 from src.build.geom import Box, Pt, in_box
-from src.build.grids import Bubble
+from src.build.grids import Bubble, find_grid_lines
 from src.build.segments import PageSegments, TextLine
 from src.text_layer.parsers.profile import find_profiles
 
@@ -32,6 +37,15 @@ ARROW_MAX_IN = 6.0  # v1
 ARROW_MAX_PT = 12.0  # v2 rule 'arrow_pt'
 # v2 rules (docs/PHASE14B2_PREREGISTRATION.md); () = v1 as pre-registered
 V2_RULES = frozenset({"arrow_pt", "known_only"})
+# v3 rules (docs/PHASE14C_PREREGISTRATION.md): five families, grid pieces removed, solid click
+V3_RULES = V2_RULES | {"five_families", "grid_strip", "click_solid"}
+FIVE_FAMILIES = ("w_shape", "w_cover_plates", "hss_square", "hss_rect", "hss_round")
+SQUARE_ASPECT_V3 = 1.10
+ROUND_ASPECT_MAX = 1.15
+ROUNDED_EDGE_SHARE = 0.25
+ON_SIDE_PT = 0.5
+FLANGE_SHARE = 0.9
+GRID_STRIP_PT, GRID_STRIP_DEG, GRID_STRIP_EXTEND_PT = 1.0, 1.0, 24.0
 # 2d
 COLLINEAR_DEG = 2.0
 ROUND_TOL = 0.15
@@ -55,6 +69,7 @@ STUD_RE = re.compile(r"\b(?:STUDS?|POSTS?)\b", re.IGNORECASE)
 TYP_RE = re.compile(r"\bTYP(?:ICAL)?\b", re.IGNORECASE)
 TWO_C_RE = re.compile(r"\b2\s*M?C\s*\d", re.IGNORECASE)
 PL_RE = re.compile(r"\bPL\s*\d", re.IGNORECASE)
+COVER_RE = re.compile(r"\bCOVER\b", re.IGNORECASE)
 CALLOUT_FAMILIES = {"W", "HP", "S", "M", "HSS", "PIPE", "PL"}
 
 STUD_KIND = "Stud/Post"
@@ -163,12 +178,58 @@ def _box_of(pts: Iterable[Pt]) -> Box:
     )
 
 
-def outline_of(pts: list[Pt], curved: bool, filled: bool) -> Outline:
+def outline_of(pts: list[Pt], curved: bool, filled: bool, five: bool = False) -> Outline:
     box = _box_of(pts)
+    if five:
+        return _outline_v3(pts, curved, filled, box)
     if curved or _is_round(pts):
         return Outline(0, box, filled, [])
     edges = merge_edges(pts)
     return Outline(len(edges), box, filled, edges)
+
+
+def _circle(pts: list[Pt], box: Box) -> bool:
+    """v3: every point within ROUND_TOL of the mean distance to the centre, box aspect <= 1.15."""
+    if len(pts) < 8 or _aspect(box) > ROUND_ASPECT_MAX:
+        return False
+    cx = sum(p[0] for p in pts) / len(pts)
+    cy = sum(p[1] for p in pts) / len(pts)
+    ds = [math.dist(p, (cx, cy)) for p in pts]
+    m = sum(ds) / len(ds)
+    return m > 0 and all(abs(d - m) <= ROUND_TOL * m for d in ds)
+
+
+def _rounded_rect(edges: list[tuple[Pt, Pt]], box: Box) -> list[tuple[Pt, Pt]] | None:
+    """v3: the four straight edges of a rounded rectangle, one on each box side and each at least
+    ROUNDED_EDGE_SHARE of it; None when the outline is not one."""
+    x0, y0, x1, y1 = box
+    w, h = x1 - x0, y1 - y0
+    found: dict[str, tuple[Pt, Pt]] = {}
+    for a, b in edges:
+        if abs(a[1] - b[1]) <= ON_SIDE_PT and abs(a[0] - b[0]) >= ROUNDED_EDGE_SHARE * w:
+            for side, y in (("top", y0), ("bottom", y1)):
+                if abs(a[1] - y) <= ON_SIDE_PT and abs(b[1] - y) <= ON_SIDE_PT:
+                    found.setdefault(side, (a, b))
+        if abs(a[0] - b[0]) <= ON_SIDE_PT and abs(a[1] - b[1]) >= ROUNDED_EDGE_SHARE * h:
+            for side, x in (("left", x0), ("right", x1)):
+                if abs(a[0] - x) <= ON_SIDE_PT and abs(b[0] - x) <= ON_SIDE_PT:
+                    found.setdefault(side, (a, b))
+    return list(found.values()) if len(found) == 4 else None
+
+
+def _outline_v3(pts: list[Pt], curved: bool, filled: bool, box: Box) -> Outline:
+    """v3 outlines (prereg 14c 2.1, in this order): rounded rectangles (4 sides), circles,
+    polygons; any other curved outline has sides -1 (not recognised)."""
+    edges = merge_edges(pts)
+    if curved:
+        sides = _rounded_rect(edges, box)
+        if sides is not None:
+            return Outline(4, box, filled, sides)
+    if (curved or len(pts) > 12) and _circle(pts, box):
+        return Outline(0, box, filled, [])
+    if not curved:
+        return Outline(len(edges), box, filled, edges)
+    return Outline(-1, box, filled, edges)
 
 
 def _inside(a: Box, b: Box, pad: float = 0.5) -> bool:
@@ -318,15 +379,7 @@ def classify(
     back_to_back_pt: float = 0.0,
 ) -> str:
     """The family of a symbol (prereg 2d), or 'unknown'."""
-    # a nested outline of the same kind inside another is the wall of the outer one
-    outs = sorted(outlines, key=lambda o: -(o.box[2] - o.box[0]) * (o.box[3] - o.box[1]))
-    kept: list[Outline] = []
-    for o in outs:
-        if any(_inside(o.box, k.box) and (o.round == k.round) and o.sides in (0, 4) for k in kept):
-            if o.filled:
-                kept = [replace_filled(k) if _inside(o.box, k.box) else k for k in kept]
-            continue
-        kept.append(o)
+    kept = _walls_merged(outlines)
     n = len(kept)
     if n == 1:
         o = kept[0]
@@ -374,6 +427,91 @@ def classify(
     return "unknown"
 
 
+def _walls_merged(outlines: list[Outline]) -> list[Outline]:
+    """A nested outline of the same shape inside another is the wall of the outer one (a filled
+    inner one fills the outer)."""
+    outs = sorted(outlines, key=lambda o: -(o.box[2] - o.box[0]) * (o.box[3] - o.box[1]))
+    kept: list[Outline] = []
+    for o in outs:
+        if any(_inside(o.box, k.box) and (o.round == k.round) and o.sides in (0, 4) for k in kept):
+            if o.filled:
+                kept = [replace_filled(k) if _inside(o.box, k.box) else k for k in kept]
+            continue
+        kept.append(o)
+    return kept
+
+
+def _flange_sides(o: Outline) -> set[str]:
+    """The box sides of an I outline that carry an edge spanning FLANGE_SHARE of them."""
+    x0, y0, x1, y1 = o.box
+    out: set[str] = set()
+    for a, b in o.edges:
+        if abs(a[1] - b[1]) < ON_SIDE_PT and abs(a[0] - b[0]) >= FLANGE_SHARE * (x1 - x0):
+            if abs(a[1] - y0) < ON_SIDE_PT:
+                out.add("top")
+            elif abs(a[1] - y1) < ON_SIDE_PT:
+                out.add("bottom")
+        if abs(a[0] - b[0]) < ON_SIDE_PT and abs(a[1] - b[1]) >= FLANGE_SHARE * (y1 - y0):
+            if abs(a[0] - x0) < ON_SIDE_PT:
+                out.add("left")
+            elif abs(a[0] - x1) < ON_SIDE_PT:
+                out.add("right")
+    return out
+
+
+def _cover_plates(i: Outline, plates: list[Outline]) -> bool:
+    """Two plates within JOIN_PT of the I, long sides parallel to its flanges, each outside the
+    I's box beyond a different flange (overlap with the box at most ON_SIDE_PT)."""
+    sides = _flange_sides(i)
+    if sides not in ({"top", "bottom"}, {"left", "right"}):
+        return False
+    x0, y0, x1, y1 = i.box
+    beyond: set[str] = set()
+    for p in plates:
+        px0, py0, px1, py1 = p.box
+        if _gap(p.box, i.box) > JOIN_PT:
+            return False
+        horizontal = (px1 - px0) >= (py1 - py0)
+        if horizontal != (sides == {"top", "bottom"}):
+            return False
+        if sides == {"top", "bottom"}:
+            side = "top" if py1 <= y0 + ON_SIDE_PT else "bottom" if py0 >= y1 - ON_SIDE_PT else None
+        else:
+            side = "left" if px1 <= x0 + ON_SIDE_PT else "right" if px0 >= x1 - ON_SIDE_PT else None
+        if side is None:
+            return False
+        beyond.add(side)
+    return beyond == sides
+
+
+def classify_v3(
+    outlines: list[Outline], strokes: list[tuple[Pt, Pt]], lacing: int
+) -> tuple[str, str | None]:
+    """(family, solid) under the five families (prereg 14c 2.1); solid shapes are 'unknown'."""
+    kept = _walls_merged(outlines)
+    if len(kept) == 1:
+        o = kept[0]
+        shape = None
+        if o.round:
+            shape = "round"
+        elif o.sides == 4:
+            shape = "square" if _aspect(o.box) <= SQUARE_ASPECT_V3 else "rect"
+        if shape is not None and (o.filled or lacing >= 2):
+            return "unknown", shape
+        if shape is not None:
+            return {"round": "hss_round", "square": "hss_square", "rect": "hss_rect"}[shape], None
+        if o.sides == 12 and not _cruciform(o):
+            return "w_shape", None
+        return "unknown", None
+    if not kept and _i_strokes(strokes):
+        return "w_shape", None
+    if sorted(o.sides for o in kept) == [4, 4, 12]:
+        i = next(o for o in kept if o.sides == 12)
+        if not _cruciform(i) and _cover_plates(i, [o for o in kept if o.sides == 4]):
+            return "w_cover_plates", None
+    return "unknown", None
+
+
 def replace_filled(o: Outline) -> Outline:
     return Outline(o.sides, o.box, True, o.edges)
 
@@ -391,6 +529,7 @@ class Symbol:
     real_h_in: float
     filled: bool
     curved: bool
+    solid: str | None = None  # v3: square / rect / round for a solid shape (family 'unknown')
 
     @property
     def centre(self) -> Pt:
@@ -423,6 +562,51 @@ def _in_text(box: Box, text_boxes: list[Box], idx: _BoxIndex) -> bool:
     return any(_inside(box, text_boxes[k], TEXT_PAD_PT) for k in idx.near(box, TEXT_PAD_PT))
 
 
+def grid_pieces(ps: PageSegments, keep, bubbles: list[Bubble]) -> set[int]:
+    """v3 'grid_strip' (prereg 14c 2.2): the open segments of the page's grid lines, and other kept
+    open segments in a grid line's pen lying on its axis (within GRID_STRIP_PT and GRID_STRIP_DEG,
+    inside its extent + GRID_STRIP_EXTEND_PT). Closed shapes' edges are never included."""
+    lines, used = find_grid_lines(ps, keep, bubbles)
+    if not lines:
+        return set()
+    shapes = {sh.id: sh for sh in ps.shapes}
+
+    def open_seg(i: int) -> bool:
+        sh = shapes.get(int(ps.shape_id[i]))
+        return sh is not None and not sh.closed and "f" not in sh.paint
+
+    out = {i for i in used if open_seg(i)}
+    seg = np.asarray(ps.seg, dtype=float)
+    width = np.round(np.asarray(ps.width, dtype=float), 2)
+    pen_ids: dict[tuple[float, object], int] = {}
+    pen = np.array(
+        [
+            pen_ids.setdefault((float(w), c), len(pen_ids))
+            for w, c in zip(width, ps.colour, strict=True)
+        ],
+        dtype=int,
+    )
+    cand = np.asarray(keep, dtype=bool) & np.array([open_seg(i) for i in range(len(ps))], bool)
+    dx_s, dy_s = seg[:, 2] - seg[:, 0], seg[:, 3] - seg[:, 1]
+    seg_ang = np.degrees(np.arctan2(dy_s, dx_s)) % 180.0
+    zero = np.hypot(dx_s, dy_s) <= 0
+    for ln in lines:
+        length = math.dist(ln.p0, ln.p1)
+        if length <= 0:
+            continue
+        in_pen = np.isin(pen, sorted({int(pen[i]) for i in ln.seg_ids}))
+        ux, uy = (ln.p1[0] - ln.p0[0]) / length, (ln.p1[1] - ln.p0[1]) / length
+        d = np.abs(seg_ang - _ang(ln.p0, ln.p1)) % 180.0
+        ok = cand & in_pen & (zero | (np.minimum(d, 180.0 - d) <= GRID_STRIP_DEG))
+        for x, y in ((seg[:, 0], seg[:, 1]), (seg[:, 2], seg[:, 3])):
+            px, py = x - ln.p0[0], y - ln.p0[1]
+            along = px * ux + py * uy
+            ok &= np.abs(px * uy - py * ux) <= GRID_STRIP_PT
+            ok &= (along >= -GRID_STRIP_EXTEND_PT) & (along <= length + GRID_STRIP_EXTEND_PT)
+        out.update(int(i) for i in np.nonzero(ok)[0])
+    return out
+
+
 def find_symbols(
     ps: PageSegments,
     keep,
@@ -432,9 +616,12 @@ def find_symbols(
     ratio: float,
     real_size: bool,
     not_segments: frozenset[int] = frozenset(),
-    rules: frozenset[str] = V2_RULES,
+    rules: frozenset[str] = V3_RULES,
 ) -> list[Symbol]:
     """Symbols (prereg 2c): element groups that pass the size filter, in (y, x) order."""
+    if "grid_strip" in rules:
+        not_segments = not_segments | grid_pieces(ps, keep, bubbles)
+    five = "five_families" in rules
     max_pt = MAX_ELEMENT_IN * 72.0 / ratio if ratio else PT_LONG_MAX
     arrow_pt = (
         ARROW_MAX_PT if "arrow_pt" in rules else (ARROW_MAX_IN * 72.0 / ratio if ratio else 0.0)
@@ -529,7 +716,7 @@ def find_symbols(
             continue  # fmt: skip
         sh_ids = sorted(elems[k][1] for k in members if elems[k][0] == "shape")
         seg_ids = sorted(elems[k][1] for k in members if elems[k][0] == "seg")
-        out.append(_symbol(ps, shapes, sh_ids, seg_ids, box, ratio))
+        out.append(_symbol(ps, shapes, sh_ids, seg_ids, box, ratio, five))
     out.sort(key=lambda s: (round(s.centre[1], 1), round(s.centre[0], 1)))
     return out
 
@@ -576,8 +763,10 @@ def _point_line(p: Pt, s: tuple[Pt, Pt]) -> float:
     return abs((x1 - x0) * (y0 - p[1]) - (x0 - p[0]) * (y1 - y0)) / d
 
 
-def _symbol(ps, shapes, sh_ids, seg_ids, box, ratio) -> Symbol:
-    outlines = [outline_of(shapes[i].pts, shapes[i].curved, "f" in shapes[i].paint) for i in sh_ids]
+def _symbol(ps, shapes, sh_ids, seg_ids, box, ratio, five: bool = False) -> Symbol:
+    outlines = [
+        outline_of(shapes[i].pts, shapes[i].curved, "f" in shapes[i].paint, five) for i in sh_ids
+    ]
     strokes = [
         ((float(ps.seg[i][0]), float(ps.seg[i][1])), (float(ps.seg[i][2]), float(ps.seg[i][3])))
         for i in seg_ids
@@ -595,7 +784,11 @@ def _symbol(ps, shapes, sh_ids, seg_ids, box, ratio) -> Symbol:
         for e in [*strokes, *(e for o in outlines for e in o.edges)]
         if LACE_MIN_DEG <= _angle_diff(_ang(*e), long_ang) <= LACE_MAX_DEG
     )
-    family = classify(outlines, free, lacing, BACK_TO_BACK_IN * 72.0 / ratio if ratio else 0.0)
+    solid = None
+    if five:
+        family, solid = classify_v3(outlines, free, lacing)
+    else:
+        family = classify(outlines, free, lacing, BACK_TO_BACK_IN * 72.0 / ratio if ratio else 0.0)
     signature = (tuple(sorted(o.sides for o in outlines)), any(o.filled for o in outlines))
     edges = [e for o in outlines for e in o.edges] + strokes
     rot = 0.0
@@ -613,6 +806,7 @@ def _symbol(ps, shapes, sh_ids, seg_ids, box, ratio) -> Symbol:
         round(real_in(h, ratio), 2),
         any(o.filled for o in outlines),
         any(o.round for o in outlines),
+        solid,
     )
 
 
@@ -624,6 +818,7 @@ def symbol_json(s: Symbol) -> dict:
         "centre": [round(v, 2) for v in s.centre],
         "rotation_deg": s.rotation_deg,
         "real_in": [round(v, 2) for v in s.real_sides],
+        "solid": s.solid,
     }
 
 
@@ -659,7 +854,9 @@ def _profile_of(text: str) -> tuple[str, str] | None:
     return None
 
 
-def find_callouts(text: list[TextLine]) -> list[Callout]:
+def find_callouts(text: list[TextLine], five: bool = False) -> list[Callout]:
+    """Callouts with their blocks (prereg 2a); `five` (14c 2.4): a W profile whose block also has
+    PL or COVER is family 'W-cover'."""
     out: list[Callout] = []
     for t in text:
         got = _profile_of(t.text)
@@ -686,12 +883,15 @@ def find_callouts(text: list[TextLine]) -> list[Callout]:
                     )
                     grown = True
         words = " ".join(b.text for b in block)
+        fam = got[1]
+        if five and fam == "W" and (PL_RE.search(words) or COVER_RE.search(words)):
+            fam = "W-cover"
         out.append(
             Callout(
                 t,
                 bbox,
                 got[0],
-                got[1],
+                fam,
                 STUD_KIND if STUD_RE.search(words) else COLUMN_KIND,
                 bool(TYP_RE.search(words)),
             )
@@ -818,7 +1018,10 @@ def same_size(a: tuple[float, float], b: tuple[float, float]) -> bool:
     )
 
 
-def same_kind(s: Symbol, e: Symbol, known_only: bool = True) -> bool:
+def same_kind(s: Symbol, e: Symbol, known_only: bool = True, solid: bool = False) -> bool:
+    """`solid` (14c 2.3, a clicked solid example only): the same solid shape and real size."""
+    if solid and e.solid is not None:
+        return s.solid == e.solid and same_size(s.real_sides, e.real_sides)
     if s.family != e.family:
         return False
     if s.family == "unknown" and (known_only or s.signature != e.signature):
@@ -838,9 +1041,13 @@ class ColumnHit:
 
 
 def find_similar(
-    examples: list[Example], symbols: list[Symbol], known_only: bool = True
+    examples: list[Example],
+    symbols: list[Symbol],
+    known_only: bool = True,
+    five: bool = False,
 ) -> list[ColumnHit]:
-    """Every example and every symbol matching one (prereg 2b), in (y, x) order."""
+    """Every example and every symbol matching one (prereg 2b), in (y, x) order; a solid example
+    (only ever a click, 14c 2.3) matches the same solid shape and size."""
     by_sym = {id(e.symbol): k for k, e in enumerate(examples)}
     out: list[ColumnHit] = []
     for s in symbols:
@@ -852,7 +1059,7 @@ def find_similar(
         cands = [
             (math.dist(s.centre, e.symbol.centre), k)
             for k, e in enumerate(examples)
-            if same_kind(s, e.symbol, known_only)
+            if same_kind(s, e.symbol, known_only, e.source == "click")
         ]
         if not cands:
             continue
@@ -868,14 +1075,29 @@ def find_similar(
                       profile_on_row=e.typical and on_row)
         )  # fmt: skip
     for h in out:
-        h.flag = cross_check(examples[h.example].profile_family, h.symbol.family)
+        h.flag = cross_check(examples[h.example].profile_family, h.symbol.family, five)
     return out
 
 
-def cross_check(profile_family: str | None, family: str) -> str | None:
-    """A red flag when the label's profile family and the drawn family disagree (prereg 2e)."""
+# 14c 2.4: the label's profile family -> the drawn families it agrees with (five families)
+CROSS_V3 = {
+    "W": {"w_shape", "w_cover_plates"},
+    "W-cover": {"w_shape", "w_cover_plates"},
+    "HSS-square": {"hss_square"},
+    "HSS-rect": {"hss_rect"},
+    "HSS-round": {"hss_round"},
+    "PIPE": {"hss_round"},
+}
+
+
+def cross_check(profile_family: str | None, family: str, five: bool = False) -> str | None:
+    """A red flag when the label's profile family and the drawn family disagree (prereg 2e; 14c
+    2.4 under `five`)."""
     if profile_family is None or family == "unknown":
         return None
+    if five:
+        ok5 = CROSS_V3.get(profile_family)
+        return None if ok5 is None or family in ok5 else f"label {profile_family}, drawn {family}"
     ok = {
         "W": {"cruciform", "w_shape", "w_cover_plates", "built_up_3w"},
         "HSS-square": {"hss_square", "hss_filled"},
@@ -890,16 +1112,26 @@ def cross_check(profile_family: str | None, family: str) -> str | None:
     return f"label {profile_family}, drawn {family}"
 
 
-def click_example(mark: Pt, symbols: list[Symbol], known_only: bool = True) -> Example | None:
+def click_example(
+    mark: Pt, symbols: list[Symbol], known_only: bool = True, solid: bool = False
+) -> Example | None:
     """A simulated (or real) user-drawn column at `mark`: the symbol whose centre is within
-    CLICK_PT (nearest; ties: first in order; v2: of a known family)."""
-    best = None
-    for k, s in enumerate(symbols):
-        if known_only and s.family == "unknown":
-            continue
-        d = math.dist(mark, s.centre)
-        if d <= CLICK_PT and (best is None or (d, k) < best):
-            best = (d, k)
+    CLICK_PT (nearest; ties: first in order; v2: of a known family; 14c 2.3 `solid`: when no
+    known-family symbol is that near, the nearest solid shape)."""
+
+    def nearest(ok) -> tuple[float, int] | None:
+        best = None
+        for k, s in enumerate(symbols):
+            if not ok(s):
+                continue
+            d = math.dist(mark, s.centre)
+            if d <= CLICK_PT and (best is None or (d, k) < best):
+                best = (d, k)
+        return best
+
+    best = nearest(lambda s: not (known_only and s.family == "unknown"))
+    if best is None and solid:
+        best = nearest(lambda s: s.solid is not None)
     if best is None:
         return None
     return Example(symbols[best[1]], None, None, COLUMN_KIND, False, "click")
@@ -924,12 +1156,13 @@ def label_columns(
     ratio: float,
     flags: frozenset[str],
     clicks: list[Pt] | None = None,
-    rules: frozenset[str] = V2_RULES,
+    rules: frozenset[str] = V3_RULES,
 ) -> ColumnResult:
-    """Prereg 2a-2e on one column-plan page (text and segments already cropped); `rules` = the v2
-    changes in force (empty = v1)."""
+    """Prereg 2a-2e on one column-plan page (text and segments already cropped); `rules` = the v2 /
+    v3 changes in force (empty = v1, V2_RULES = v2)."""
     known = "known_only" in rules
-    callouts = find_callouts(text) if "col_labels" in flags else []
+    five = "five_families" in rules
+    callouts = find_callouts(text, five) if "col_labels" in flags else []
     chains = [leaders(ps, c.block) for c in callouts]
     used = frozenset(i for ls in chains for ld in ls for i in ld.segs)
     symbols = find_symbols(
@@ -938,7 +1171,7 @@ def label_columns(
     examples = label_examples(callouts, chains, symbols, known)
     if not examples and clicks:
         for m in clicks:
-            ex = click_example(m, symbols, known)
+            ex = click_example(m, symbols, known, "click_solid" in rules)
             if ex is not None:
                 examples = [ex]
                 break
@@ -952,11 +1185,11 @@ def label_columns(
         res.note = "click one column to find similar"
         return res
     if "col_similar" in flags:
-        res.hits = find_similar(examples, symbols, known)
+        res.hits = find_similar(examples, symbols, known, five)
     else:
         res.hits = [
             ColumnHit(e.symbol, k, e.kind, e.profile, e.source,
-                      cross_check(e.profile_family, e.symbol.family))
+                      cross_check(e.profile_family, e.symbol.family, five))
             for k, e in enumerate(examples)
         ]  # fmt: skip
     return res

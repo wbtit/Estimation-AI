@@ -13,5 +13,14 @@
     {"example": {"family": "w_shape", "real_in": [14, 14.5]}, "symbol": {"family": "w_shape", "real_in": [10, 10]}, "match": false},
     {"example": {"family": "unknown", "real_in": [12, 12]}, "symbol": {"family": "unknown", "real_in": [12, 12]}, "match": false},
     {"example": {"family": "hss_round", "real_in": [20, 20]}, "symbol": {"family": "hss_round", "real_in": [23, 23]}, "match": true}
+  ],
+  "_note_solid": "SYNTHETIC. Phase 14c 2.3 (click_solid): when the example is a CLICKED solid shape (family 'unknown', solid square / rect / round), a symbol matches when it has the same solid value and the same real size; label examples are never solid. Same readers as above.",
+  "solid_click_cases": [
+    {"example": {"family": "unknown", "solid": "square", "real_in": [12, 12]}, "symbol": {"family": "unknown", "solid": "square", "real_in": [12, 12.5]}, "match": true},
+    {"example": {"family": "unknown", "solid": "square", "real_in": [12, 12]}, "symbol": {"family": "unknown", "solid": "square", "real_in": [8, 8]}, "match": false},
+    {"example": {"family": "unknown", "solid": "square", "real_in": [12, 12]}, "symbol": {"family": "hss_square", "solid": null, "real_in": [12, 12]}, "match": false},
+    {"example": {"family": "unknown", "solid": "square", "real_in": [12, 12]}, "symbol": {"family": "unknown", "solid": "round", "real_in": [12, 12]}, "match": false},
+    {"example": {"family": "unknown", "solid": "round", "real_in": [10, 10]}, "symbol": {"family": "unknown", "solid": "round", "real_in": [10.8, 10.8]}, "match": true},
+    {"example": {"family": "hss_square", "solid": null, "real_in": [12, 12]}, "symbol": {"family": "unknown", "solid": "square", "real_in": [12, 12]}, "match": false}
   ]
 }

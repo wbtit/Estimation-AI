@@ -146,9 +146,11 @@ def test_column_plan_then_framing_page_stores_everything(dbp: DbProject) -> None
         " WHERE p.sheet_id = %s",
         (plan_id,),
     ).fetchall()
-    assert len(syms) == 1 and syms[0]["rules"] == "arrow_pt,known_only"
-    # (here the dash-dot grid pieces join each column into one large group: no symbol is kept)
-    assert isinstance(syms[0]["symbols"], list)
+    rules = "arrow_pt,click_solid,five_families,grid_strip,known_only"
+    assert len(syms) == 1 and syms[0]["rules"] == rules
+    # Phase 14c: the dash-dot grid pieces no longer join the columns: the 9 solid squares are kept
+    solid = [s for s in syms[0]["symbols"] if s["solid"] == "square"]
+    assert len(solid) == 9 and all(s["family"] == "unknown" for s in solid)
 
     _setup(dbp, framing_id, "framing")
     run_id, out = _run(dbp, framing_id)
