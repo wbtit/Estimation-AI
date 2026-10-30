@@ -2222,3 +2222,17 @@ table.grid tr.total td {
   color: var(--muted);
   pointer-events: none;
 }
+/* Phase 14e: the strictness slider of the Find similar preview */
+.find-similar .strictness {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  color: var(--muted);
+}
+.find-similar .strictness input {
+  width: 110px;
+}
+.find-similar .strictness b {
+  color: var(--text, #111);
+  font-variant-numeric: tabular-nums;
+}

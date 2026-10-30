@@ -9,6 +9,7 @@ import {
   type SymbolFamily,
 } from "../lib/columns";
 import { ColumnPalette } from "./ColumnPalette";
+import { SimilarMatches, type SimilarOverlay } from "./SimilarMatches";
 import React, {
   useCallback,
   useEffect,
@@ -159,6 +160,8 @@ export interface CanvasProps {
   building?: boolean;
   /** A: approve the selected members. */
   onApprove?: () => void;
+  /** Phase 14e: the Find similar preview's matches (ticked / unticked), drawn over the page. */
+  similar?: SimilarOverlay | null;
 }
 
 const TOOLS: { tool: Tool; Icon: LucideIcon; label: string }[] = [
@@ -1165,6 +1168,9 @@ export const Canvas: React.FC<CanvasProps> = (props) => {
                   flags={layers.flags}
                 />
               ))}
+            {props.similar && (
+              <SimilarMatches overlay={props.similar} px={px} />
+            )}
             {single && single.a && tool === "select" && (
               <g>
                 {(["a", "b"] as const).map((end) => {

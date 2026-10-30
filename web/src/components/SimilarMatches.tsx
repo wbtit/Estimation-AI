@@ -1,0 +1,63 @@
+import React from "react";
+import { matchKey, scoreLabel, type SimilarMatch } from "../lib/similar";
+
+export interface SimilarOverlay {
+  /** the matches shown at the current strictness */
+  matches: SimilarMatch[];
+  unticked: ReadonlySet<string>;
+  onToggle: (key: string) => void;
+}
+
+/** Phase 14e: every Find similar match on the canvas, highlighted, with its score ("shape" for a
+ * vector match); a click unticks it (dashed grey) or ticks it again. The click never reaches the
+ * drawing tools underneath. */
+export const SimilarMatches: React.FC<{
+  overlay: SimilarOverlay;
+  px: number;
+}> = ({ overlay, px }) => (
+  <g data-testid="similar-matches">
+    {overlay.matches.map((m) => {
+      const key = matchKey(m);
+      const on = !overlay.unticked.has(key);
+      const r = 9 * px;
+      const stop = (e: React.PointerEvent) => e.stopPropagation();
+      return (
+        <g
+          key={key}
+          data-testid="similar-match"
+          data-key={key}
+          data-ticked={on ? "1" : "0"}
+          style={{ cursor: "pointer" }}
+          onPointerDown={stop}
+          onPointerUp={stop}
+          onClick={(e) => {
+            e.stopPropagation();
+            overlay.onToggle(key);
+          }}
+        >
+          <title>{`${on ? "Click to untick" : "Click to tick"} · ${scoreLabel(m)}`}</title>
+          <circle
+            cx={m.centre[0]}
+            cy={m.centre[1]}
+            r={r}
+            fill={on ? "rgba(37,99,235,0.18)" : "rgba(255,255,255,0.6)"}
+            stroke={on ? "var(--select, #2563eb)" : "#9ca3af"}
+            strokeWidth={2 * px}
+            strokeDasharray={on ? undefined : `${3 * px} ${2 * px}`}
+          />
+          <text
+            x={m.centre[0] + r + 2 * px}
+            y={m.centre[1] - r}
+            fontSize={11 * px}
+            fill={on ? "var(--select, #2563eb)" : "#6b7280"}
+            stroke="#fff"
+            strokeWidth={3 * px}
+            paintOrder="stroke"
+          >
+            {scoreLabel(m)}
+          </text>
+        </g>
+      );
+    })}
+  </g>
+);

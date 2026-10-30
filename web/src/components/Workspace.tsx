@@ -1,4 +1,10 @@
-import { ColumnHint, FindSimilarBar } from "./FindSimilarBar";
+import {
+  ColumnHint,
+  FindSimilarBar,
+  previewMatches,
+  type SimilarPreview,
+} from "./FindSimilarBar";
+import { shownAt, STRICTNESS_DEFAULT, toggle } from "../lib/similar";
 import { COLUMN_HINT, showColumnHint } from "../lib/columns";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Download, House, PanelLeft, Save } from "lucide-react";
@@ -95,7 +101,17 @@ export const Workspace: React.FC<{
     setToolAsk((t) => ({ tool, n: (t?.n ?? 0) + 1 }));
   const [viewId, setViewId] = useState<string | null>(null);
   // Phase 14b: the column just placed (the Find similar bar)
-  const [lastColumn, setLastColumn] = useState<string | null>(null);
+  const [lastColumn, setLastColumnRaw] = useState<string | null>(null);
+  // Phase 14e: the Find similar preview the person corrects (strictness, unticked matches)
+  const [simPreview, setSimPreview] = useState<SimilarPreview | null>(null);
+  const [strictness, setStrictness] = useState(STRICTNESS_DEFAULT);
+  const [unticked, setUnticked] = useState<Set<string>>(new Set());
+  const setLastColumn = (id: string | null) => {
+    setLastColumnRaw(id);
+    setSimPreview(null);
+    setStrictness(STRICTNESS_DEFAULT);
+    setUnticked(new Set());
+  };
 
   const sheetId =
     route.sheetId ??
@@ -634,6 +650,14 @@ export const Workspace: React.FC<{
               projectId={projectId}
               memberId={lastColumn}
               who={who}
+              preview={simPreview}
+              onPreview={(p) => {
+                setSimPreview(p);
+                setStrictness(p.strictness_default ?? STRICTNESS_DEFAULT);
+              }}
+              strictness={strictness}
+              onStrictness={setStrictness}
+              unticked={unticked}
               onDone={(n) => {
                 setLastColumn(null);
                 say(
@@ -650,6 +674,15 @@ export const Workspace: React.FC<{
           {page ? (
             <Canvas
               who={who}
+              similar={
+                simPreview
+                  ? {
+                      matches: shownAt(previewMatches(simPreview), strictness),
+                      unticked,
+                      onToggle: (k) => setUnticked((u) => toggle(u, k)),
+                    }
+                  : null
+              }
               pdf={pdf}
               page={page}
               data={data}

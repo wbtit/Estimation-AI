@@ -1,5 +1,14 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { send } from "../lib/api";
+import {
+  shownAt,
+  STRICTNESS_MAX,
+  STRICTNESS_MIN,
+  STRICTNESS_STEP,
+  ticked,
+  untickedShown,
+  type SimilarMatch,
+} from "../lib/similar";
 
 export interface SimilarPreview {
   example: { family: string; real_in: [number, number] };
@@ -11,38 +20,88 @@ export interface SimilarPreview {
   run_id?: string | null;
   sources?: ("vector" | "image")[];
   runtime_s?: number | null;
+  /** Phase 14e: every match with its score (null: a vector match) */
+  matches?: SimilarMatch[];
+  strictness_default?: number;
 }
 
-/** Phase 14b/14d: after a column is placed, "Find similar" previews the symbols of the drawing with
- * the same shape and real size (a count first; a spinner while the search runs), then Accept adds
- * exactly the previewed ones as one undoable action (logged for training data) or Cancel leaves
- * the page as it is. */
+/** The matches of a preview (older answers without `matches`: the points, as vector matches). */
+export const previewMatches = (p: SimilarPreview): SimilarMatch[] =>
+  p.matches ??
+  p.points.map((c, k) => ({
+    centre: c,
+    source: p.sources?.[k] ?? "vector",
+    score: null,
+  }));
+
+/** Phase 14b/14d/14e: after a column is placed, "Find similar" previews the matches of the drawing
+ * (a spinner while the search runs). The matches show on the canvas with their scores; the
+ * strictness slider filters the image matches live (no new search); a click on a match unticks
+ * it. Accept adds only the ticked ones as one undoable action (the strictness and the untick list
+ * are logged for training data); Cancel leaves the page as it is. Enter accepts, Esc cancels. */
 export const FindSimilarBar: React.FC<{
   projectId: string;
   memberId: string;
   who: string;
+  preview: SimilarPreview | null;
+  onPreview: (p: SimilarPreview) => void;
+  strictness: number;
+  onStrictness: (v: number) => void;
+  unticked: ReadonlySet<string>;
   onDone: (created: number) => void;
   onClose: () => void;
   onError: (e: unknown) => void;
-}> = ({ projectId, memberId, who, onDone, onClose, onError }) => {
-  const [preview, setPreview] = useState<SimilarPreview | null>(null);
+}> = ({
+  projectId,
+  memberId,
+  who,
+  preview,
+  onPreview,
+  strictness,
+  onStrictness,
+  unticked,
+  onDone,
+  onClose,
+  onError,
+}) => {
   const [busy, setBusy] = useState(false);
   const url = `/api/projects/${projectId}/line-first/pieces/${memberId}/find-similar`;
+  const all = preview ? previewMatches(preview) : [];
+  const shown = shownAt(all, strictness);
+  const chosen = ticked(all, strictness, unticked);
+  const hasScores = all.some((m) => m.score !== null);
   const run = (accept: boolean) => {
     setBusy(true);
     const body: Record<string, unknown> = { who, accept };
-    if (accept && preview?.run_id) body.run_id = preview.run_id;
+    if (accept) {
+      if (preview?.run_id) body.run_id = preview.run_id;
+      body.strictness = strictness;
+      body.unticked = untickedShown(all, strictness, unticked);
+    }
     send<SimilarPreview>("POST", url, body)
       .then((r) => {
         if (accept) onDone(r.accepted ? r.count : 0);
-        else setPreview(r);
+        else onPreview(r);
       }, onError)
       .finally(() => setBusy(false));
   };
+  useEffect(() => {
+    if (!preview) return;
+    const key = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      if (tag === "INPUT" && (e.target as HTMLInputElement).type !== "range")
+        return;
+      if (e.key === "Enter" && chosen.length > 0 && !busy) {
+        e.preventDefault();
+        run(true);
+      } else if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  });
   const size = preview
     ? preview.example.real_in.map((v) => Math.round(v * 10) / 10).join(" × ")
     : "";
-  const byImage = preview?.sources?.filter((s) => s === "image").length ?? 0;
   return (
     <div className="find-similar" data-testid="find-similar">
       {busy && (
@@ -64,14 +123,34 @@ export const FindSimilarBar: React.FC<{
       ) : (
         <>
           <span data-testid="similar-count">
-            {preview.count === 0
+            {all.length === 0
               ? "No similar symbols found"
-              : `${preview.count} similar (${preview.example.family.replace(/_/g, " ")}, ${size} in)`}
-            {preview.image && preview.count > 0 ? ` · ${byImage} by image` : ""}
+              : `${chosen.length} of ${shown.length} ticked (${preview.example.family.replace(/_/g, " ")}, ${size} in)`}
           </span>
-          {preview.count > 0 && (
-            <button disabled={busy} onClick={() => run(true)}>
-              Accept
+          {hasScores && (
+            <label
+              className="strictness"
+              title="Image matches scoring at least this are shown"
+            >
+              Strictness
+              <input
+                type="range"
+                aria-label="strictness"
+                min={STRICTNESS_MIN}
+                max={STRICTNESS_MAX}
+                step={STRICTNESS_STEP}
+                value={strictness}
+                onChange={(e) => onStrictness(Number(e.target.value))}
+              />
+              <b data-testid="strictness-value">{strictness.toFixed(2)}</b>
+            </label>
+          )}
+          {all.length > 0 && (
+            <button
+              disabled={busy || chosen.length === 0}
+              onClick={() => run(true)}
+            >
+              Accept {chosen.length}
             </button>
           )}
           <button className="link" onClick={onClose}>

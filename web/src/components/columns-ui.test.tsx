@@ -13,7 +13,14 @@ import type { PaletteChoice } from "../lib/columns";
 import type { Piece } from "../lib/lf";
 import { PieceMark } from "./Canvas";
 import { ColumnPalette } from "./ColumnPalette";
-import { ColumnHint, FindSimilarBar } from "./FindSimilarBar";
+import {
+  ColumnHint,
+  FindSimilarBar,
+  previewMatches,
+  type SimilarPreview,
+} from "./FindSimilarBar";
+import { SimilarMatches } from "./SimilarMatches";
+import { shownAt, STRICTNESS_DEFAULT, toggle } from "../lib/similar";
 
 afterEach(() => {
   cleanup();
@@ -109,59 +116,106 @@ describe("column palette", () => {
   });
 });
 
-describe("find similar bar", () => {
-  const url = "/api/projects/p1/line-first/pieces/m1/find-similar";
-  const preview = {
-    example: { family: "hss_square", real_in: [12, 12] },
-    count: 3,
-    points: [],
-    accepted: false,
-  };
-
-  it("previews the count, then accepts as one action", async () => {
-    const calls = stubFetch({ [url]: preview });
-    const done = vi.fn();
-    render(
+/** The bar as the workspace holds it: preview, strictness and unticked state, and the canvas
+ * overlay of the shown matches. */
+const Bar: React.FC<{ onDone?: (n: number) => void; onClose?: () => void }> = ({
+  onDone = () => undefined,
+  onClose = () => undefined,
+}) => {
+  const [preview, setPreview] = useState<SimilarPreview | null>(null);
+  const [strictness, setStrictness] = useState(STRICTNESS_DEFAULT);
+  const [unticked, setUnticked] = useState<Set<string>>(new Set());
+  return (
+    <>
       <FindSimilarBar
         projectId="p1"
         memberId="m1"
         who="ann"
-        onDone={done}
-        onClose={() => undefined}
+        preview={preview}
+        onPreview={(p) => {
+          setPreview(p);
+          setStrictness(p.strictness_default ?? STRICTNESS_DEFAULT);
+        }}
+        strictness={strictness}
+        onStrictness={setStrictness}
+        unticked={unticked}
+        onDone={onDone}
+        onClose={onClose}
         onError={() => undefined}
-      />,
-    );
+      />
+      {preview && (
+        <svg>
+          <SimilarMatches
+            px={1}
+            overlay={{
+              matches: shownAt(previewMatches(preview), strictness),
+              unticked,
+              onToggle: (k) => setUnticked((u) => toggle(u, k)),
+            }}
+          />
+        </svg>
+      )}
+    </>
+  );
+};
+
+describe("find similar bar", () => {
+  const url = "/api/projects/p1/line-first/pieces/m1/find-similar";
+  const vectorOnly = {
+    example: { family: "hss_square", real_in: [12, 12] },
+    count: 3,
+    points: [
+      [10, 10],
+      [20, 10],
+      [30, 10],
+    ],
+    accepted: false,
+  };
+  const image = {
+    example: { family: "drawn_symbol", real_in: [12, 12] },
+    count: 4,
+    points: [],
+    accepted: false,
+    image: true,
+    run_id: "11111111-1111-1111-1111-111111111111",
+    strictness_default: 0.8,
+    matches: [
+      { centre: [100, 100], source: "vector", score: null },
+      { centre: [200, 100], source: "image", score: 0.95 },
+      { centre: [300, 100], source: "image", score: 0.82 },
+      { centre: [400, 100], source: "image", score: 0.7 },
+    ],
+  };
+
+  it("vector only: previews the count, then accepts as one action", async () => {
+    const calls = stubFetch({ [url]: vectorOnly });
+    const done = vi.fn();
+    render(<Bar onDone={done} />);
     fireEvent.click(screen.getByText("Find similar"));
     await waitFor(() =>
       expect(screen.getByTestId("similar-count").textContent).toBe(
-        "3 similar (hss square, 12 × 12 in)",
+        "3 of 3 ticked (hss square, 12 × 12 in)",
       ),
     );
+    expect(screen.queryByLabelText("strictness")).toBeNull(); // no scores: no slider
     expect(calls[0]!.body).toEqual({ who: "ann", accept: false });
-    stubFetch({ [url]: { ...preview, accepted: true } });
-    fireEvent.click(screen.getByText("Accept"));
+    stubFetch({ [url]: { ...vectorOnly, accepted: true } });
+    fireEvent.click(screen.getByText("Accept 3"));
     await waitFor(() => expect(done).toHaveBeenCalledWith(3));
   });
 
-  it("shows a spinner while the image search runs, then accepts the previewed run (14d)", async () => {
+  it("a spinner while searching; the slider filters live; a click unticks; Accept sends the ticked ones (14e)", async () => {
     let release: (v: unknown) => void = () => undefined;
-    const calls: { body: unknown }[] = [];
+    const calls: { body: Record<string, unknown> }[] = [];
     vi.stubGlobal(
       "fetch",
       vi.fn(async (_url: string, init?: RequestInit) => {
-        const body = init?.body ? JSON.parse(String(init.body)) : null;
+        const body = JSON.parse(String(init!.body));
         calls.push({ body });
         if (!body.accept) await new Promise((r) => (release = r));
-        const res = {
-          example: { family: "drawn_symbol", real_in: [12, 12] },
-          count: 3,
-          points: [],
-          accepted: !!body.accept,
-          image: true,
-          run_id: "11111111-1111-1111-1111-111111111111",
-          sources: ["vector", "image", "image"],
-          runtime_s: 1.2,
-        };
+        const res = body.accept
+          ? { ...image, accepted: true, count: 2 }
+          : image;
         return {
           ok: true,
           status: 200,
@@ -171,31 +225,51 @@ describe("find similar bar", () => {
       }),
     );
     const done = vi.fn();
-    render(
-      <FindSimilarBar
-        projectId="p1"
-        memberId="m1"
-        who="ann"
-        onDone={done}
-        onClose={() => undefined}
-        onError={() => undefined}
-      />,
-    );
+    render(<Bar onDone={done} />);
     fireEvent.click(screen.getByText("Find similar"));
     await waitFor(() => screen.getByTestId("similar-spinner"));
     release(null);
-    await waitFor(() =>
-      expect(screen.getByTestId("similar-count").textContent).toBe(
-        "3 similar (drawn symbol, 12 × 12 in) · 2 by image",
-      ),
-    );
+    await waitFor(() => screen.getByTestId("similar-count"));
     expect(screen.queryByTestId("similar-spinner")).toBeNull();
-    fireEvent.click(screen.getByText("Accept"));
-    await waitFor(() => expect(done).toHaveBeenCalledWith(3));
+    // default strictness 0.8: the vector match and the 0.95 and 0.82 image matches
+    expect(screen.getByTestId("strictness-value").textContent).toBe("0.80");
+    expect(screen.getAllByTestId("similar-match")).toHaveLength(3);
+    expect(screen.getByTestId("similar-count").textContent).toMatch(
+      /^3 of 3 ticked/,
+    );
+    expect(screen.getByText("shape")).toBeTruthy(); // the vector match's label
+    expect(screen.getByText("0.95")).toBeTruthy();
+    // the slider: no new search
+    fireEvent.change(screen.getByLabelText("strictness"), {
+      target: { value: "0.6" },
+    });
+    expect(screen.getAllByTestId("similar-match")).toHaveLength(4);
+    fireEvent.change(screen.getByLabelText("strictness"), {
+      target: { value: "0.9" },
+    });
+    expect(screen.getAllByTestId("similar-match")).toHaveLength(2);
+    fireEvent.change(screen.getByLabelText("strictness"), {
+      target: { value: "0.8" },
+    });
+    expect(calls).toHaveLength(1);
+    // untick the 0.82 match on the canvas, tick and untick again
+    const m = () =>
+      screen
+        .getAllByTestId("similar-match")
+        .find((e) => e.getAttribute("data-key") === "300,100")!;
+    fireEvent.click(m());
+    expect(m().getAttribute("data-ticked")).toBe("0");
+    expect(screen.getByTestId("similar-count").textContent).toMatch(
+      /^2 of 3 ticked/,
+    );
+    fireEvent.click(screen.getByText("Accept 2"));
+    await waitFor(() => expect(done).toHaveBeenCalledWith(2));
     expect(calls[1]!.body).toEqual({
       who: "ann",
       accept: true,
       run_id: "11111111-1111-1111-1111-111111111111",
+      strictness: 0.8,
+      unticked: [[300, 100]],
     });
   });
 
@@ -206,24 +280,17 @@ describe("find similar bar", () => {
     );
   });
 
-  it("cancel closes without accepting", async () => {
-    const calls = stubFetch({ [url]: { ...preview, count: 0 } });
+  it("cancel (or Esc) closes without accepting", async () => {
+    const calls = stubFetch({ [url]: { ...vectorOnly, count: 0, points: [] } });
     const close = vi.fn();
-    render(
-      <FindSimilarBar
-        projectId="p1"
-        memberId="m1"
-        who="ann"
-        onDone={() => undefined}
-        onClose={close}
-        onError={() => undefined}
-      />,
-    );
+    render(<Bar onClose={close} />);
     fireEvent.click(screen.getByText("Find similar"));
     await waitFor(() => screen.getByText("No similar symbols found"));
-    expect(screen.queryByText("Accept")).toBeNull();
+    expect(screen.queryByText(/^Accept/)).toBeNull();
     fireEvent.click(screen.getByText("Cancel"));
-    expect(close).toHaveBeenCalled();
+    expect(close).toHaveBeenCalledTimes(1);
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(close).toHaveBeenCalledTimes(2);
     expect(calls).toHaveLength(1);
   });
 });
