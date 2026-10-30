@@ -28,7 +28,10 @@ REAL_ASPECT_MAX = 6.0
 PT_LONG_MIN, PT_LONG_MAX, PT_SHORT_MIN, PT_ASPECT_MAX = 3.0, 24.0, 3.0, 3.0
 JOIN_PT = 1.0
 TEXT_PAD_PT = 1.0
-ARROW_MAX_IN = 6.0
+ARROW_MAX_IN = 6.0  # v1
+ARROW_MAX_PT = 12.0  # v2 rule 'arrow_pt'
+# v2 rules (docs/PHASE14B2_PREREGISTRATION.md); () = v1 as pre-registered
+V2_RULES = frozenset({"arrow_pt", "known_only"})
 # 2d
 COLLINEAR_DEG = 2.0
 ROUND_TOL = 0.15
@@ -429,10 +432,13 @@ def find_symbols(
     ratio: float,
     real_size: bool,
     not_segments: frozenset[int] = frozenset(),
+    rules: frozenset[str] = V2_RULES,
 ) -> list[Symbol]:
     """Symbols (prereg 2c): element groups that pass the size filter, in (y, x) order."""
     max_pt = MAX_ELEMENT_IN * 72.0 / ratio if ratio else PT_LONG_MAX
-    arrow_pt = ARROW_MAX_IN * 72.0 / ratio if ratio else 0.0
+    arrow_pt = (
+        ARROW_MAX_PT if "arrow_pt" in rules else (ARROW_MAX_IN * 72.0 / ratio if ratio else 0.0)
+    )
     bubble_shapes = {b.shape for b in bubbles}
     shapes = {sh.id: sh for sh in ps.shapes}
     elems: list[tuple[str, int, Box]] = []  # ("shape", id, box) | ("seg", index, box)
@@ -765,9 +771,13 @@ class Example:
 
 
 def label_examples(
-    callouts: list[Callout], chains: list[list[Leader]], symbols: list[Symbol]
+    callouts: list[Callout],
+    chains: list[list[Leader]],
+    symbols: list[Symbol],
+    known_only: bool = True,
 ) -> list[Example]:
-    """One example per callout: the symbol nearest a leader's arrow end, within ARROW_SYMBOL_PT."""
+    """One example per callout: the symbol nearest a leader's arrow end, within ARROW_SYMBOL_PT
+    (v2 'known_only': of one of the 14 families)."""
     idx = _BoxIndex([s.box for s in symbols])
     out: list[Example] = []
     taken: set[int] = set()
@@ -775,6 +785,8 @@ def label_examples(
         best = None
         for li, ld in enumerate(ls):
             for k in idx.near((ld.end[0], ld.end[1], ld.end[0], ld.end[1]), ARROW_SYMBOL_PT):
+                if known_only and symbols[k].family == "unknown":
+                    continue
                 d = _box_point_dist(ld.end, symbols[k].box)
                 if d <= ARROW_SYMBOL_PT and (best is None or (d, li, k) < best):
                     best = (d, li, k)
@@ -795,10 +807,10 @@ def same_size(a: tuple[float, float], b: tuple[float, float]) -> bool:
     )
 
 
-def same_kind(s: Symbol, e: Symbol) -> bool:
+def same_kind(s: Symbol, e: Symbol, known_only: bool = True) -> bool:
     if s.family != e.family:
         return False
-    if s.family == "unknown" and s.signature != e.signature:
+    if s.family == "unknown" and (known_only or s.signature != e.signature):
         return False
     return same_size(s.real_sides, e.real_sides)
 
@@ -814,7 +826,9 @@ class ColumnHit:
     profile_on_row: bool = False  # sensitivity: TYP on the example's row / column only
 
 
-def find_similar(examples: list[Example], symbols: list[Symbol]) -> list[ColumnHit]:
+def find_similar(
+    examples: list[Example], symbols: list[Symbol], known_only: bool = True
+) -> list[ColumnHit]:
     """Every example and every symbol matching one (prereg 2b), in (y, x) order."""
     by_sym = {id(e.symbol): k for k, e in enumerate(examples)}
     out: list[ColumnHit] = []
@@ -827,7 +841,7 @@ def find_similar(examples: list[Example], symbols: list[Symbol]) -> list[ColumnH
         cands = [
             (math.dist(s.centre, e.symbol.centre), k)
             for k, e in enumerate(examples)
-            if same_kind(s, e.symbol)
+            if same_kind(s, e.symbol, known_only)
         ]
         if not cands:
             continue
@@ -865,11 +879,13 @@ def cross_check(profile_family: str | None, family: str) -> str | None:
     return f"label {profile_family}, drawn {family}"
 
 
-def click_example(mark: Pt, symbols: list[Symbol]) -> Example | None:
+def click_example(mark: Pt, symbols: list[Symbol], known_only: bool = True) -> Example | None:
     """A simulated (or real) user-drawn column at `mark`: the symbol whose centre is within
-    CLICK_PT (nearest; ties: first in order)."""
+    CLICK_PT (nearest; ties: first in order; v2: of a known family)."""
     best = None
     for k, s in enumerate(symbols):
+        if known_only and s.family == "unknown":
+            continue
         d = math.dist(mark, s.centre)
         if d <= CLICK_PT and (best is None or (d, k) < best):
             best = (d, k)
@@ -897,16 +913,21 @@ def label_columns(
     ratio: float,
     flags: frozenset[str],
     clicks: list[Pt] | None = None,
+    rules: frozenset[str] = V2_RULES,
 ) -> ColumnResult:
-    """Prereg 2a-2e on one column-plan page (text and segments already cropped)."""
+    """Prereg 2a-2e on one column-plan page (text and segments already cropped); `rules` = the v2
+    changes in force (empty = v1)."""
+    known = "known_only" in rules
     callouts = find_callouts(text) if "col_labels" in flags else []
     chains = [leaders(ps, c.block) for c in callouts]
     used = frozenset(i for ls in chains for ld in ls for i in ld.segs)
-    symbols = find_symbols(ps, keep, crop, text, bubbles, ratio, "col_real_size" in flags, used)
-    examples = label_examples(callouts, chains, symbols)
+    symbols = find_symbols(
+        ps, keep, crop, text, bubbles, ratio, "col_real_size" in flags, used, rules
+    )
+    examples = label_examples(callouts, chains, symbols, known)
     if not examples and clicks:
         for m in clicks:
-            ex = click_example(m, symbols)
+            ex = click_example(m, symbols, known)
             if ex is not None:
                 examples = [ex]
                 break
@@ -920,7 +941,7 @@ def label_columns(
         res.note = "click one column to find similar"
         return res
     if "col_similar" in flags:
-        res.hits = find_similar(examples, symbols)
+        res.hits = find_similar(examples, symbols, known)
     else:
         res.hits = [
             ColumnHit(e.symbol, k, e.kind, e.profile, e.source,

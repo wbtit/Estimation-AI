@@ -274,3 +274,29 @@ def test_build_page_uses_examples_only_under_the_flags(page):
     assert len(on.columns) == 2 and on.column_rule == "col_examples"
     assert on.column_info(0)["family"] == "hss_square"
     assert on.column_info(1)["profile"] == "HSS12X12X3/8"
+
+
+def test_v2_arrowheads_by_paper_size_and_unknown_symbols_never_match(page):
+    # at 1/16" = 1'-0" an 8 pt arrowhead is 21 real inches: only the paper-size rule removes it
+    ratio = 192.0
+    inch = 72.0 / ratio
+    text = [TextLine("HSS12X12X3/8 STUDS (TYP.)", (300, 90, 420, 98))]
+    rect(page, 200, 200, 12 * inch, 12 * inch)
+    seg(page, (300, 98), (202, 196))
+    tri = page.new_shape()
+    tri.draw_polyline([(202, 196), (196, 188), (204, 188), (202, 196)])
+    tri.finish(color=(0, 0, 0), fill=(0, 0, 0), width=0.3, closePath=True)
+    tri.commit()
+    rect(page, 400, 200, 12 * inch, 12 * inch)
+    for x in (600, 650):  # two open-stroke groups of the same signature ("unknown")
+        seg(page, (x, 400), (x + 8, 400))
+        seg(page, (x + 8, 400), (x + 8, 410))
+    ps = parse_page(page)
+    keep = np.ones(len(ps), dtype=bool)
+    flags = frozenset({"col_labels", "col_similar", "col_real_size"})
+    v1 = label_columns(ps, keep, CROP, text, [], ratio, flags, rules=frozenset())
+    assert v1.examples and v1.examples[0].symbol.family == "unknown"  # the arrowhead
+    v2 = label_columns(ps, keep, CROP, text, [], ratio, flags)
+    assert [h.symbol.family for h in v2.hits] == ["hss_square", "hss_square"]
+    clicked = label_columns(ps, keep, CROP, [], [], ratio, flags, clicks=[(604, 403)])
+    assert clicked.hits == []  # a click on an unknown symbol is no example under v2

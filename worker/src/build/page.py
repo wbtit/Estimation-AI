@@ -21,7 +21,7 @@ from src.build import RULES_VERSION
 from src.build.base_plates import BasePlate, find_base_plates, in_plate, is_grid_marker, plate_glyph
 from src.build.beam_lines import BeamLine, beam_lines, pen_segments
 from src.build.clean import Cleaned, clean
-from src.build.col_symbols import ColumnResult, Symbol, label_columns
+from src.build.col_symbols import V2_RULES, ColumnResult, Symbol, label_columns
 from src.build.columns import (
     AT_GRID_PT,
     STROKE_GAP_PT,
@@ -64,6 +64,8 @@ class Setup:
     stroke_gap_pt: float = STROKE_GAP_PT  # F4a end gap
     # Phase 14b: page points of user-drawn columns used as examples when no label gives one
     clicks: tuple[Pt, ...] = ()
+    # Phase 14b v2 rules in force (docs/PHASE14B2_PREREGISTRATION.md); empty = v1
+    col_rules: frozenset[str] = V2_RULES
 
     def beam_pens(self) -> list[str]:
         if self.pens:
@@ -239,7 +241,7 @@ def build_page(
         # matches; the grid, repeated-glyph and base-plate rules make no columns
         col_result = label_columns(
             ps, cleaned.keep, setup.crop, text, bubbles, setup.ratio, setup.flags,
-            list(setup.clicks),
+            list(setup.clicks), setup.col_rules,
         )  # fmt: skip
         columns = [_hit_glyph(h.symbol, cross) for h in col_result.hits]
         column_rule = "col_examples"
