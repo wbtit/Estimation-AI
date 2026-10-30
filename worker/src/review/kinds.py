@@ -54,6 +54,9 @@ TABLE: list[tuple[str, str, tuple[str, ...]]] = [
     ("Misc. Attachments", MAIN, ("attachment",)),
     ("Piles", MAIN, ("pile", "piling")),  # Phase 12b (migration 023)
     ("Posts/Pipe", MAIN, ("post", "pipe")),
+    # Phase 14b (migration 029): set by the column rules or a person, never from text keywords (the
+    # registered table above is unchanged; "studs" in a beam label are shear studs)
+    ("Stud/Post", MAIN, ()),
     ("Column", MAIN, ("column",)),
     ("Beams", MAIN, ("beam",)),
     ("Joist", EXCLUDED, ("joist",)),

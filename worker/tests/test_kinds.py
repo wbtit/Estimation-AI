@@ -93,13 +93,22 @@ def test_evidence_carries_no_page_text_only_the_keyword_and_where() -> None:
 def test_the_table_covers_the_scope_list_without_repeats() -> None:
     names = [k for k, _, _ in TABLE]
     assert len(names) == len(set(names))
-    assert [s for _, s, _ in TABLE].count("main") == 22
+    assert [s for _, s, _ in TABLE].count("main") == 23  # Phase 14b: Stud/Post
     assert all(c in SCOPE for _, cands in AMBIGUOUS for c in cands)
 
 
 def test_the_kind_names_are_exactly_the_member_kinds_of_the_database(dbp: DbProject) -> None:
     rows = dbp.conn.execute("SELECT kind, scope FROM member_kinds").fetchall()
-    assert len(rows) == 37  # Phase 12b: Piles
+    assert len(rows) == 38  # Phase 12b: Piles; Phase 14b: Stud/Post
     db = {r["kind"]: r["scope"] for r in rows}
     assert {k: s for k, s in SCOPE.items()} == {k: v for k, v in db.items()}
-    assert sorted(db.values()).count("main") == 22 and sorted(db.values()).count("misc") == 12
+    assert sorted(db.values()).count("main") == 23 and sorted(db.values()).count("misc") == 12
+
+
+def test_stud_post_is_never_detected_from_text() -> None:
+    """Phase 14b: shear studs in a beam label stay a beam label; Stud/Post has no keywords."""
+    from src.review.kinds import match_text
+
+    for text in ("W16X26 (24) STUDS", "HSS6X6 POST", "VERTICAL STUDS"):
+        got = match_text(text)
+        assert got is None or got.kind != "Stud/Post", text
