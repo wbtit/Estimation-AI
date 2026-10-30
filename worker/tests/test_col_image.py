@@ -120,8 +120,8 @@ def test_thresholds_and_the_edge_variant_run(page):
 
 
 def test_combine_deduplicates_by_position():
-    got = combine([(10.0, 10.0)], [(14.0, 10.0), (40.0, 10.0)], 12.0)
+    got = combine([(10.0, 10.0)], [((14.0, 10.0), 0.9, 0), ((40.0, 10.0), 0.7, 90)], 12.0)
     assert got == [
-        {"centre": [10.0, 10.0], "source": "vector"},
-        {"centre": [40.0, 10.0], "source": "image"},
+        {"centre": [10.0, 10.0], "source": "vector", "score": None, "rotation": 0},
+        {"centre": [40.0, 10.0], "source": "image", "score": 0.7, "rotation": 90},
     ]

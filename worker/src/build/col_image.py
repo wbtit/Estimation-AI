@@ -12,8 +12,11 @@ Pure and deterministic over the PDF page; OpenCV (headless); no LLM.
 from __future__ import annotations
 
 import math
+import os
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import cv2
 import numpy as np
@@ -203,17 +206,154 @@ def ink_example(r: Raster, click: Pt, ratio: float) -> tuple[int, int, int, int]
 
 
 # ---- matching ----------
+SEARCH_THRESHOLD = 0.6  # Phase 14e: one search at the slider's floor; the preview filters by score
+TILE = 256  # result positions per tile side (Phase 14e tiled search)
+
+
 def _source(r: Raster, s: Settings) -> np.ndarray:
     if s.edges:
         return (cv2.Canny(r.gray, CANNY_LO, CANNY_HI) > 0).astype(np.float32)
     return r.clean.astype(np.float32)
 
 
+def _template(src: np.ndarray, box_px, r: Raster):
+    """(source maybe padded, offset, template, the template window in unpadded pixels)."""
+    H, W = src.shape
+    bw, bh = box_px[2] - box_px[0], box_px[3] - box_px[1]
+    m = max(MARGIN_MIN_PX, round(MARGIN_SHARE * max(bw, bh)))
+    tx0, ty0, tx1, ty1 = box_px[0] - m, box_px[1] - m, box_px[2] + m, box_px[3] + m
+    off = 0
+    if tx0 < 0 or ty0 < 0 or tx1 > W or ty1 > H:
+        off = max(-tx0, -ty0, tx1 - W, ty1 - H, 0)
+        src = cv2.copyMakeBorder(src, off, off, off, off, cv2.BORDER_CONSTANT, value=0)
+        tx0, ty0, tx1, ty1 = tx0 + off, ty0 + off, tx1 + off, ty1 + off
+    return src, off, src[ty0:ty1, tx0:tx1].copy(), (tx0 - off, ty0 - off, tx1 - off, ty1 - off)
+
+
+_POOL: ThreadPoolExecutor | None = None
+
+
+def _pool() -> ThreadPoolExecutor:
+    global _POOL
+    if _POOL is None:
+        _POOL = ThreadPoolExecutor(max_workers=max(1, os.cpu_count() or 1))
+    return _POOL
+
+
+def _scores(src: np.ndarray, t: np.ndarray) -> np.ndarray:
+    """TM_CCOEFF_NORMED of `t` over `src`, by tiles that overlap by the template size, computed
+    in parallel; a tile whose source has no ink is skipped (scored -1: a window of blank paper
+    scores 0 in OpenCV, below any threshold, and lowering it never makes another position a local
+    maximum). Equal to one matchTemplate over the whole source up to float rounding."""
+    th, tw = t.shape
+    H, W = src.shape
+    rh, rw = H - th + 1, W - tw + 1
+    res = np.full((rh, rw), -1.0, np.float32)
+    ink = cv2.integral((src > 0).astype(np.uint8))
+
+    def has_ink(y0, x0, y1, x1) -> bool:
+        return bool(ink[y1, x1] - ink[y0, x1] - ink[y1, x0] + ink[y0, x0])
+
+    jobs = []
+    for y0 in range(0, rh, TILE):
+        for x0 in range(0, rw, TILE):
+            y1, x1 = min(y0 + TILE, rh), min(x0 + TILE, rw)
+            if has_ink(y0, x0, y1 + th - 1, x1 + tw - 1):
+                jobs.append((y0, x0, y1, x1))
+
+    def one(j):
+        y0, x0, y1, x1 = j
+        out = cv2.matchTemplate(src[y0 : y1 + th - 1, x0 : x1 + tw - 1], t, cv2.TM_CCOEFF_NORMED)
+        res[y0:y1, x0:x1] = np.nan_to_num(out, nan=-1.0, posinf=-1.0, neginf=-1.0)
+
+    list(_pool().map(one, jobs))
+    return res
+
+
 def image_matches(
     r: Raster, box_px: tuple[int, int, int, int], ratio: float, s: Settings
 ) -> list[Hit]:
     """Template matches of the example box (+ margin) at 0 and 90 degrees, after non-max
-    suppression and the real-size check, in (y, x) order."""
+    suppression and the real-size check, in (y, x) order (prereg 14d 2.3; Phase 14e: tiled and
+    parallel scores, grid-hashed suppression, the same hits)."""
+    src, off, tmpl, win = _template(_source(r, s), box_px, r)
+    # the example is measured like every hit: the clean ink inside its template window
+    ex_ink = _ink_box(r.clean, *win)
+    if ex_ink is None:
+        return []
+    ex_sides = _sides_in(ex_ink, r, ratio)
+    parts = []
+    dims: dict[int, tuple[int, int]] = {}
+    for rot in (0, 90):
+        t = tmpl if rot == 0 else cv2.rotate(tmpl, cv2.ROTATE_90_CLOCKWISE)
+        th, tw = t.shape
+        if th > src.shape[0] or tw > src.shape[1] or float(t.std()) == 0.0:
+            continue
+        res = _scores(src, t)
+        dims[rot] = (tw, th)
+        k = max(3, int(NMS_SHARE * max(tw, th)) | 1)
+        peaks = (res >= s.threshold) & (res == cv2.dilate(res, np.ones((k, k), np.float32)))
+        ys, xs = np.nonzero(peaks)
+        parts.append((-res[ys, xs].astype(np.float64), ys, xs, np.full(len(ys), rot)))
+    if not parts:
+        return []
+    neg = np.concatenate([p[0] for p in parts])
+    ys = np.concatenate([p[1] for p in parts])
+    xs = np.concatenate([p[2] for p in parts])
+    rots = np.concatenate([p[3] for p in parts])
+    order = np.lexsort((rots, xs, ys, neg))  # score desc, then y, x, rotation (as 14d)
+    kept: list[tuple[float, float, float, int, int, int]] = []
+    cells: dict[tuple[int, int], list[int]] = {}
+    for i in order:
+        rot = int(rots[i])
+        tw, th = dims[rot]
+        rad = NMS_SHARE * max(tw, th)
+        cx, cy = xs[i] + tw / 2 - off, ys[i] + th / 2 - off
+        cs = max(rad, 1.0)
+        gx, gy = int(cx // cs), int(cy // cs)
+        close = False
+        for ax in (gx - 1, gx, gx + 1):
+            for ay in (gy - 1, gy, gy + 1):
+                for k in cells.get((ax, ay), ()):
+                    a, b, *_rest = kept[k]
+                    # the radius of the candidate, as 14d (max(tw, th) of the candidate)
+                    if math.hypot(cx - a, cy - b) < rad:
+                        close = True
+                        break
+                if close:
+                    break
+            if close:
+                break
+        if close:
+            continue
+        cells.setdefault((gx, gy), []).append(len(kept))
+        kept.append((cx, cy, -float(neg[i]), rot, tw, th))
+    out: list[Hit] = []
+    clean = r.clean
+    for cx, cy, score, rot, tw, th in kept:
+        x0, y0 = round(cx - tw / 2), round(cy - th / 2)
+        ib = _ink_box(clean, x0, y0, x0 + tw, y0 + th)
+        if ib is None:
+            continue
+        sides = _sides_in(ib, r, ratio)
+        if not same_size(sides, ex_sides):
+            continue
+        c = r.pt(cx, cy)
+        if not (r.crop[0] <= c[0] <= r.crop[2] and r.crop[1] <= c[1] <= r.crop[3]):
+            continue
+        b0, b1 = r.pt(x0, y0), r.pt(x0 + tw, y0 + th)
+        out.append(Hit(c, (b0[0], b0[1], b1[0], b1[1]), round(score, 4), rot,
+                       (round(sides[0], 2), round(sides[1], 2))))  # fmt: skip
+    out.sort(key=lambda h: (round(h.centre[1], 1), round(h.centre[0], 1)))
+    return out
+
+
+# ---- the 14d reference implementation (kept for the Phase 14e equivalence check) ----------
+def image_matches_14d(
+    r: Raster, box_px: tuple[int, int, int, int], ratio: float, s: Settings
+) -> list[Hit]:
+    """The Phase 14d implementation, unchanged: one matchTemplate over the whole source and a
+    plain suppression loop."""
     src = _source(r, s)
     H, W = src.shape
     bw, bh = box_px[2] - box_px[0], box_px[3] - box_px[1]
@@ -285,29 +425,62 @@ def vector_similar(example: dict, symbols: list[dict]) -> list[dict]:
     return sorted(out, key=lambda s: (s["centre"][1], s["centre"][0]))
 
 
-def combine(vector: list[Pt], image: list[Pt], dedup_pt: float) -> list[dict]:
-    """Vector matches, then image matches not within dedup_pt of one already kept."""
-    out = [{"centre": list(p), "source": "vector"} for p in vector]
-    for p in image:
+def combine(vector: list[Pt], image: list[tuple[Pt, float, int]], dedup_pt: float) -> list[dict]:
+    """Vector matches, then image matches (point, score, rotation) in score order (ties: y, x),
+    each kept unless within dedup_pt of one already kept; in (y, x) order. Phase 14e: score order
+    (14d took the image matches in (y, x) order), so a match is only ever hidden by a stronger
+    one and the preview's strictness filter (score >= t) equals a search at t."""
+    out = [{"centre": list(p), "source": "vector", "score": None, "rotation": 0} for p in vector]
+    for p, score, rot in sorted(image, key=lambda h: (-h[1], h[0][1], h[0][0])):
         if not any(math.dist(p, o["centre"]) <= dedup_pt for o in out):
-            out.append({"centre": list(p), "source": "image"})
+            out.append({"centre": list(p), "source": "image", "score": score, "rotation": rot})
     return sorted(out, key=lambda o: (o["centre"][1], o["centre"][0]))
 
 
-def find_similar(
-    page: pymupdf.Page,
-    crop: Box,
-    ratio: float,
-    click: Pt,
-    symbols: list[dict],
-    grid: list[tuple[Pt, Pt]],
-    s: Settings | None = None,
-) -> Result:
-    """Prereg 14d: the example under the click (a stored vector symbol, else the ink), its vector
-    and image matches and both combined (the example itself included)."""
-    s = s or Settings()
+def strict(combined: list[dict], threshold: float) -> list[dict]:
+    """The preview at a strictness: the vector matches and the image matches scoring at least it."""
+    return [c for c in combined if c["score"] is None or c["score"] >= threshold - 1e-9]
+
+
+# ---- the Build-time cache of the cleaned ink (Phase 14e) ----------
+CACHE_VERSION = 1  # bump when the raster rules or values change
+
+
+def cache_path(upload_dir: Path, build_run_id: str) -> Path:
+    return upload_dir / "cache" / "page_ink" / f"{build_run_id}.npz"
+
+
+def save_raster(path: Path, r: Raster) -> None:
+    """The cleaned ink of a Build's crop (packed bits) with its scale and origin; written to a
+    temporary file then moved, so a reader never sees half a file."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp.npz")
+    np.savez_compressed(
+        tmp, bits=np.packbits(r.clean, axis=None), shape=np.array(r.clean.shape),
+        meta=np.array([r.z, r.origin[0], r.origin[1], *r.crop, CACHE_VERSION, PX_PER_IN]),
+    )  # fmt: skip
+    os.replace(tmp, path)
+
+
+def load_raster(path: Path) -> Raster | None:
+    """The cached raster, or None (no file, another version or other settings)."""
+    try:
+        with np.load(path) as f:
+            meta, shape, bits = f["meta"], tuple(int(v) for v in f["shape"]), f["bits"]
+    except (OSError, ValueError, KeyError):
+        return None
+    if int(meta[7]) != CACHE_VERSION or float(meta[8]) != PX_PER_IN:
+        return None
+    clean = np.unpackbits(bits, count=shape[0] * shape[1]).reshape(shape)
+    crop = (float(meta[3]), float(meta[4]), float(meta[5]), float(meta[6]))
+    return Raster(np.empty((0, 0), np.uint8), clean, float(meta[0]),
+                  (float(meta[1]), float(meta[2])), crop)  # fmt: skip
+
+
+def search(r: Raster, ratio: float, click: Pt, symbols: list[dict], s: Settings) -> Result:
+    """Prereg 14d 2.2-2.4 on a rendered crop: the example under the click (a stored vector symbol,
+    else the ink), its vector and image matches and both combined (the example included)."""
     t0 = time.perf_counter()
-    r = render(page, crop, ratio, grid, s)
     vex = vector_example(click, symbols)
     if vex is not None:
         bx = vex["box"]
@@ -331,6 +504,24 @@ def find_similar(
         vec = []
     hits = image_matches(r, box_px, ratio, s)
     long_pt = max(example["box"][2] - example["box"][0], example["box"][3] - example["box"][1])
-    comb = combine([tuple(v["centre"]) for v in vec], [h.centre for h in hits],
-                   max(DEDUP_MIN_PT, long_pt / 2))  # fmt: skip
+    image = [(h.centre, h.score, h.rotation) for h in hits]
+    comb = combine([tuple(v["centre"]) for v in vec], image, max(DEDUP_MIN_PT, long_pt / 2))
     return Result(example, vec, hits, comb, time.perf_counter() - t0, r.z)
+
+
+def find_similar(
+    page: pymupdf.Page,
+    crop: Box,
+    ratio: float,
+    click: Pt,
+    symbols: list[dict],
+    grid: list[tuple[Pt, Pt]],
+    s: Settings | None = None,
+) -> Result:
+    """Render the crop, then `search` (the runtime includes the render, as 14d measured it)."""
+    s = s or Settings()
+    t0 = time.perf_counter()
+    r = render(page, crop, ratio, grid, s)
+    res = search(r, ratio, click, symbols, s)
+    res.runtime_s = time.perf_counter() - t0
+    return res
