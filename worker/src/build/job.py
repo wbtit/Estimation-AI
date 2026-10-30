@@ -41,7 +41,14 @@ from src.build.duplicates import mark_duplicate_columns
 from src.build.geom import Pt, angle_deg, angle_diff, project
 from src.build.grids import CROSSING_RULES, Bubble, GridLine
 from src.build.labels import Attached
-from src.build.page import ColumnPlanRef, PageBuild, Setup, build_page
+from src.build.page import (
+    COLUMN_MODES,
+    ColumnPlanRef,
+    PageBuild,
+    Setup,
+    build_page,
+    column_mode_default,
+)
 from src.build.pieces import build_state, length_mm, plan_mm, stable_member_id
 from src.build.segments import TextLine
 from src.build.snapshots import person_snapshot
@@ -120,8 +127,37 @@ def _refuse(conn, run_id: str, reasons: list[str]) -> dict[str, Any]:
     return {"refused": reasons}
 
 
+NO_PLACED_COLUMNS = (
+    "Place the columns on the column plan page first (or set the column plan to none)"
+)
+
+
+def _placed_columns(conn, sheet_id: str, view_id: str, first: bool) -> list[tuple[Pt, dict]]:
+    """Phase 14d: the columns a person placed on a view (drawn, or accepted with Find similar):
+    manual column members not deleted (their latest review_status edit, else their own, is not
+    'rejected'), in (y, x) order."""
+    rows = conn.execute(
+        "SELECT m.id, m.page_x0, m.page_y0 FROM members m"
+        " WHERE m.sheet_id = %s AND m.type = 'column' AND m.origin = 'manual'"
+        " AND (m.build_view_id = %s OR (m.build_view_id IS NULL AND %s))"
+        " AND COALESCE((SELECT e.corrected_value #>> '{}' FROM member_edits e"
+        "   WHERE e.member_id = m.id AND e.field_name = 'review_status'"
+        "   ORDER BY e.created_at DESC, e.id DESC LIMIT 1), m.review_status)"
+        "   IS DISTINCT FROM 'rejected'"
+        " AND m.page_x0 IS NOT NULL ORDER BY m.page_y0, m.page_x0, m.id",
+        (sheet_id, view_id, first),
+    ).fetchall()
+    return [
+        (
+            (float(r["page_x0"]), float(r["page_y0"])),
+            {"column_member_id": str(r["id"]), "grid": None},
+        )
+        for r in rows
+    ]
+
+
 def _column_plan(
-    conn, project_id: str, view: View, inputs: dict[str, Any]
+    conn, project_id: str, view: View, inputs: dict[str, Any], mode: str = "glyph"
 ) -> tuple[ColumnPlanRef | None, str | None, list[str]]:
     """(column plan, its sheet id, refusal reasons) for a framing view. The run's inputs win
     (column_plan_view_id, or column_plan_sheet_id = that page's first view); else the view's own
@@ -177,6 +213,13 @@ def _column_plan(
         )
         if r["label"]
     ]
+    if mode == "click_first":
+        # Phase 14d: the columns placed on the column plan page, plus those placed on this page
+        cols = _placed_columns(conn, plan_sheet, str(plan["id"]), plan["position"] == 1)
+        here = _placed_columns(conn, str(view.row["sheet_id"]), str(view.id), view.first)
+        if not cols and not here:
+            return None, None, [NO_PLACED_COLUMNS]
+        return ColumnPlanRef(grid, float(plan["scale_ratio"]), cols, here), plan_sheet, []
     cols = [
         (
             (float(r["x_pt"]), float(r["y_pt"])),
@@ -242,9 +285,12 @@ def build_sheet(conn: psycopg.Connection, config: WorkerConfig, run_id: str) -> 
     if reasons:
         return _refuse(conn, run_id, reasons)
     project_id, sheet_id = str(sheet["project_id"]), str(sheet["id"])
+    mode = str(inputs.get("column_mode") or column_mode_default())
+    if mode not in COLUMN_MODES:
+        return _refuse(conn, run_id, [f"unknown column mode {mode!r}"])
     plan_ref, plan_sheet = None, None
     if sheet["build_role"] == "framing":
-        plan_ref, plan_sheet, reasons = _column_plan(conn, project_id, view, inputs)
+        plan_ref, plan_sheet, reasons = _column_plan(conn, project_id, view, inputs, mode)
         if reasons:
             return _refuse(conn, run_id, reasons)
     pdf_path = config.upload_dir / sheet["stored_path"]
@@ -261,10 +307,12 @@ def build_sheet(conn: psycopg.Connection, config: WorkerConfig, run_id: str) -> 
         pens=tuple(p["pen_class"] for p in view.pens),
         excludes=tuple(view.excludes),
         deselected=tuple(view.deselected),
+        column_mode=mode,
     )
     if setup.crossing_rule not in CROSSING_RULES:
         return _refuse(conn, run_id, [f"unknown crossing rule {setup.crossing_rule!r}"])
     inputs.update(
+        column_mode=mode,
         crossing_rule=setup.crossing_rule,
         crop=crop,
         scale_ratio=setup.ratio,
@@ -345,8 +393,8 @@ def _touched_rows(conn, sheet_id: str, view: View) -> dict[str, dict[str, Any]]:
 
 
 def _overlaps(a: Pt, b: Pt, row: dict[str, Any]) -> bool:
-    if row["page_x0"] is None:
-        return False
+    if row["page_x0"] is None or row["page_x1"] is None:
+        return False  # a point member (a drawn column) never covers a line
     c = (float(row["page_x0"]), float(row["page_y0"]))
     d = (float(row["page_x1"]), float(row["page_y1"]))
     if angle_diff(angle_deg(a, b), angle_deg(c, d)) > OVERLAP_ANGLE_DEG:

@@ -12,6 +12,8 @@ from src.build.auto import JOB_TYPE as AUTO_BUILD
 from src.build.auto import run_auto_build
 from src.build.job import JOB_TYPE as BUILD_SHEET
 from src.build.job import run_build_sheet
+from src.build.similar_job import JOB_TYPE as FIND_SIMILAR
+from src.build.similar_job import run_find_similar
 from src.config import WorkerConfig, load_config
 from src.db import connect
 from src.pdf_scan.job import JOB_TYPE as SCAN_PDF
@@ -43,6 +45,7 @@ HANDLERS: dict[str, Handler] = {
     SHEET_LINES: run_sheet_lines,
     BUILD_SHEET: run_build_sheet,
     AUTO_BUILD: run_auto_build,
+    FIND_SIMILAR: run_find_similar,
     COPY_PROJECT: run_copy_project,
 }
 

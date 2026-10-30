@@ -13,6 +13,7 @@ with no column plan, or whose grids do not register, is built from its own glyph
 from __future__ import annotations
 
 import math
+import os
 from dataclasses import dataclass, field, replace
 
 import pymupdf
@@ -46,6 +47,17 @@ MIN_CROSSINGS = 4  # a page "has a grid" with at least this many crossings
 # "col_real_size" (src/build/col_symbols.py)
 COL_FLAGS = ("col_labels", "col_similar", "col_real_size")
 FLAGS = ("wall_same_pen", "column_strokes", "column_off_grid", *COL_FLAGS)
+# Phase 14d column modes: "click_first" = a column-plan Build makes no automatic columns (a person
+# clicks one column, then Find similar); "glyph" = the old glyph / grid / base-plate rules
+COLUMN_MODES = ("click_first", "glyph")
+
+
+def column_mode_default() -> str:
+    """The global setting COLUMN_MODE (default click_first)."""
+    mode = os.environ.get("COLUMN_MODE", "click_first").strip() or "click_first"
+    if mode not in COLUMN_MODES:
+        raise ValueError(f"unknown COLUMN_MODE {mode!r}")
+    return mode
 
 
 @dataclass
@@ -66,6 +78,8 @@ class Setup:
     clicks: tuple[Pt, ...] = ()
     # column rules in force: V3_RULES (Phase 14c, default), V2_RULES = 14b v2, empty = 14b v1
     col_rules: frozenset[str] = V3_RULES
+    # Phase 14d: "glyph" here keeps a bare Setup as before; the app's Builds pass the setting
+    column_mode: str = "glyph"
 
     def beam_pens(self) -> list[str]:
         if self.pens:
@@ -78,6 +92,8 @@ class ColumnPlanRef:
     grid_lines: list[GridLine]
     ratio: float
     columns: list[tuple[Pt, dict]]  # page points of the column plan, evidence
+    # Phase 14d click_first: columns placed on the framing page itself (its own page points)
+    here: list[tuple[Pt, dict]] = field(default_factory=list)
 
 
 @dataclass
@@ -250,6 +266,11 @@ def build_page(
         notes.append("columns_by_col_examples")
         if col_result.note:
             notes.append(col_result.note.replace(" ", "_"))
+    elif setup.role == "column_plan" and setup.column_mode == "click_first":
+        # Phase 14d: no automatic columns; the person clicks one, then Find similar (base plates
+        # are still found: they keep their lines out of the beams)
+        columns, column_rule = [], "click_first"
+        notes.append("columns_click_first")
     elif setup.role == "column_plan":
         columns, column_rule = column_plan_columns(
             glyphs,
@@ -269,7 +290,7 @@ def build_page(
         notes.append("no_column_plan")
     else:
         reg = register(grid, setup.ratio, column_plan.grid_lines, column_plan.ratio)
-        if reg.ok:
+        if reg.ok and column_plan.columns:
             pts = project_columns(
                 [p for p, _ in column_plan.columns], column_plan.ratio, reg, setup.ratio
             )
@@ -278,8 +299,14 @@ def build_page(
                 for p, (_, ev) in zip(pts, column_plan.columns, strict=True)
                 if in_box(p, setup.crop)
             ]
-        else:
+        elif not reg.ok:
             notes.append(f"no_registration:{reg.reason}")
+        # Phase 14d click_first: columns placed on this framing page need no projection
+        projected += [
+            (p, {**ev, "rule": "placed_here"})
+            for p, ev in column_plan.here
+            if in_box(p, setup.crop)
+        ]
 
     # Phase 12a: wall faces and column-shape edges are not beams (src/build/not_beams.py)
     nb = not_beams(

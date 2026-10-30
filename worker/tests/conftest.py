@@ -52,3 +52,8 @@ def _test_database_is_current() -> None:
     missing = [m.name for m in migrations if m.name not in applied]
     if missing:
         raise RuntimeError(f"the test database is missing migrations {missing}: run `make test-db`")
+
+
+# Phase 14d: the app's default column mode is click_first (COLUMN_MODE); the tests written for the
+# glyph rules keep them, and the click_first tests ask for it in the run's inputs.
+os.environ["COLUMN_MODE"] = "glyph"
