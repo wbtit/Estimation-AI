@@ -408,6 +408,49 @@ describe("page card", () => {
     );
   });
 
+  it("shows the page name read on the page (Phase 14a)", () => {
+    const { rerender } = render(
+      <PageCard
+        page={page({
+          name: "ROOF FRAMING PLAN",
+          view_title: "ROOF FRAMING PLAN",
+        })}
+        columnPlans={[]}
+        selected={false}
+        onSelect={() => undefined}
+        actions={actions()}
+      />,
+    );
+    expect(screen.getByTestId("sheet-name").textContent).toBe(
+      "ROOF FRAMING PLAN",
+    );
+    expect(screen.getByTestId("sheet-name").title).toBe(
+      "View title read on the page",
+    );
+    rerender(
+      <PageCard
+        page={page({ name: "TITLE BLOCK NAME", view_title: null })}
+        columnPlans={[]}
+        selected={false}
+        onSelect={() => undefined}
+        actions={actions()}
+      />,
+    );
+    expect(screen.getByTestId("sheet-name").title).toBe(
+      "Sheet title read in the title block",
+    );
+    rerender(
+      <PageCard
+        page={page({ name: null })}
+        columnPlans={[]}
+        selected={false}
+        onSelect={() => undefined}
+        actions={actions()}
+      />,
+    );
+    expect(screen.queryByTestId("sheet-name")).toBeNull();
+  });
+
   it("a skipped page shows Skip once", () => {
     render(
       <PageCard

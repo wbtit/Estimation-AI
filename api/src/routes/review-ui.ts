@@ -421,6 +421,10 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
             page_number: s.page_index + 1,
             sheet_number: s.sheet_number,
             title: s.title,
+            // Phase 14a: the page card's name: the main view title, else the title-block name
+            view_title: s.view_title ?? null,
+            title_block_name: s.title_block_name ?? null,
+            name: s.view_title ?? s.title_block_name ?? null,
             page_type: s.page_type_guess,
             page_kind: s.page_kind,
             width_pt: num(s.width_pt),

@@ -44,6 +44,8 @@ from src.build.propose import (
     propose_tos,
 )
 from src.build.segments import crop, page_text_lines, parse_page
+from src.build.sheet_names import read_project
+from src.build.sheet_names import store as store_names
 from src.build.snapshots import piece_counts, snapshot_pieces, snapshot_setup
 from src.build.views import load_views, pick_view, role_name, view_as_sheet
 from src.config import WorkerConfig
@@ -185,7 +187,10 @@ def propose_sheet(conn, page: pymupdf.Page, sheet: dict[str, Any]) -> dict[str, 
         if pr.pile
         else role_name(role, sheet["page_type_guess"])
         if role is not None
-        else (skip_role_name(sheet.get("title")) or role_name(None, sheet["page_type_guess"]))
+        else (
+            skip_role_name(sheet.get("title"))
+            or role_name(None, sheet["page_type_guess"], sheet.get("page_type_reason"))
+        )
     )
     conn.execute(
         "UPDATE build_views SET role_name = %s, box = %s, scale_ratio = %s, scale_text = %s,"
@@ -324,6 +329,10 @@ def _run(
         if s["page_kind"] == "vector" and str(s["id"]) not in have:
             sheet_lines(conn, config, str(s["id"]))
             conn.commit()
+    # Phase 14a: the page names (view title, title-block name) from the stored text and lines
+    for sid, names in read_project(conn, sheets).items():
+        store_names(conn, sid, names)
+    conn.commit()
 
     if not build_pages:  # suggestions only: setup values stored as system values, nothing built
         totals = {"pages": len(sheets), "suggested": len(sheets), "built": 0, **_paths(evidence)}

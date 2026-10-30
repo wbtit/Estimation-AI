@@ -511,6 +511,29 @@ describe('view routes (test database)', () => {
     expect((await del(`/sheets/${sheetId}/build-views/${v1}`, { who: WHO })).statusCode).toBe(400);
   });
 
+  it('a page carries the names read on it: the view title, else the title-block name (Phase 14a)', async () => {
+    const name = async () =>
+      (await get('/pages')).json().pages.find((p: { id: string }) => p.id === sheetId);
+    expect((await name()).name).toBeNull();
+    await db
+      .updateTable('sheets')
+      .set({ title_block_name: 'TB NAME', view_title: null })
+      .where('id', '=', sheetId)
+      .execute();
+    expect(await name()).toMatchObject({ name: 'TB NAME', view_title: null });
+    await db
+      .updateTable('sheets')
+      .set({ view_title: 'VIEW TITLE' })
+      .where('id', '=', sheetId)
+      .execute();
+    expect(await name()).toMatchObject({ name: 'VIEW TITLE', title_block_name: 'TB NAME' });
+    await db
+      .updateTable('sheets')
+      .set({ view_title: null, title_block_name: null })
+      .where('id', '=', sheetId)
+      .execute();
+  });
+
   it('set size for all undefined beams of a view is one logged, undoable action', async () => {
     const run = await db
       .insertInto('build_runs')

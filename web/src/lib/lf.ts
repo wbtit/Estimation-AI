@@ -99,6 +99,11 @@ export interface Page {
   page_number: number;
   sheet_number: string | null;
   title: string | null;
+  /** Phase 14a: the main view title read on the page, the title-block name, and the card's name
+   * (the view title, else the title-block name). */
+  view_title?: string | null;
+  title_block_name?: string | null;
+  name?: string | null;
   page_type: string | null;
   page_kind: string;
   width_pt: number | null;

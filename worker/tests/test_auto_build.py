@@ -19,6 +19,7 @@ from src.build.propose import (
     propose_tos,
 )
 from src.build.segments import TextLine, page_text_lines
+from src.build.sheet_names import RULES_VERSION
 from src.build.views import load_views, pick_view, view_as_sheet
 
 BOX = (100.0, 100.0, 900.0, 700.0)
@@ -166,6 +167,13 @@ def test_auto_mode_proposes_builds_with_system_values_and_freezes_the_system_ver
     assert float(framing["tos_mm"]) == pytest.approx(3810.0) and framing["tos_source"] == "read"
     assert framing["tos_confirmed_by"] is None
     assert str(framing["column_plan_sheet_id"]) == plan_id
+    # Phase 14a: every page's names were read (the rules version is stored even when none found)
+    names = dbp.conn.execute(
+        "SELECT names_rules_version, view_titles FROM sheets WHERE project_id = %s",
+        (dbp.project_id,),
+    ).fetchall()
+    assert {n["names_rules_version"] for n in names} == {RULES_VERSION}
+    assert all(isinstance(n["view_titles"], list) for n in names)
 
     runs = dbp.conn.execute(
         "SELECT * FROM build_runs WHERE project_id = %s ORDER BY started_at", (dbp.project_id,)

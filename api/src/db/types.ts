@@ -116,6 +116,17 @@ export interface SheetsTable {
   setup_changed_at: Timestamp | null;
   reviewed_by: string | null;
   reviewed_at: Timestamp | null;
+  /** Migration 028 (Phase 14a): names read from the page's text (worker sheet_names.py). */
+  view_title: string | null;
+  view_titles: ColumnType<
+    { text: string; box: number[]; scale: boolean; underlined: boolean }[] | null,
+    string | null | undefined,
+    string | null
+  >;
+  title_block_name: string | null;
+  title_block_rule: 'label' | 'largest' | null;
+  names_rules_version: string | null;
+  names_read_at: Timestamp | null;
 }
 
 export type BuildRole = 'column_plan' | 'framing';

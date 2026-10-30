@@ -729,6 +729,15 @@ h4 {
   margin-top: -5px;
 }
 
+.sheet-name {
+  font-size: 11px;
+  font-weight: 600;
+  margin: 0 0 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .dark .page-card button.play,
 .dark .page-card button.more {
   width: 24px;

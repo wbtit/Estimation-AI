@@ -290,6 +290,19 @@ export const PageCard: React.FC<{
         </span>
       </div>
       <div className="sheet-no">Sheet {page.sheet_number ?? "—"}</div>
+      {page.name && (
+        <div
+          className="sheet-name"
+          data-testid="sheet-name"
+          title={
+            page.view_title
+              ? "View title read on the page"
+              : "Sheet title read in the title block"
+          }
+        >
+          {page.name}
+        </div>
+      )}
       <div className="thumb">
         {page.thumbnail_url ? (
           <img src={page.thumbnail_url} alt="" loading="lazy" />
