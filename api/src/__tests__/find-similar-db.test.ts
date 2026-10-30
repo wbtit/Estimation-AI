@@ -1,4 +1,4 @@
-// Phase 14b Find similar and the column palette (migration 029; SYNTHETIC rows only).
+// Phase 14b/14c Find similar and the column palette (migration 029; SYNTHETIC rows only).
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from '../app.js';
 import { closeDatabaseConnection, getDb } from '../db/client.js';
@@ -9,12 +9,19 @@ const app = buildApp();
 const db = getDb();
 const WHO = 'tester';
 
-const sym = (x: number, y: number, family = 'hss_square', real: [number, number] = [12, 12]) => ({
+const sym = (
+  x: number,
+  y: number,
+  family = 'hss_square',
+  real: [number, number] = [12, 12],
+  solid: string | null = null,
+) => ({
   family,
   box: [x - 5, y - 5, x + 5, y + 5],
   centre: [x, y],
   rotation_deg: 0,
   real_in: real,
+  solid,
 });
 
 describe('find similar (test database)', () => {
@@ -54,7 +61,7 @@ describe('find similar (test database)', () => {
         build_run_id: run.id,
         sheet_id: sheetId,
         ratio: 96,
-        rules: 'arrow_pt,known_only',
+        rules: 'arrow_pt,click_solid,five_families,grid_strip,known_only',
         symbols: JSON.stringify([
           sym(100, 100),
           sym(300, 100),
@@ -62,6 +69,10 @@ describe('find similar (test database)', () => {
           sym(700, 100, 'hss_square', [20, 20]), // another size
           sym(100, 300, 'w_shape', [14, 14]), // another family
           sym(300, 300, 'unknown'),
+          sym(100, 500, 'unknown', [12, 12], 'square'), // solid squares (14c)
+          sym(300, 500, 'unknown', [12, 12], 'square'),
+          sym(500, 500, 'unknown', [12, 12], 'square'),
+          sym(700, 500, 'unknown', [12, 12], 'round'),
         ]),
       })
       .execute();
@@ -98,6 +109,14 @@ describe('find similar (test database)', () => {
       symbol: 'not_a_family',
     });
     expect(bad.statusCode).toBe(400);
+    // 14c: only the five families; the other nine 14b symbols are refused
+    const old = await post(`/sheets/${sheetId}/line-first/pieces`, {
+      who: WHO,
+      kind: 'Column',
+      a: [10, 10],
+      symbol: 'welded_box',
+    });
+    expect(old.statusCode).toBe(400);
   });
 
   it('previews, accepts as one logged session action, and undoes in one step', async () => {
@@ -160,6 +179,31 @@ describe('find similar (test database)', () => {
     const [gone] = await loadPieces(db, projectId, { memberIds: [made[0]!.id] });
     expect(gone!.deleted).toBe(true);
     await post('/session/end', { who: WHO });
+  });
+
+  it('a solid shape under a drawn column finds the same solid shapes (14c)', async () => {
+    const drawn = await post(`/sheets/${sheetId}/line-first/pieces`, {
+      who: WHO,
+      kind: 'Column',
+      a: [101, 501],
+      symbol: 'hss_square',
+    });
+    const id = (drawn.json() as PieceView).id;
+    const preview = await post(`/line-first/pieces/${id}/find-similar`, { who: WHO });
+    expect(preview.json()).toMatchObject({
+      example: { family: 'solid_square', real_in: [12, 12] },
+      count: 2,
+      points: [
+        [300, 500],
+        [500, 500],
+      ],
+    });
+    const acc = await post(`/line-first/pieces/${id}/find-similar`, { who: WHO, accept: true });
+    const made = acc.json().pieces as PieceView[];
+    expect(made.map((p) => [p.symbol, p.symbol_source])).toEqual([
+      ['hss_square', 'find_similar'],
+      ['hss_square', 'find_similar'],
+    ]);
   });
 
   it('refuses without a symbol under the column', async () => {

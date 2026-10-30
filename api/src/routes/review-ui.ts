@@ -23,6 +23,7 @@ import { getDb } from '../db/client.js';
 import type { Database, SheetsTable, SnapshotPiece } from '../db/types.js';
 import { XLSX_MIME } from '../excel/index.js';
 import {
+  exampleName,
   findSimilar,
   SYMBOL_FAMILIES,
   symbolAt,
@@ -1120,7 +1121,7 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
         .map((p) => p.a as [number, number]);
       const matches = findSimilar(example, symbols, columns);
       const preview = {
-        example: { family: example.family, real_in: example.real_in },
+        example: { family: exampleName(example), real_in: example.real_in },
         count: matches.length,
         points: matches.map((m) => m.centre),
       };
@@ -1157,7 +1158,8 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
                   b: null,
                   ratio,
                   tos: null,
-                  symbol: m.family,
+                  // a solid shape has no family: the matches take the drawn column's symbol
+                  symbol: m.family === 'unknown' ? (piece.symbol ?? null) : m.family,
                   symbolSource: 'find_similar',
                   rotation: m.rotation_deg,
                   realIn: m.real_in,
