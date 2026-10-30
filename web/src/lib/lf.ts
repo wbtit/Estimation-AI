@@ -608,6 +608,10 @@ export function showSizeLabel(
 }
 
 // ---- setup chips of a view (the page card) -------------------------------------------------------
+/** Phase 14a: Top / Bottom of Steel and piece end elevations are hidden in the UI (the API and the
+ * database keep them for 3D later); Build never needs them. */
+export const SHOW_ELEVATIONS = false;
+
 export type ChipState = "ok" | "system" | "missing";
 export interface SetupChip {
   key: "role" | "crop" | "scale" | "pen" | "column_plan" | "tos";
@@ -617,7 +621,8 @@ export interface SetupChip {
 }
 
 /** The setup of a view as chips: green when a person confirmed it, grey when the system set it,
- * red when missing. Pen, Column plan and T.O.S. only for framing; only Role when nothing builds. */
+ * red when missing. Pen, Column plan (and T.O.S. when elevations are shown) only for framing; only
+ * Role when nothing builds. */
 export function setupChips(
   v: Pick<
     PageViewInfo,
@@ -680,7 +685,8 @@ export function setupChips(
         "Column plan",
       ),
     );
-    out.push(chip("tos", "T.O.S.", v.tos_mm !== null, "tos", "Top of Steel"));
+    if (SHOW_ELEVATIONS)
+      out.push(chip("tos", "T.O.S.", v.tos_mm !== null, "tos", "Top of Steel"));
   }
   return out;
 }

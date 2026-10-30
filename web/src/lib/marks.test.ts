@@ -15,6 +15,7 @@ import {
   MARK_ON_PX,
   markWidthPx,
   setupChips,
+  SHOW_ELEVATIONS,
   showSizeLabel,
   visible,
   type PageViewInfo,
@@ -134,7 +135,6 @@ describe("setup chips", () => {
       scale: "ok",
       pen: "ok",
       column_plan: "ok",
-      tos: "ok",
     });
     expect(
       states(
@@ -143,10 +143,17 @@ describe("setup chips", () => {
     ).toMatchObject({
       crop: "system",
       scale: "system",
-      tos: "missing",
       pen: "missing",
     });
     expect(states(view({ pens: [], no_beams: true })).pen).toBe("ok");
+  });
+
+  it("Phase 14a: no T.O.S. chip, set or not (elevations are hidden in the UI)", () => {
+    expect(SHOW_ELEVATIONS).toBe(false);
+    for (const tos_mm of [null, 4051.3])
+      expect(setupChips(view({ tos_mm })).map((c) => c.key)).not.toContain(
+        "tos",
+      );
   });
 
   it("a column plan chosen as None is confirmed; unchosen and empty is missing", () => {

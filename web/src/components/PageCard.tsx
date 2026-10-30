@@ -13,6 +13,7 @@ import {
   activeView,
   PAGE_TYPE_SHORT,
   setupChips,
+  SHOW_ELEVATIONS,
   type Behaviour,
   type Page,
   type PageViewInfo,
@@ -440,25 +441,27 @@ export const PageCard: React.FC<{
           </div>
           {builds(behaviour) && (
             <>
-              <div className="field">
-                <span>Top of Steel</span>
-                <input
-                  aria-label="top of steel"
-                  className={tosBad ? "bad" : ""}
-                  title={
-                    tosBad
-                      ? `Use feet-inches, e.g. 13'-3 1/2"`
-                      : (view.tos_raw ?? "")
-                  }
-                  placeholder="—"
-                  value={tos}
-                  onChange={(e) => setTos(e.target.value)}
-                  onBlur={commitTos}
-                  onKeyDown={(e) =>
-                    e.key === "Enter" && (e.target as HTMLInputElement).blur()
-                  }
-                />
-              </div>
+              {SHOW_ELEVATIONS && (
+                <div className="field">
+                  <span>Top of Steel</span>
+                  <input
+                    aria-label="top of steel"
+                    className={tosBad ? "bad" : ""}
+                    title={
+                      tosBad
+                        ? `Use feet-inches, e.g. 13'-3 1/2"`
+                        : (view.tos_raw ?? "")
+                    }
+                    placeholder="—"
+                    value={tos}
+                    onChange={(e) => setTos(e.target.value)}
+                    onBlur={commitTos}
+                    onKeyDown={(e) =>
+                      e.key === "Enter" && (e.target as HTMLInputElement).blur()
+                    }
+                  />
+                </div>
+              )}
               <div className="field">
                 <span>Scale</span>
                 {typing ? (

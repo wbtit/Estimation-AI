@@ -381,7 +381,7 @@ describe("page card", () => {
     expect(a.build).toHaveBeenCalled();
   });
 
-  it("shows Top of Steel, Scale and the setup chips only on the selected card", () => {
+  it("shows Scale and the setup chips only on the selected card, never Top of Steel", () => {
     const { rerender } = render(
       <PageCard
         page={page()}
@@ -402,8 +402,10 @@ describe("page card", () => {
         actions={actions()}
       />,
     );
-    expect(screen.getByLabelText("top of steel")).toBeTruthy();
-    expect(screen.getByTestId("setup-chips")).toBeTruthy();
+    expect(screen.queryByLabelText("top of steel")).toBeNull(); // Phase 14a: hidden
+    expect(screen.getByTestId("setup-chips").textContent).not.toContain(
+      "T.O.S.",
+    );
   });
 
   it("a skipped page shows Skip once", () => {
@@ -533,33 +535,7 @@ describe("page card", () => {
     );
   });
 
-  it("Top of Steel is typed in feet-inches; a bare number is refused", () => {
-    const a = actions();
-    render(
-      <PageCard
-        page={page()}
-        columnPlans={[]}
-        selected
-        onSelect={() => undefined}
-        actions={a}
-      />,
-    );
-    const tos = screen.getByLabelText("top of steel") as HTMLInputElement;
-    fireEvent.change(tos, { target: { value: "4051" } });
-    fireEvent.blur(tos);
-    expect(a.setTos).not.toHaveBeenCalled();
-    expect(tos.className).toBe("bad");
-    fireEvent.change(tos, { target: { value: `13'-3 1/2"` } });
-    fireEvent.blur(tos);
-    expect(a.setTos).toHaveBeenCalledWith(
-      expect.anything(),
-      null,
-      expect.closeTo(4051.3, 1),
-      `13'-3 1/2"`,
-    );
-  });
-
-  it("shows T.O.S. in feet-inches and the scale with its ratio", () => {
+  it("shows the scale with its ratio and no T.O.S. even when one is set (Phase 14a)", () => {
     render(
       <PageCard
         page={page({ setup: { ...page().setup, tos_mm: 4051.3 } })}
@@ -569,9 +545,8 @@ describe("page card", () => {
         actions={actions()}
       />,
     );
-    expect(
-      (screen.getByLabelText("top of steel") as HTMLInputElement).value,
-    ).toBe(`13'-3 1/2"`);
+    expect(screen.queryByLabelText("top of steel")).toBeNull();
+    expect(screen.queryByText(`13'-3 1/2"`)).toBeNull();
     expect(screen.getByText(`1/8" = 1'-0" (96)`)).toBeTruthy();
   });
 });
@@ -683,7 +658,7 @@ describe("properties", () => {
     expect(onSetSizeAll).toHaveBeenCalledWith(["u1", "u2"], "W12X26");
   });
 
-  it("shows Mixed for different values, locked elevations in feet-inches and the summary in tons", () => {
+  it("shows Mixed for different values, no end elevations (Phase 14a) and the summary in tons", () => {
     stubFetch({ "/api/catalog": { sections: [] } });
     render(
       <PropertiesPanel
@@ -708,11 +683,10 @@ describe("properties", () => {
     ).toBe("Mixed");
     expect(screen.getAllByText("Mixed").length).toBeGreaterThan(0); // piecemark
     expect(
-      screen.getAllByTitle("Top of Steel of the page (locked)"),
-    ).toHaveLength(2);
-    expect(
-      screen.getAllByTitle("Top of Steel of the page (locked)")[0]!.textContent,
-    ).toContain(`13'-3 1/2"`);
+      screen.queryAllByTitle("Top of Steel of the page (locked)"),
+    ).toHaveLength(0);
+    expect(screen.queryByText("Left End")).toBeNull();
+    expect(screen.queryByText(`13'-3 1/2"`)).toBeNull();
     expect(screen.getByText("2 selected")).toBeTruthy();
     fireEvent.click(screen.getByText("Summary"));
     expect(screen.getByTestId("summary").textContent).toContain(
@@ -1460,7 +1434,6 @@ describe("polish round: views on the card", () => {
       "Scale:system",
       "Pen:ok",
       "Column plan:ok",
-      "!T.O.S.:missing",
     ]);
   });
 

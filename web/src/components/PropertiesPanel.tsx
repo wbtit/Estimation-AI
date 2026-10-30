@@ -12,6 +12,7 @@ import { formatFtIn } from "../lib/ftin";
 import {
   common,
   MIXED,
+  SHOW_ELEVATIONS,
   sizeGroups,
   summary,
   type BomRow,
@@ -561,30 +562,32 @@ const MemberSection: React.FC<{
           />
         </Field>
       </div>
-      <div className="two">
-        <Field
-          label={
-            <span className="row" style={{ gap: 4 }}>
-              Left End <Lock size={11} />
+      {SHOW_ELEVATIONS && (
+        <div className="two">
+          <Field
+            label={
+              <span className="row" style={{ gap: 4 }}>
+                Left End <Lock size={11} />
+              </span>
+            }
+          >
+            <span className="locked" title="Top of Steel of the page (locked)">
+              {show(elev) || "—"}
             </span>
-          }
-        >
-          <span className="locked" title="Top of Steel of the page (locked)">
-            {show(elev) || "—"}
-          </span>
-        </Field>
-        <Field
-          label={
-            <span className="row" style={{ gap: 4 }}>
-              Right End <Lock size={11} />
+          </Field>
+          <Field
+            label={
+              <span className="row" style={{ gap: 4 }}>
+                Right End <Lock size={11} />
+              </span>
+            }
+          >
+            <span className="locked" title="Top of Steel of the page (locked)">
+              {show(elev) || "—"}
             </span>
-          }
-        >
-          <span className="locked" title="Top of Steel of the page (locked)">
-            {show(elev) || "—"}
-          </span>
-        </Field>
-      </div>
+          </Field>
+        </div>
+      )}
       <label className="check">
         <input
           type="checkbox"
