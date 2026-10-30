@@ -8,6 +8,8 @@ dependencies = [
     "python-dotenv>=1.0",
     "pymupdf>=1.24",
     "numpy>=2.0",
+    # image-based Find similar (Phase 14d, src/build/col_image.py): template matching
+    "opencv-python-headless>=5.0,<6",
 ]
 
 [project.optional-dependencies]
