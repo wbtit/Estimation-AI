@@ -215,6 +215,14 @@ export interface SizeEvidence {
 }
 
 export interface Piece {
+  /** Phase 14b: the column symbol family, how it was found, the cross-check reason, the drawn
+   * rotation, the symbol's real size and the catalog section [width, depth] in inches. */
+  symbol?: string | null;
+  symbol_source?: string | null;
+  symbol_flag?: string | null;
+  rotation_deg?: number | null;
+  symbol_real_in?: [number, number] | null;
+  section_in?: [number, number] | null;
   id: string;
   member_id: string;
   sheet_id: string | null;

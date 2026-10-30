@@ -1,3 +1,4 @@
+import { FindSimilarBar } from "./FindSimilarBar";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Download, House, PanelLeft, Save } from "lucide-react";
 import { api, ApiError, send } from "../lib/api";
@@ -92,6 +93,8 @@ export const Workspace: React.FC<{
   const askTool = (tool: Tool) =>
     setToolAsk((t) => ({ tool, n: (t?.n ?? 0) + 1 }));
   const [viewId, setViewId] = useState<string | null>(null);
+  // Phase 14b: the column just placed (the Find similar bar)
+  const [lastColumn, setLastColumn] = useState<string | null>(null);
 
   const sheetId =
     route.sheetId ??
@@ -621,8 +624,28 @@ export const Workspace: React.FC<{
               )}
             </div>
           </div>
+          {page && lastColumn && (
+            <FindSimilarBar
+              key={lastColumn}
+              projectId={projectId}
+              memberId={lastColumn}
+              who={who}
+              onDone={(n) => {
+                setLastColumn(null);
+                say(
+                  n
+                    ? `${n} similar columns added (Ctrl+Z undoes)`
+                    : "Nothing added",
+                );
+                void refresh();
+              }}
+              onClose={() => setLastColumn(null)}
+              onError={fail}
+            />
+          )}
           {page ? (
             <Canvas
+              who={who}
               pdf={pdf}
               page={page}
               data={data}
@@ -737,13 +760,17 @@ export const Workspace: React.FC<{
                   "View added: set its role and scale",
                 )
               }
-              onDraw={(kind, a, b) =>
+              onDraw={(kind, a, b, opts) =>
                 void act(
-                  send("POST", sheetUrl(page, "line-first/pieces"), {
+                  send<Piece>("POST", sheetUrl(page, "line-first/pieces"), {
                     who,
                     kind,
                     a,
                     b,
+                    ...(opts ?? {}),
+                  }).then((pc) => {
+                    // Phase 14b: a placed column offers Find similar
+                    setLastColumn(pc.type === "column" ? pc.id : null);
                   }),
                 )
               }

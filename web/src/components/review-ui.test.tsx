@@ -1010,7 +1010,7 @@ describe("canvas", () => {
       "Undo",
     ]);
     expect(screen.getByLabelText("Crop").getAttribute("data-tip")).toBe(
-      "Crop (C)",
+      "Crop (O)",
     );
     expect(screen.getByLabelText("Hand").getAttribute("data-tip")).toBe(
       "Hand (H)",

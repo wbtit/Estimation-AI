@@ -1,3 +1,14 @@
+import {
+  loadPaletteChoice,
+  markerSizePt,
+  pieceSymbol,
+  savePaletteChoice,
+  STUD_KIND,
+  symbolPath,
+  type PaletteChoice,
+  type SymbolFamily,
+} from "../lib/columns";
+import { ColumnPalette } from "./ColumnPalette";
 import React, {
   useCallback,
   useEffect,
@@ -93,6 +104,13 @@ import { PageView } from "./PageView";
 export type { Tool };
 export type PickMode = "replace" | "add";
 
+/** Phase 14b: a column drawn with the palette. */
+export interface DrawOptions {
+  symbol?: SymbolFamily;
+  rotation_deg?: number;
+  profile_text?: string | null;
+}
+
 export interface CanvasProps {
   pdf: PDFDocumentProxy | null;
   page: Page;
@@ -105,7 +123,14 @@ export interface CanvasProps {
   pendingEdits: number;
   onCrop: (box: Box) => void;
   onPick: (p: Pt2, mode: PickMode) => void;
-  onDraw: (kind: "Beams" | "Column", a: Pt2, b: Pt2 | null) => void;
+  onDraw: (
+    kind: "Beams" | "Column" | "Stud/Post",
+    a: Pt2,
+    b: Pt2 | null,
+    opts?: DrawOptions,
+  ) => void;
+  /** Phase 14b: who works (the palette remembers their last symbol). */
+  who?: string;
   onEnds: (piece: Piece, a: Pt2, b: Pt2 | null) => void;
   onUndo: () => void;
   onDeleteSelected: () => void;
@@ -173,6 +198,16 @@ const pieceBox = (p: Piece): Box => {
 export const Canvas: React.FC<CanvasProps> = (props) => {
   const { pdf, page, data, lines, layers, onLayers, selected } = props;
   const [tool, setTool] = useState<Tool>("select");
+  // Phase 14b: the column palette (symbol, Stud/Post, size typed, rotation)
+  const [palette, setPaletteState] = useState<PaletteChoice>(() =>
+    loadPaletteChoice(props.who ?? ""),
+  );
+  const setPalette = (c: PaletteChoice) => {
+    setPaletteState(c);
+    savePaletteChoice(props.who ?? "", c);
+  };
+  const [colSize, setColSize] = useState("");
+  const [colRotation, setColRotation] = useState(0);
   const [pickMode, setPickMode] = useState<PickMode>("replace");
   const [zoom, setZoom] = useState(1);
   const [zoomText, setZoomText] = useState<string | null>(null);
@@ -403,6 +438,16 @@ export const Canvas: React.FC<CanvasProps> = (props) => {
         if (selected.size > 0) props.onApprove?.();
         return;
       }
+      if (
+        tool === "column" &&
+        (e.key === "r" || e.key === "R") &&
+        !e.ctrlKey &&
+        !e.metaKey &&
+        !e.altKey
+      ) {
+        setColRotation((r) => (r + 90) % 360);
+        return;
+      }
       const t = toolForKey(e.key, {
         ctrl: e.ctrlKey,
         meta: e.metaKey,
@@ -445,7 +490,7 @@ export const Canvas: React.FC<CanvasProps> = (props) => {
       window.removeEventListener("keyup", onUp);
       window.removeEventListener("blur", onBlur);
     };
-  }, [selected, props, step, exclusionOn, help, cancel]);
+  }, [selected, props, step, exclusionOn, help, cancel, tool]);
 
   const snap = (p: Pt2): Pt2 => {
     if (!lines) return p;
@@ -541,7 +586,11 @@ export const Canvas: React.FC<CanvasProps> = (props) => {
       return false;
     }
     if (tool === "column") {
-      props.onDraw("Column", snap(p), null);
+      props.onDraw(palette.stud ? STUD_KIND : "Column", snap(p), null, {
+        symbol: palette.family,
+        rotation_deg: colRotation,
+        profile_text: colSize.trim() || null,
+      });
       return false;
     }
     if (tool === "beam" || tool === "measure") {
@@ -942,6 +991,15 @@ export const Canvas: React.FC<CanvasProps> = (props) => {
           </span>
           <button onClick={cancel}>Done</button>
         </div>
+      )}
+      {tool === "column" && (
+        <ColumnPalette
+          choice={palette}
+          onChoice={setPalette}
+          size={colSize}
+          onSize={setColSize}
+          rotation={colRotation}
+        />
       )}
       <div className="toolbar" data-testid="toolbar">
         {toolButton(TOOLS[0]!)}
@@ -1386,9 +1444,29 @@ export const PieceMark: React.FC<{
       ? "approved"
       : (p.build_state ?? "found");
   if (isColumn(p)) {
-    const t = (COLUMN_PX / 2) * px;
-    const cw = Math.min(swPx, 2.5) * px;
-    const I = `M ${p.a[0] - t} ${p.a[1] - t} L ${p.a[0] + t} ${p.a[1] - t} M ${p.a[0] - t} ${p.a[1] + t} L ${p.a[0] + t} ${p.a[1] + t} M ${p.a[0]} ${p.a[1] - t} L ${p.a[0]} ${p.a[1] + t}`;
+    // Phase 14b: the column's symbol (from its profile, else the drawn family), rotated like the
+    // drawing and sized from the real section; an unknown column is a neutral amber marker
+    const fam = pieceSymbol(p);
+    const real = markerSizePt(p);
+    const least = COLUMN_PX * 0.6 * px; // never smaller than this on screen
+    const [sw0, sh0] = real
+      ? [Math.max(real[0], least), Math.max(real[1], least)]
+      : [COLUMN_PX * px, COLUMN_PX * px];
+    const t = Math.max(sw0, sh0) / 2;
+    const cw = Math.min(swPx, 2.5) * px * (real ? 0.6 : 1);
+    const rot = p.rotation_deg ?? 0;
+    const shape = fam
+      ? symbolPath(fam, sw0, sh0)
+      : `M ${-t} ${-t} L ${t} ${t} M ${-t} ${t} L ${t} ${-t} M ${-t} ${-t} H ${t} V ${t} H ${-t} Z`;
+    const I = shape;
+    const markColourOf = p.symbol_flag
+      ? "var(--attention)"
+      : !fam
+        ? "var(--amber)"
+        : p.kind === STUD_KIND
+          ? "var(--stud)"
+          : colour;
+    const tf = `translate(${p.a[0]} ${p.a[1]}) rotate(${rot})`;
     const showTag = labels && p.tag && (allSizes || wide);
     return (
       <g
@@ -1397,7 +1475,7 @@ export const PieceMark: React.FC<{
         data-glow={glow ? "1" : undefined}
         data-flag={flag ?? undefined}
       >
-        <title>{tip}</title>
+        <title>{p.symbol_flag ? `${tip}\n${p.symbol_flag}` : tip}</title>
         {glow && (
           <circle
             data-testid="glow"
@@ -1422,6 +1500,9 @@ export const PieceMark: React.FC<{
         )}
         <path
           d={I}
+          transform={tf}
+          data-testid="column-symbol"
+          data-symbol={fam ?? "unknown"}
           stroke="#fff"
           strokeWidth={cw + 2 * px}
           fill="none"
@@ -1429,7 +1510,8 @@ export const PieceMark: React.FC<{
         />
         <path
           d={I}
-          stroke={colour}
+          transform={tf}
+          stroke={markColourOf}
           strokeWidth={wide ? cw + 1 * px : cw}
           fill="none"
           strokeLinecap="square"

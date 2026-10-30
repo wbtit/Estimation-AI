@@ -37,6 +37,8 @@
   --beam-undef: var(--attention);
   --beam-ignored: var(--mark-ignored);
   --column-id: #1b3f8f;
+  /* Phase 14b: a stud / post (counted apart from columns) */
+  --stud: #0f9d8a;
   --pick: #00b8d4;
   --crop: #3d6bf5;
   --grid: #2b8a3e;
@@ -2128,4 +2130,76 @@ table.grid tr.total td {
 .session-menu {
   right: 0;
   min-width: 220px;
+}
+
+/* Phase 14b: the Draw column palette and the Find similar bar */
+.column-palette {
+  position: absolute;
+  top: 56px;
+  left: 64px;
+  z-index: 6;
+  background: var(--panel, #fff);
+  border: 1px solid var(--line, #d0d5dd);
+  border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(15, 23, 42, 0.14);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: calc(100% - 96px);
+}
+.column-palette .row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.column-palette input[aria-label="column size"] {
+  width: 150px;
+}
+.column-palette .group {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.column-palette .group .label {
+  font-size: 11px;
+  color: var(--muted);
+  width: 64px;
+}
+.column-palette .group button {
+  padding: 2px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--icon);
+}
+.column-palette .group button.on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.column-palette .stud {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  font-size: 12px;
+  color: var(--stud);
+}
+.find-similar {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 7;
+  background: var(--panel, #fff);
+  border: 1px solid var(--line, #d0d5dd);
+  border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(15, 23, 42, 0.14);
+  padding: 6px 10px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  font-size: 13px;
 }

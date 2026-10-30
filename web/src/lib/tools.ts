@@ -17,11 +17,11 @@ export type Tool =
 export const TOOL_KEYS: Partial<Record<Tool, string>> = {
   select: "V",
   hand: "H",
-  crop: "C",
+  crop: "O",
   pick: "P",
   exclude: "X",
   beam: "B",
-  column: "K",
+  column: "C",
   measure: "M",
 };
 
@@ -30,11 +30,11 @@ export const SHORTCUTS: { keys: string; what: string }[] = [
   { keys: "V", what: "Select" },
   { keys: "H", what: "Hand (drag to pan)" },
   { keys: "Space (hold)", what: "Hand while held, in any tool" },
-  { keys: "C", what: "Crop the active view" },
+  { keys: "O", what: "Crop the active view" },
   { keys: "P", what: "Pick beam" },
   { keys: "X", what: "Exclude area" },
   { keys: "B", what: "Draw beam" },
-  { keys: "K", what: "Draw column" },
+  { keys: "C", what: "Draw column (palette; type a size; R rotates 90°)" },
   { keys: "M", what: "Measure" },
   { keys: "N / Shift+N", what: "Next / previous issue" },
   { keys: "A", what: "Approve the selected members" },

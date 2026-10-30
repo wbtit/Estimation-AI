@@ -43,7 +43,9 @@ describe("hand tool and Space", () => {
     expect(toolForKey("h")).toBe("hand");
     expect(toolForKey("H")).toBe("hand");
     expect(toolForKey("v")).toBe("select");
-    expect(toolForKey("k")).toBe("column");
+    expect(toolForKey("c")).toBe("column"); // Phase 14b: C draws a column
+    expect(toolForKey("o")).toBe("crop");
+    expect(toolForKey("k")).toBeNull();
     expect(toolForKey("x")).toBe("exclude");
     expect(toolForKey("z", { ctrl: true })).toBeNull();
     expect(toolForKey("c", { meta: true })).toBeNull();
