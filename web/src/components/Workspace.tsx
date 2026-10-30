@@ -5,9 +5,9 @@ import { formatFtIn } from "../lib/ftin";
 import {
   activeView,
   ALL_LAYERS,
-  loadFade,
+  loadDrawing,
   remainingIssues,
-  saveFade,
+  saveDrawing,
   type Bom,
   type Box,
   type Layers,
@@ -91,11 +91,6 @@ export const Workspace: React.FC<{
   >();
   const askTool = (tool: Tool) =>
     setToolAsk((t) => ({ tool, n: (t?.n ?? 0) + 1 }));
-  const [fade, setFadeState] = useState(() => loadFade(who));
-  const setFade = (f: number) => {
-    setFadeState(f);
-    saveFade(who, f);
-  };
   const [viewId, setViewId] = useState<string | null>(null);
 
   const sheetId =
@@ -104,6 +99,13 @@ export const Workspace: React.FC<{
     pages[0]?.id ??
     null;
   const page = pages.find((p) => p.id === sheetId) ?? null;
+  // Phase 14a: the drawing visibility is remembered per person and page
+  const [drawing, setDrawingState] = useState(() => loadDrawing(who, sheetId));
+  useEffect(() => setDrawingState(loadDrawing(who, sheetId)), [who, sheetId]);
+  const setDrawing = (v: number) => {
+    setDrawingState(v);
+    saveDrawing(who, sheetId, v);
+  };
 
   const say = (msg: string) => {
     setToast(msg);
@@ -658,8 +660,8 @@ export const Workspace: React.FC<{
                   mode === "add" ? "Beam pen added" : "Beam pen picked",
                 )
               }
-              fade={fade}
-              onFade={setFade}
+              drawing={drawing}
+              onDrawing={setDrawing}
               activeViewId={view?.id ?? null}
               onActiveView={setViewId}
               onRemovePen={(pen) =>

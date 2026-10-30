@@ -754,26 +754,34 @@ export function nextIssue<T extends { key: IssueKey }>(
   return list[list.length - 1]!;
 }
 
-// ---- drawing fade -------------------------------------------------------------------------------
-export const DEFAULT_FADE = 0.45;
-const fadeKey = (who: string) => `review.fade.${who}`;
+// ---- drawing visibility (Phase 14a: was the reversed "Drawing fade") ------------------------------
+/** 100% = the drawing at its darkest, 0% = faded out. The default for a page not set yet. */
+export const DEFAULT_DRAWING = 0.8;
+const drawingKey = (who: string, sheetId: string) =>
+  `review.drawing.${who}.${sheetId}`;
 
-/** The drawing fade of a person (0..1), remembered in this browser. */
-export function loadFade(who: string): number {
+/** A person's last drawing visibility on this page (0..1), remembered in this browser. */
+export function loadDrawing(who: string, sheetId: string | null): number {
+  if (!sheetId) return DEFAULT_DRAWING;
   try {
-    const v = window.localStorage.getItem(fadeKey(who));
+    const v = window.localStorage.getItem(drawingKey(who, sheetId));
     const n = v === null ? NaN : Number(v);
-    return isFinite(n) && n >= 0 && n <= 1 ? n : DEFAULT_FADE;
+    return isFinite(n) && n >= 0 && n <= 1 ? n : DEFAULT_DRAWING;
   } catch {
-    return DEFAULT_FADE;
+    return DEFAULT_DRAWING;
   }
 }
 
-export function saveFade(who: string, fade: number): void {
+export function saveDrawing(
+  who: string,
+  sheetId: string | null,
+  value: number,
+): void {
+  if (!sheetId) return;
   try {
-    window.localStorage.setItem(fadeKey(who), String(fade));
+    window.localStorage.setItem(drawingKey(who, sheetId), String(value));
   } catch {
-    // private window or blocked storage: the fade is not remembered
+    // private window or blocked storage: the value is not remembered
   }
 }
 

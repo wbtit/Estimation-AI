@@ -109,9 +109,9 @@ export interface CanvasProps {
   onEnds: (piece: Piece, a: Pt2, b: Pt2 | null) => void;
   onUndo: () => void;
   onDeleteSelected: () => void;
-  /** Drawing fade 0..1 and its change (the Layers slider). */
-  fade?: number;
-  onFade?: (f: number) => void;
+  /** Drawing visibility 0..1 (1 = darkest) and its change (the Layers slider). */
+  drawing?: number;
+  onDrawing?: (v: number) => void;
   /** The active view of the page (its box, pens, exclusions and deselections are shown). */
   activeViewId?: string | null;
   onActiveView?: (id: string) => void;
@@ -959,8 +959,8 @@ export const Canvas: React.FC<CanvasProps> = (props) => {
             <LayerFilter
               layers={layers}
               onChange={onLayers}
-              fade={props.fade ?? 0}
-              onFade={props.onFade}
+              drawing={props.drawing ?? 1}
+              onDrawing={props.onDrawing}
             />
           )}
         </span>
@@ -997,7 +997,7 @@ export const Canvas: React.FC<CanvasProps> = (props) => {
             heightPt={h}
             zoom={zoom}
             dimPlan={!layers.plan}
-            fade={props.fade ?? 0}
+            drawing={props.drawing ?? 1}
             scroller={viewport}
             onPointerDown={down}
             onPointerMove={move}
@@ -1572,9 +1572,9 @@ const FlagMark: React.FC<{
 const LayerFilter: React.FC<{
   layers: Layers;
   onChange: (l: Layers) => void;
-  fade: number;
-  onFade?: (f: number) => void;
-}> = ({ layers, onChange, fade, onFade }) => {
+  drawing: number;
+  onDrawing?: (v: number) => void;
+}> = ({ layers, onChange, drawing, onDrawing }) => {
   const box = (key: keyof Layers, label: string) => (
     <label>
       <input
@@ -1593,17 +1593,19 @@ const LayerFilter: React.FC<{
     <div className="layers" data-testid="layers">
       <span className="label">Layers</span>
       <label className="fade">
-        <span>Drawing fade</span>
+        <span title="100% = the drawing at its darkest, 0% = faded out">
+          Drawing
+        </span>
         <input
           type="range"
-          aria-label="drawing fade"
+          aria-label="drawing visibility"
           min={0}
           max={100}
           step={5}
-          value={Math.round(fade * 100)}
-          onChange={(e) => onFade?.(Number(e.target.value) / 100)}
+          value={Math.round(drawing * 100)}
+          onChange={(e) => onDrawing?.(Number(e.target.value) / 100)}
         />
-        <span className="muted">{Math.round(fade * 100)}%</span>
+        <span className="muted">{Math.round(drawing * 100)}%</span>
       </label>
       {box("plan", "Plan")}
       {box("grids", "Grids")}

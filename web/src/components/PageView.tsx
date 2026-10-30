@@ -18,17 +18,38 @@ export interface PageViewProps {
   cursor?: string;
   /** Show the drawing faint (the "Plan" layer off). */
   dimPlan?: boolean;
-  /** Drawing fade 0..1: the drawing is mixed toward white so the marks stand out. */
-  fade?: number;
+  /** Drawing visibility 0..1 (1 = darkest): below 1 the drawing is mixed toward white so the
+   * marks stand out. */
+  drawing?: number;
   /** The scrolling viewport: the sharp layer renders the part of the page it shows. */
   scroller?: React.RefObject<HTMLDivElement | null>;
 }
 
-/** The drawing's opacity over the white page for a fade strength 0..1. Squared, so the default
- * 45% turns black linework light grey (opacity 0.30, about #b3b3b3) while 0% keeps it black. */
-export function drawingOpacity(fade: number): number {
-  const f = Math.min(1, Math.max(0, fade));
-  return (1 - f) * (1 - f);
+/** The drawing's opacity over the white page for a visibility 0..1 (Phase 14a: 1 = darkest).
+ * Squared, so the default 80% gives opacity 0.64 and 100% shows the drawing as rendered. */
+export function drawingOpacity(visibility: number): number {
+  const v = Math.min(1, Math.max(0, visibility));
+  return v * v;
+}
+
+/** Phase 14a: the rendered drawing is darkened once (each channel squared, by drawing the canvas
+ * onto itself with "multiply"): white stays white, 50% grey linework becomes 25% grey. */
+export function darkenedLevel(level: number): number {
+  return level * level;
+}
+
+/** The shown grey (0 = black, 1 = white) of a rendered channel level at a visibility. */
+export function shownLevel(level: number, visibility: number): number {
+  return 1 - drawingOpacity(visibility) * (1 - darkenedLevel(level));
+}
+
+function darken(canvas: HTMLCanvasElement): void {
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  ctx.save();
+  ctx.globalCompositeOperation = "multiply";
+  ctx.drawImage(canvas, 0, 0);
+  ctx.restore();
 }
 
 /** Long side of the low-resolution full-page render, in device pixels. */
@@ -64,7 +85,7 @@ export const PageView: React.FC<PageViewProps> = ({
   onPointerUp,
   cursor,
   dimPlan,
-  fade = 0,
+  drawing = 1,
   scroller,
 }) => {
   const baseRef = useRef<HTMLCanvasElement>(null);
@@ -102,6 +123,7 @@ export const PageView: React.FC<PageViewProps> = ({
       task.promise.then(
         () => {
           if (cancelled) return;
+          darken(canvas);
           setBaseReady(true);
           setMoved((m) => m + 1);
         },
@@ -172,6 +194,7 @@ export const PageView: React.FC<PageViewProps> = ({
       task.promise.then(
         () => {
           if (cancelled) return;
+          darken(off);
           out.width = off.width;
           out.height = off.height;
           out.getContext("2d")?.drawImage(off, 0, 0);
@@ -196,7 +219,7 @@ export const PageView: React.FC<PageViewProps> = ({
     const rect = (svgRef.current as SVGSVGElement).getBoundingClientRect();
     return clientToPage(e.clientX, e.clientY, rect, widthPt, heightPt);
   };
-  const opacity = dimPlan ? 0.18 : drawingOpacity(fade);
+  const opacity = dimPlan ? 0.18 : drawingOpacity(drawing);
 
   return (
     <div
@@ -205,7 +228,7 @@ export const PageView: React.FC<PageViewProps> = ({
       style={{ width: cssW, height: cssH, cursor: cursor ?? "default" }}
       data-testid="page-wrap"
     >
-      {/* the fade applies to both layers together (each faded alone, they would stack darker) */}
+      {/* the visibility applies to both layers together (each faded alone, they would stack darker) */}
       <div className="page-ink" style={{ opacity }}>
         <canvas
           ref={baseRef}

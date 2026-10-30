@@ -1,6 +1,6 @@
 // Phase 11c: the issue navigator order, member state colours, the pen preview (deselect / exclude)
 // and the active view. Pure.
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   activeView,
   ALL_LAYERS,
@@ -209,12 +209,45 @@ describe("pen preview", () => {
   });
 });
 
-describe("drawing fade", () => {
-  it("0% keeps the drawing black, 45% turns it light grey, 100% hides it", async () => {
+describe("drawing visibility (Phase 14a)", () => {
+  it("100% shows the drawing as rendered, 0% hides it, the default 80% is opacity 0.64", async () => {
     const { drawingOpacity } = await import("../components/PageView");
-    expect(drawingOpacity(0)).toBe(1);
-    expect(drawingOpacity(0.45)).toBeCloseTo(0.3025, 6);
-    expect(drawingOpacity(1)).toBe(0);
-    expect(drawingOpacity(-1)).toBe(1);
+    expect(drawingOpacity(1)).toBe(1);
+    expect(drawingOpacity(0.8)).toBeCloseTo(0.64, 6);
+    expect(drawingOpacity(0)).toBe(0);
+    expect(drawingOpacity(2)).toBe(1);
+    expect(drawingOpacity(-1)).toBe(0);
+  });
+
+  it("darkens the linework: black stays black, 50% grey becomes 25% grey, white stays white", async () => {
+    const { darkenedLevel, shownLevel } =
+      await import("../components/PageView");
+    expect(darkenedLevel(0)).toBe(0);
+    expect(darkenedLevel(0.5)).toBe(0.25);
+    expect(darkenedLevel(1)).toBe(1);
+    // before: fade 45% showed black as 1 - 0.3025 = 0.70 (#b3b3b3); now at the 80% default
+    expect(shownLevel(0, 0.8)).toBeCloseTo(0.36, 6); // #5c5c5c
+    expect(shownLevel(0.5, 0.8)).toBeCloseTo(0.52, 6); // was 0.85 (#d9d9d9)
+    expect(shownLevel(0.5, 1)).toBe(0.25); // #404040
+    expect(shownLevel(1, 0.8)).toBe(1);
+  });
+
+  it("is remembered per person and page, with the default for a new page", async () => {
+    const { loadDrawing, saveDrawing, DEFAULT_DRAWING } = await import("./lf");
+    const store = new Map<string, string>();
+    vi.stubGlobal("window", {
+      localStorage: {
+        getItem: (k: string) => store.get(k) ?? null,
+        setItem: (k: string, v: string) => store.set(k, v),
+      },
+    });
+    expect(DEFAULT_DRAWING).toBe(0.8);
+    expect(loadDrawing("ann", "s1")).toBe(0.8);
+    saveDrawing("ann", "s1", 0.35);
+    expect(loadDrawing("ann", "s1")).toBe(0.35);
+    expect(loadDrawing("ann", "s2")).toBe(0.8);
+    expect(loadDrawing("bob", "s1")).toBe(0.8);
+    expect(loadDrawing("ann", null)).toBe(0.8);
+    vi.unstubAllGlobals();
   });
 });
