@@ -117,8 +117,8 @@ export function setupReasons(s: Sheet, allowSystem = false): string[] {
   }
   if (s.crop_region === null || !s.crop_confirmed_by) out.push('crop not confirmed');
   if (s.build_scale_ratio === null || !s.scale_confirmed_by) out.push('scale not confirmed');
+  // Phase 14a: T.O.S. is not required (hidden in the UI; no elevation, plan length)
   if (s.build_role === 'framing') {
-    if (!s.tos_confirmed_by) out.push('T.O.S. not confirmed');
     if ((!s.pen_class && !noBeams(s)) || !s.pen_class_confirmed_by)
       out.push('beam pen class not confirmed');
   }

@@ -106,7 +106,7 @@ def test_a_page_that_is_not_set_up_is_refused_with_reasons(dbp: DbProject) -> No
     assert run["status"] == "refused" and "crop not confirmed" in run["error"]
     _setup(dbp, framing_id, "framing", tos=False, pen=False)
     _, out = _run(dbp, framing_id)
-    assert set(out["refused"]) == {"T.O.S. not confirmed", "beam pen class not confirmed"}
+    assert out["refused"] == ["beam pen class not confirmed"]  # Phase 14a: T.O.S. not required
     assert _members(dbp, framing_id) == []
 
 
@@ -119,6 +119,16 @@ def test_a_framing_page_waits_for_the_column_plan_unless_told_there_is_none(dbp:
     assert "no_column_plan" in out["notes"]
     # no glyphs on this framing page and no column plan: only beam-to-beam supports (rule c)
     assert out["pieces"] > 0 and out["nodes_glyph"] == 0 and out["nodes_projected"] == 0
+
+
+def test_a_framing_page_builds_without_a_top_of_steel(dbp: DbProject) -> None:
+    """Phase 14a: Top of Steel is hidden in the UI, so Build never needs it."""
+    plan_id, framing_id = _pdf(dbp)
+    _setup(dbp, framing_id, "framing", tos=False)
+    run_id, out = _run(dbp, framing_id, {"no_column_plan": True})
+    assert "refused" not in out and out["pieces"] > 0
+    run = dbp.conn.execute("SELECT * FROM build_runs WHERE id = %s", (run_id,)).fetchone()
+    assert run["status"] == "done" and run["inputs"]["tos_mm"] is None
 
 
 def test_column_plan_then_framing_page_stores_everything(dbp: DbProject) -> None:

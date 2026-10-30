@@ -93,9 +93,9 @@ def setup_reasons(sheet: dict[str, Any], allow_system: bool = False) -> list[str
         out.append("crop not confirmed")
     if sheet.get("build_scale_ratio") is None or not sheet.get("scale_confirmed_by"):
         out.append("scale not confirmed")
+    # Phase 14a: T.O.S. is not a build input a person must confirm (hidden in the UI; without it the
+    # pieces have no elevation and their length is the plan length)
     if role == "framing":
-        if not sheet.get("tos_confirmed_by"):
-            out.append("T.O.S. not confirmed")
         if (not sheet.get("pen_class") and not no_beams(sheet)) or not sheet.get(
             "pen_class_confirmed_by"
         ):

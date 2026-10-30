@@ -127,10 +127,9 @@ describe('build colour state after edits', () => {
       'crop not confirmed',
       'scale not confirmed',
     ]);
-    expect(setupReasons({ ...blank, build_role: 'framing' })).toContain('T.O.S. not confirmed');
-    expect(setupReasons({ ...blank, build_role: 'column_plan' })).not.toContain(
-      'T.O.S. not confirmed',
-    );
+    // Phase 14a: Top of Steel is never required
+    for (const role of ['framing', 'column_plan'] as const)
+      expect(setupReasons({ ...blank, build_role: role })).not.toContain('T.O.S. not confirmed');
   });
 });
 
