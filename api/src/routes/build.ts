@@ -43,6 +43,7 @@ import { feetAndInches } from '../review/answer-key.js';
 import { parseScaleExact } from '../scale/index.js';
 import { boxSnapshot, recordViewUndo } from '../review/view-undo.js';
 import { HttpError } from './http-error.js';
+import { columnMode } from '../review/settings.js';
 
 export { effectiveState };
 
@@ -889,7 +890,8 @@ export const buildRoutes: FastifyPluginAsync<BuildRouteOptions> = async (app, op
         .execute();
       const prepared = chosen.map((v) => {
         const s = asSheet(page, v);
-        const inputs: Record<string, unknown> = { view_id: v.row.id };
+        // Phase 14d: the column mode in force is recorded on each Build
+        const inputs: Record<string, unknown> = { view_id: v.row.id, column_mode: columnMode() };
         if (body.column_plan_sheet_id) {
           inputs.column_plan_sheet_id = body.column_plan_sheet_id;
           if (namedPlanView) inputs.column_plan_view_id = namedPlanView;

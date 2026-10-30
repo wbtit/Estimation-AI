@@ -682,7 +682,11 @@ describe('review UI routes (test database)', () => {
       .where('id', '=', ok.json().build_run_id)
       .executeTakeFirstOrThrow();
     expect(run.mode).toBe('person');
-    expect(run.inputs).toMatchObject({ allow_system_values: true, no_column_plan: true });
+    expect(run.inputs).toMatchObject({
+      allow_system_values: true,
+      no_column_plan: true,
+      column_mode: 'click_first', // Phase 14d: the setting in force is recorded
+    });
     expect((await pageOf(framingId)).badge).toBe('Building');
     // the worker would finish it; here the test marks it done
     await db

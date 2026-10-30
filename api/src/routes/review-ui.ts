@@ -26,6 +26,7 @@ import {
   exampleName,
   findSimilar,
   SYMBOL_FAMILIES,
+  TAKEN_PT,
   symbolAt,
   type StoredSymbol,
 } from '../review/find-similar.js';
@@ -56,6 +57,8 @@ import {
 } from '../review/build-views.js';
 import { parseProfile } from '../review/profile.js';
 import { systemReport, type SetupValues } from '../review/system-report.js';
+import { imageJob, type ImageRun, type Match } from '../review/image-similar.js';
+import { findSimilarImage } from '../review/settings.js';
 import { takeTagNumbers } from '../review/tag-counter.js';
 import { HttpError } from './http-error.js';
 import { loadMemberViews } from './members.js';
@@ -1075,7 +1078,7 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
   // size as the example), logged as 'find_similar' (session-tagged training data).
   app.post<{
     Params: { projectId: string; memberId: string };
-    Body: { who: string; accept?: boolean };
+    Body: { who: string; accept?: boolean; run_id?: string };
   }>(
     '/api/projects/:projectId/line-first/pieces/:memberId/find-similar',
     {
@@ -1089,7 +1092,7 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
           type: 'object',
           required: ['who'],
           additionalProperties: false,
-          properties: { who, accept: { type: 'boolean' } },
+          properties: { who, accept: { type: 'boolean' }, run_id: uuid },
         },
       },
     },
@@ -1111,19 +1114,82 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
       if (!stored)
         throw new HttpError(409, { error: 'build the page first: its symbols are not stored yet' });
       const symbols = stored.symbols as StoredSymbol[];
-      const example = symbolAt(piece.a, symbols);
-      if (!example)
-        throw new HttpError(409, {
-          error: 'no drawing symbol under this column: place it on the column symbol',
-        });
       const columns = (await loadPieces(db(), projectId, { sheetId }))
         .filter((p) => p.type === 'column' && !p.deleted && p.a)
         .map((p) => p.a as [number, number]);
-      const matches = findSimilar(example, symbols, columns);
+      const noSymbol = () =>
+        new HttpError(409, {
+          error: 'no drawing symbol under this column: place it on the column symbol',
+        });
+      // Phase 14d: with FIND_SIMILAR_IMAGE on, the worker's image search (vector + image matches)
+      // runs as a job; the preview returns its id and Accept creates exactly the previewed points
+      let example: { family: string; name: string; real_in: [number, number] };
+      let matches: Match[];
+      let image: ImageRun | null = null;
+      if (findSimilarImage()) {
+        const job = await imageJob({
+          projectId,
+          sheetId,
+          memberId,
+          click: piece.a,
+          buildRunId: stored.build_run_id,
+          runId: request.body.accept ? request.body.run_id : undefined,
+        });
+        const r = job.result;
+        if (!r.example) throw noSymbol();
+        example = {
+          family: r.example.family,
+          name:
+            r.example.family === 'unknown'
+              ? r.example.solid
+                ? `solid_${r.example.solid}`
+                : 'drawn_symbol'
+              : r.example.family,
+          real_in: r.example.real_in,
+        };
+        const family = (SYMBOL_FAMILIES as readonly string[]).includes(r.example.family)
+          ? r.example.family
+          : (piece.symbol ?? null);
+        matches = r.combined
+          .filter(
+            (c) =>
+              !columns.some((p) => Math.hypot(p[0] - c.centre[0], p[1] - c.centre[1]) <= TAKEN_PT),
+          )
+          .map((c) => ({
+            centre: c.centre,
+            symbol: family,
+            rotation_deg: ((piece.rotation_deg ?? 0) + (c.rotation === 90 ? 90 : 0)) % 180,
+            real_in: r.example!.real_in,
+            source: c.source,
+          }));
+        image = {
+          run_id: job.id,
+          runtime_s: r.runtime_s,
+          vector: r.vector,
+          image: r.image,
+          settings: r.settings,
+        };
+      } else {
+        const ex = symbolAt(piece.a, symbols);
+        if (!ex) throw noSymbol();
+        example = { family: ex.family, name: exampleName(ex), real_in: ex.real_in };
+        matches = findSimilar(ex, symbols, columns).map((m) => ({
+          centre: m.centre,
+          // a solid shape has no family: the matches take the drawn column's symbol
+          symbol: m.family === 'unknown' ? (piece.symbol ?? null) : m.family,
+          rotation_deg: m.rotation_deg,
+          real_in: m.real_in,
+          source: 'vector' as const,
+        }));
+      }
       const preview = {
-        example: { family: exampleName(example), real_in: example.real_in },
+        example: { family: example.name, real_in: example.real_in },
         count: matches.length,
         points: matches.map((m) => m.centre),
+        sources: matches.map((m) => m.source),
+        image: image !== null,
+        run_id: image?.run_id ?? null,
+        runtime_s: image?.runtime_s ?? null,
       };
       if (!request.body.accept || matches.length === 0) return { ...preview, accepted: false };
       const sheet = await loadSheet(projectId, sheetId);
@@ -1158,8 +1224,7 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
                   b: null,
                   ratio,
                   tos: null,
-                  // a solid shape has no family: the matches take the drawn column's symbol
-                  symbol: m.family === 'unknown' ? (piece.symbol ?? null) : m.family,
+                  symbol: m.symbol,
                   symbolSource: 'find_similar',
                   rotation: m.rotation_deg,
                   realIn: m.real_in,
@@ -1193,6 +1258,9 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
               family: example.family,
               real_in: example.real_in,
               member_ids: ids,
+              // Phase 14d: the settings in force (image search on / off, its job and runtime)
+              image: image ?? false,
+              sources: matches.map((m) => m.source),
             },
           });
           return { actionId, ids };
