@@ -1,0 +1,109 @@
+"""Phase 12e intake rules on SYNTHETIC data only (no real drawing or markup)."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pymupdf
+
+from tools.markups_intake import (
+    Doc,
+    _markup,
+    firm_label,
+    is_yellow,
+    mark_kind,
+    merge_ratios,
+    pair,
+    parse_summary,
+    report,
+    shared_share,
+    summary_counts,
+)
+
+
+def test_summary_pairs_kinds_and_the_tilde_oddity():
+    pairs = parse_summary("Columns-70, Beams-163\nBraces = 12\nLintels: 37~20")
+    assert [(p["kind"], p["n"], p["alt"]) for p in pairs] == [
+        ("column", 70, None),
+        ("beam", 163, None),
+        ("brace", 12, None),
+        ("other", 37, 20),
+    ]
+    assert summary_counts(pairs) == {"column": 70, "beam": 163, "brace": 12, "other": 37}
+    assert parse_summary("") == [] and parse_summary("no numbers here") == []
+
+
+def test_yellow_and_the_named_prefixes_only():
+    assert is_yellow((1, 1, 0)) and is_yellow([1.0, 1.0, 0.5])
+    assert not is_yellow((0, 1, 0)) and not is_yellow((1, 0.7, 0.5)) and not is_yellow(None)
+    assert [mark_kind(p) for p in ("B", "C", "VB", "HB", "KB", "L", None)] == [
+        "beam",
+        "column",
+        "brace",
+        "brace",
+        None,
+        None,
+        None,
+    ]
+
+
+def test_the_firm_is_only_the_hand_filled_id_and_never_a_name():
+    assert firm_label(None) == "firm-?" and firm_label("") == "firm-?"
+    assert firm_label("firm-A") == "firm-A" and firm_label("firm-AB") == "firm-AB"
+    assert firm_label("Acme Structural Engineers") == "firm-? (not an id)"
+    jobs = [
+        {"job": j, "pages": 1, "page_kinds": {"vector": 1}, "text": {"real": 1},
+         "marked_pages": [], "symbol_kinds": {}, "unmapped_prefixes": {}, "summary": None,
+         "summary_counts": {}, "summary_odd": [], "calibrated_pages": 0, "duplicate_flag": "",
+         "usable_answer_key": False, "summary_vs_symbols": {}}
+        for j in ("job-901", "job-902", "job-903")
+    ]  # fmt: skip
+    doc = report(jobs, {"job-901": "firm-A", "job-902": "Acme Inc", "job-903": None})
+    assert "| firm-A |" in doc and "Acme" not in doc
+    assert "Firms of record: 1 distinct, plus 2 job(s)" in doc
+
+
+def test_pairing_needs_the_same_page_count_and_a_unique_best_match():
+    m = [Doc(Path("m1"), 3, ["a", "b", None]), Doc(Path("m2"), 2, ["x", "y"])]
+    d = [Doc(Path("d1"), 2, ["x", "y"]), Doc(Path("d2"), 3, ["a", "b", "c"])]
+    assert pair(m, d) == ({0: 1, 1: 0}, [])
+    tie = [Doc(Path("d1"), 2, ["x"]), Doc(Path("d2"), 2, ["y"])]
+    assert pair([Doc(Path("m"), 2, ["x", "y"])], tie) == ({}, [0])
+    assert pair([Doc(Path("m"), 2, ["q"])], tie) == ({}, [0])
+    assert shared_share(["a", "b", None], ["a", "b", "c", "d"]) == 1.0
+    assert merge_ratios([48.0, 48.2, 96.0]) == [48.0, 96.0]
+
+
+def _annot_markup(path: Path, yellow: bool) -> None:
+    doc = pymupdf.open()
+    page = doc.new_page(width=600, height=400)
+    text = "Columns-2, Beams-1" if yellow else "ESTIMATED BY: X\nINCLUDES: Columns-2, Beams-1"
+    box = page.add_freetext_annot(pymupdf.Rect(20, 20, 200, 80), text)
+    if yellow:
+        doc.xref_set_key(box.xref, "C", "[1 1 0]")
+    for i, tag in enumerate(("C1", "C2", "B1")):
+        x = 100 + 80 * i
+        pts = (
+            [(x, 200), (x + 10, 220), (x - 10, 220)]
+            if tag[0] == "C"
+            else [
+                (x + dx, 200 + dy)
+                for dx, dy in ((0, -8), (6, -6), (8, 0), (6, 6), (0, 8), (-6, 6), (-8, 0), (-6, -6))
+            ]
+        )
+        poly = page.add_polygon_annot(pts)
+        reply = page.add_freetext_annot(pymupdf.Rect(x + 12, 190, x + 40, 205), tag)
+        doc.xref_set_key(reply.xref, "IRT", f"{poly.xref} 0 R")
+    doc.save(path)
+
+
+def test_summary_box_rules_and_symbol_prefixes(tmp_path):
+    p = tmp_path / "yellow.pdf"
+    _annot_markup(p, yellow=True)
+    m = _markup(p)
+    assert m["summary"]["rule"] == "yellow_freetext"
+    assert summary_counts(m["summary"]["pairs"]) == {"column": 2, "beam": 1}
+    assert m["pages"][0]["symbols"] == 3 and m["pages"][0]["prefixes"] == {"C": 2, "B": 1}
+    q = tmp_path / "front.pdf"
+    _annot_markup(q, yellow=False)
+    assert _markup(q)["summary"]["rule"] == "front_sheet_keywords"

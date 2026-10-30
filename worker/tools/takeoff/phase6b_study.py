@@ -28,7 +28,7 @@ from src.linking.structural import class_table, lines_in_box, suggest_classes
 from src.review.auto_run import whole_sheet_box
 from tools.takeoff import stage1_measure as s1
 from tools.takeoff.colour_study import colour_key
-from tools.takeoff.common import TAKEOFFS, drawing_documents
+from tools.takeoff.common import TAKEOFFS, drawing_documents, takeoff_inventory
 from tools.takeoff.phase6b_lib import (
     MIN_LINE_PT,
     RADII,
@@ -347,7 +347,7 @@ def pre_a_page(syms, sheet, members) -> dict:
 
 # ---- commands -----------------------------------------------------------------------------------
 def cmd_run() -> None:
-    inv = json.loads((TAKEOFFS / "inventory.json").read_text())
+    inv = takeoff_inventory()
     draws = drawing_documents()
     runs = {}
     for name, info in sorted(inv.items()):
@@ -363,7 +363,7 @@ def cmd_run() -> None:
 
 
 def cmd_score() -> None:
-    inv = json.loads((TAKEOFFS / "inventory.json").read_text())
+    inv = takeoff_inventory()
     draws = drawing_documents()
     runs = json.loads(RUNS.read_text())
     stage1 = {

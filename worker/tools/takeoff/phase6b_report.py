@@ -7,7 +7,7 @@ import json
 
 import pymupdf
 
-from tools.takeoff.common import PRIVATE, TAKEOFFS, drawing_documents
+from tools.takeoff.common import PRIVATE, TAKEOFFS, drawing_documents, takeoff_inventory
 from tools.takeoff.phase6b_lib import page_agreement, prf, verdict
 
 BASES = ("label_first", "line_with_label", "line_first")
@@ -176,7 +176,7 @@ def report() -> None:
 
 
 # ---- Part E -------------------------------------------------------------------------------------
-def shots() -> None:
+def shots(include_test: bool = False) -> None:
     d = load()
     pages = [p for p in d["pages"] if p["theirs"] >= 10 and not p["raster"]]
 
@@ -189,8 +189,8 @@ def shots() -> None:
     agree, disagree = ranked[:6], sorted(pages, key=lambda p: (-worst(p), p["job"], p["page"]))[:6]
     out = PRIVATE / "shots" / "phase6b"
     out.mkdir(parents=True, exist_ok=True)
-    inv = json.loads((TAKEOFFS / "inventory.json").read_text())
-    draws = drawing_documents()
+    inv = takeoff_inventory(include_test)
+    draws = drawing_documents(include_test)
     by_job = {i["match"]: (n, i) for n, i in inv.items() if i.get("match")}
     listing = []
     from tools.takeoff import phase6b_study as st

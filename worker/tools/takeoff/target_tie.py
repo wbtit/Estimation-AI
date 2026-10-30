@@ -11,7 +11,9 @@ import json
 import re
 
 import pymupdf
+import sys
 
+from tools.jobs import include_test_from_argv
 from tools.takeoff.common import PRIVATE, drawing_documents, takeoff_files
 from tools.takeoff.target_workbook import norm_ref, num
 
@@ -44,8 +46,9 @@ def main() -> None:
     print("distinct references:", len(refs), "| shapes (letters=A, digits=9):", shape[:6])
     print("A) found among the job-001 sheet numbers in docs:", len(refs & set(JOB001_SHEETS)))
     res = {}
-    paths = {f"{j}": p for j, p in drawing_documents().items()}
-    paths.update({p.name: p for p in takeoff_files() if p.suffix == ".pdf"})
+    inc = include_test_from_argv(sys.argv)
+    paths = {f"{j}": p for j, p in drawing_documents(inc).items()}
+    paths.update({p.name: p for p in takeoff_files(inc) if p.suffix == ".pdf"})
     for key, p in paths.items():
         found: set[str] = set()
         pages_text = 0

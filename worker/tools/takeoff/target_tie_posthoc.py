@@ -7,7 +7,9 @@ import json
 import re
 
 import pymupdf
+import sys
 
+from tools.jobs import include_test_from_argv
 from tools.takeoff.common import PRIVATE, drawing_documents
 from tools.takeoff.target_tie import lines_norm
 from tools.takeoff.target_workbook import norm_ref, num
@@ -22,7 +24,7 @@ def main() -> None:
     }
     refs.discard("")
     out = {}
-    for job, p in drawing_documents().items():
+    for job, p in drawing_documents(include_test_from_argv(sys.argv)).items():
         hit: set[str] = set()
         pages: set[int] = set()
         with pymupdf.open(p) as doc:

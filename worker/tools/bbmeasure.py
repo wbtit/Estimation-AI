@@ -48,10 +48,18 @@ def _value(text: str, start: int, resolve: Callable[[int], str]) -> str | None:
 
 def bb_measure_ratio(obj: str, resolve: Callable[[int], str]) -> float | None:
     """Real length / drawn length from an annotation's /BBMeasure, or None."""
-    i = obj.find("/BBMeasure")
-    if i < 0:
-        return None
-    measure = _value(obj, i + len("/BBMeasure"), resolve)
+    return measure_ratio(obj, resolve, "/BBMeasure")
+
+
+def measure_ratio(obj: str, resolve: Callable[[int], str], key: str = "/Measure") -> float | None:
+    """Real length / drawn length from the measure dictionary under `key` (/BBMeasure, or the
+    standard /Measure of an annotation or a page viewport), or None. `/Measure` never matches
+    inside `/BBMeasure`."""
+    measure = None
+    for m in re.finditer(r"(?<![A-Za-z])" + re.escape(key) + r"(?![A-Za-z])", obj):
+        measure = _value(obj, m.end(), resolve)  # a key holds a dictionary; `/Type /Measure` none
+        if measure:
+            break
     if not measure or "/Measure" not in measure:
         return None
     x = re.search(r"/X\s*\[", measure)

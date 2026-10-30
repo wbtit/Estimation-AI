@@ -11,8 +11,10 @@ import urllib.request
 
 import numpy as np
 import pymupdf
+import sys
 
-from tools.takeoff.common import TAKEOFFS
+from tools.jobs import include_test_from_argv
+from tools.takeoff.common import TAKEOFFS, takeoff_inventory
 from tools.takeoff.geometry_study import dist_points_segments, vertices_of
 
 API = "http://127.0.0.1:3000"
@@ -24,7 +26,7 @@ def get(p):
 
 
 def main() -> None:
-    inv = json.loads((TAKEOFFS / "inventory.json").read_text())
+    inv = takeoff_inventory(include_test_from_argv(sys.argv))
     name = next(k for k, v in inv.items() if v.get("match") == "job-005")
     pmap = {
         v: int(k) for k, v in inv[name]["page_map"].items()

@@ -15,7 +15,7 @@ import sys
 import pymupdf
 
 from tools.takeoff import phase9_lib as P
-from tools.takeoff.common import TAKEOFFS
+from tools.takeoff.common import TAKEOFFS, takeoff_inventory
 from tools.takeoff.geometry_study import vertices_of
 
 SLOTS = 15
@@ -24,7 +24,7 @@ OUT = TAKEOFFS / "phase9_fields.json"
 
 
 def matched_files() -> list[tuple[str, dict]]:
-    inv = json.loads((TAKEOFFS / "inventory.json").read_text())
+    inv = takeoff_inventory()
     return [(n, i) for n, i in sorted(inv.items()) if i.get("match")]
 
 

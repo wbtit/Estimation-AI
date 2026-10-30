@@ -10,14 +10,15 @@ from __future__ import annotations
 
 import collections
 import csv
-import json
 import math
 import re
 
 import pymupdf
+import sys
 
+from tools.jobs import include_test_from_argv
 from tools.takeoff.colour_study import colour_key
-from tools.takeoff.common import TAKEOFFS
+from tools.takeoff.common import TAKEOFFS, takeoff_inventory
 from tools.takeoff.tag_study import RADIUS
 
 COLUMNS = [
@@ -39,8 +40,8 @@ def prefix_of(text: str) -> str:
     return m.group(0).upper() if m else "(none)"
 
 
-def collect() -> dict[str, dict]:
-    inv = json.load(open(TAKEOFFS / "inventory.json"))
+def collect(include_test: bool = False) -> dict[str, dict]:
+    inv = takeoff_inventory(include_test)
     acc: dict[str, dict] = collections.defaultdict(
         lambda: {
             "n": 0,
@@ -83,7 +84,7 @@ def collect() -> dict[str, dict]:
 
 
 def main() -> None:
-    acc = collect()
+    acc = collect(include_test_from_argv(sys.argv))
     rows = []
     for p, e in sorted(acc.items(), key=lambda kv: -kv[1]["n"]):
         col, cn = e["colour"].most_common(1)[0]

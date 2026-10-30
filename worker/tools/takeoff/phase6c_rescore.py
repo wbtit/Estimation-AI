@@ -19,7 +19,7 @@ from src.linking.labels import page_labels
 from src.linking.lines import page_lines
 from src.linking.structural import class_table, lines_in_box, suggest_classes
 from src.review.auto_run import whole_sheet_box
-from tools.takeoff.common import TAKEOFFS
+from tools.takeoff.common import TAKEOFFS, takeoff_inventory
 from tools.takeoff.phase6b_lib import prf
 from tools.takeoff.phase6b_study import BASES, bases_for, f1_at12, score_pieces, their_symbols
 from tools.takeoff.phase6c_trace import RUNS, connect, stored_pdf
@@ -81,7 +81,7 @@ if __name__ == "__main__":
     job = sys.argv[1]
     pairs = [tuple(int(v) for v in a.split(":")) for a in sys.argv[2:]]
     runs = json.loads(RUNS.read_text())
-    inv = json.loads((TAKEOFFS / "inventory.json").read_text())
+    inv = takeoff_inventory()
     name = next(n for n, i in inv.items() if i.get("match") == job)
     conn = connect()
     pid = runs[job]["project_id"]

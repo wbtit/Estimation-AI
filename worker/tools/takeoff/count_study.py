@@ -17,7 +17,7 @@ import pymupdf
 
 from src.linking.lines import page_lines
 from src.linking.structural import class_table, lines_in_box, suggest_classes
-from tools.takeoff.common import PRIVATE, TAKEOFFS, drawing_documents
+from tools.takeoff.common import PRIVATE, TAKEOFFS, drawing_documents, takeoff_inventory
 from tools.takeoff.geometry_study import dist_points_segments, vertices_of
 
 TOLS = (6.0, 12.0, 25.0)
@@ -108,7 +108,7 @@ def run(job: str, name: str, info: dict, doc_path) -> dict:
 
 
 def main(argv: list[str]) -> None:
-    inv = json.loads((TAKEOFFS / "inventory.json").read_text())
+    inv = takeoff_inventory()
     draws = drawing_documents()
     allres = {}
     for name, info in sorted(inv.items()):

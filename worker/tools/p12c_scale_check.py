@@ -19,14 +19,14 @@ from src.config import load_config
 from src.db import connect
 from tools.bbmeasure import bb_measure_ratio
 from tools.p12c_lib import JOBS, RATIO_MERGE, _frames, project_name
-from tools.takeoff.common import PRIVATE, TAKEOFFS
+from tools.takeoff.common import PRIVATE, TAKEOFFS, takeoff_inventory
 
 AGREE = 0.01
 OUT = PRIVATE / "eval" / "p12c" / "scale_check.json"
 
 
 def theirs_by_page() -> dict[str, dict[int, list[float]]]:
-    inv = json.loads((TAKEOFFS / "inventory.json").read_text())
+    inv = takeoff_inventory()
     frames = _frames()
     out: dict[str, dict[int, list[float]]] = collections.defaultdict(
         lambda: collections.defaultdict(list)

@@ -12,10 +12,12 @@ import collections
 import json
 
 import pymupdf
+import sys
 
 from src.text_layer.items import extract_page_text
 from src.text_layer.parsers.profile import find_profiles
-from tools.takeoff.common import TAKEOFFS
+from tools.jobs import include_test_from_argv
+from tools.takeoff.common import TAKEOFFS, takeoff_inventory
 
 STRIP = 0.13
 BANDS = ["equal", "<=10%", "<=25%", "<=50%", ">50%"]
@@ -67,7 +69,7 @@ def page_counts(page: pymupdf.Page) -> dict | None:
 
 
 def main() -> None:
-    inv = json.load(open(TAKEOFFS / "inventory.json"))
+    inv = takeoff_inventory(include_test_from_argv(sys.argv))
     pages = []
     for name, v in inv.items():
         job = v.get("match")
