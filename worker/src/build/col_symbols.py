@@ -616,6 +616,17 @@ def _symbol(ps, shapes, sh_ids, seg_ids, box, ratio) -> Symbol:
     )
 
 
+def symbol_json(s: Symbol) -> dict:
+    """A symbol as stored in page_symbols (Find similar reads it)."""
+    return {
+        "family": s.family,
+        "box": [round(v, 2) for v in s.box],
+        "centre": [round(v, 2) for v in s.centre],
+        "rotation_deg": s.rotation_deg,
+        "real_in": [round(v, 2) for v in s.real_sides],
+    }
+
+
 # ---- callouts and leaders (2a) ----------
 @dataclass
 class Callout:

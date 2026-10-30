@@ -106,6 +106,7 @@ class PageBuild:
     plates: list[BasePlate] = field(default_factory=list)
     # Phase 14b: the column examples, matches and symbols (None when the flags are off)
     col_result: ColumnResult | None = None
+    text: list[TextLine] = field(default_factory=list)  # the page's text lines in the crop
 
     def column_info(self, k: int) -> dict:
         """How column k was found: the rule, and for a base plate its section type and grid."""
@@ -343,6 +344,7 @@ def build_page(
         removed=removed,
         plates=plates,
         col_result=col_result,
+        text=text,
     )
 
 

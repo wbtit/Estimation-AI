@@ -140,6 +140,15 @@ def test_column_plan_then_framing_page_stores_everything(dbp: DbProject) -> None
     assert {m["kind"] for m in cols} == {"Column"} and {m["type"] for m in cols} == {"column"}
     assert all(m["size_state"] == "undefined" for m in cols)  # no column labels on this page
     assert all(m["tag_number"] is not None for m in cols)
+    # Phase 14b: the page's candidate symbols are stored for Find similar
+    syms = dbp.conn.execute(
+        "SELECT p.symbols, p.rules FROM page_symbols p JOIN build_runs r ON r.id = p.build_run_id"
+        " WHERE p.sheet_id = %s",
+        (plan_id,),
+    ).fetchall()
+    assert len(syms) == 1 and syms[0]["rules"] == "arrow_pt,known_only"
+    # (here the dash-dot grid pieces join each column into one large group: no symbol is kept)
+    assert isinstance(syms[0]["symbols"], list)
 
     _setup(dbp, framing_id, "framing")
     run_id, out = _run(dbp, framing_id)

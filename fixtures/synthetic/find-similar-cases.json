@@ -1,0 +1,17 @@
+{
+  "_note": "SYNTHETIC. Phase 14b find similar (prereg 2b + v2 known families only): a symbol matches an example when the families are equal, the family is not 'unknown', and the sorted real sides [short, long] are each within max(1 in, 15% of the example's). Read by worker/tests/test_col_symbols.py and api/src/__tests__/find-similar.test.ts.",
+  "cases": [
+    {"example": {"family": "hss_square", "real_in": [12, 12]}, "symbol": {"family": "hss_square", "real_in": [12, 12]}, "match": true},
+    {"example": {"family": "hss_square", "real_in": [12, 12]}, "symbol": {"family": "hss_square", "real_in": [12.9, 13]}, "match": true},
+    {"example": {"family": "hss_square", "real_in": [12, 12]}, "symbol": {"family": "hss_square", "real_in": [12, 13.7]}, "match": true},
+    {"example": {"family": "hss_square", "real_in": [12, 12]}, "symbol": {"family": "hss_square", "real_in": [12, 14]}, "match": false},
+    {"example": {"family": "hss_square", "real_in": [4, 4]}, "symbol": {"family": "hss_square", "real_in": [5, 5]}, "match": true},
+    {"example": {"family": "hss_square", "real_in": [4, 4]}, "symbol": {"family": "hss_square", "real_in": [5.1, 5.1]}, "match": false},
+    {"example": {"family": "hss_rect", "real_in": [6, 12]}, "symbol": {"family": "hss_rect", "real_in": [6, 12]}, "match": true},
+    {"example": {"family": "hss_rect", "real_in": [6, 12]}, "symbol": {"family": "hss_square", "real_in": [6, 12]}, "match": false},
+    {"example": {"family": "w_shape", "real_in": [14, 14.5]}, "symbol": {"family": "w_shape", "real_in": [14.2, 16.6]}, "match": true},
+    {"example": {"family": "w_shape", "real_in": [14, 14.5]}, "symbol": {"family": "w_shape", "real_in": [10, 10]}, "match": false},
+    {"example": {"family": "unknown", "real_in": [12, 12]}, "symbol": {"family": "unknown", "real_in": [12, 12]}, "match": false},
+    {"example": {"family": "hss_round", "real_in": [20, 20]}, "symbol": {"family": "hss_round", "real_in": [23, 23]}, "match": true}
+  ]
+}

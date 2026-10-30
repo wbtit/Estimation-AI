@@ -36,6 +36,7 @@ import pymupdf
 from psycopg.types.json import Jsonb
 
 from src.build import RULES_VERSION
+from src.build.col_symbols import V2_RULES, find_symbols, symbol_json
 from src.build.duplicates import mark_duplicate_columns
 from src.build.geom import Pt, angle_deg, angle_diff, project
 from src.build.grids import CROSSING_RULES, Bubble, GridLine
@@ -385,6 +386,23 @@ def _size_fields(att: Attached) -> dict[str, Any]:
     }
 
 
+def store_symbols(conn, sheet_id: str, run_id: str, view_id: str, pb: PageBuild) -> None:
+    """The page's candidate column symbols (real-size filter and v2 rules, whatever the flags)."""
+    syms = (
+        pb.col_result.symbols
+        if pb.col_result is not None
+        else find_symbols(pb.segments, pb.cleaned.keep, pb.setup.crop,
+                          pb.text, pb.bubbles, pb.setup.ratio, True)
+    )  # fmt: skip
+    conn.execute(
+        "INSERT INTO page_symbols (build_run_id, sheet_id, view_id, ratio, rules, symbols)"
+        " VALUES (%s, %s, %s, %s, %s, %s) ON CONFLICT (build_run_id) DO UPDATE SET"
+        " symbols = EXCLUDED.symbols",
+        (run_id, sheet_id, view_id, pb.setup.ratio, ",".join(sorted(V2_RULES)),
+         Jsonb([symbol_json(s) for s in syms])),
+    )  # fmt: skip
+
+
 def store(
     conn, project_id: str, sheet_id: str, run_id: str, sheet, pb: PageBuild, view: View
 ) -> dict:
@@ -460,6 +478,9 @@ def store(
         counts["updated"] += 1
         return str(row["id"])
 
+    # Phase 14b: the candidate symbols of a column plan, for Find similar
+    if pb.setup.role == "column_plan":
+        store_symbols(conn, sheet_id, run_id, view.id, pb)
     # columns of the column plan: members first, so their nodes can point at them
     column_member: dict[int, str] = {}
     column_kind = PILE_KIND if view.row.get("role_name") == PILE_ROLE else COLUMN_KIND
@@ -491,7 +512,24 @@ def store(
             "end_resolution_method": "line_first_build",
             "source_bbox": Jsonb(_box(g.box)),
         }
-        mid = upsert(stable_member_id(key, column_kind, g.centre), fields)
+        kind = column_kind
+        if "family" in info:  # Phase 14b: a column from a confirmed example or its match
+            kind = info["kind"] if column_kind == COLUMN_KIND else column_kind
+            fields.update(
+                kind=kind,
+                rotation_deg=info["rotation_deg"],
+                symbol=None if info["family"] == "unknown" else info["family"],
+                symbol_source=info["rule"].removeprefix("col_"),
+                symbol_flag=info["flag"],
+                symbol_real_in=Jsonb(info["real_in"]),
+            )
+            if info.get("profile") and att.size_state != "sized":
+                fields.update(profile=info["profile"], profile_raw=info["profile"],
+                              size_state="sized")  # fmt: skip
+                fields["build_state"] = "found" if not info["flag"] else "attention"
+            elif info["flag"]:
+                fields["build_state"] = "attention"
+        mid = upsert(stable_member_id(key, kind, g.centre), fields)
         if mid is not None:
             column_member[k] = mid
     glyph_column = {id(g): column_member.get(k) for k, g in enumerate(pb.columns)}

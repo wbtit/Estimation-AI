@@ -300,3 +300,20 @@ def test_v2_arrowheads_by_paper_size_and_unknown_symbols_never_match(page):
     assert [h.symbol.family for h in v2.hits] == ["hss_square", "hss_square"]
     clicked = label_columns(ps, keep, CROP, [], [], ratio, flags, clicks=[(604, 403)])
     assert clicked.hits == []  # a click on an unknown symbol is no example under v2
+
+
+def test_find_similar_shared_cases():
+    """The same cases the API's Find similar is tested with (fixtures/synthetic)."""
+    import json
+    from pathlib import Path
+
+    from src.build.col_symbols import Symbol, same_kind
+
+    path = Path(__file__).resolve().parents[2] / "fixtures/synthetic/find-similar-cases.json"
+
+    def sym(d):
+        a, b = d["real_in"]
+        return Symbol([], [], (0, 0, 1, 1), d["family"], ((4,), False), 0.0, a, b, False, False)
+
+    for c in json.loads(path.read_text())["cases"]:
+        assert same_kind(sym(c["symbol"]), sym(c["example"])) == c["match"], c
