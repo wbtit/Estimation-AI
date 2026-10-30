@@ -389,8 +389,39 @@ export interface MembersTable {
   added_at: Timestamp | null;
   // Phase 11c (migration 020): NULL = the page's first view
   build_view_id: string | null;
+  // Phase 14b (migration 029): the column symbol family, how it was found, the cross-check
+  // reason and the symbol's real size in inches [short, long]
+  symbol: ColumnType<string | null, string | null | undefined, string | null>;
+  symbol_source: ColumnType<
+    'label' | 'similar' | 'click' | 'drawn' | 'find_similar' | null,
+    'label' | 'similar' | 'click' | 'drawn' | 'find_similar' | null | undefined,
+    'label' | 'similar' | 'click' | 'drawn' | 'find_similar' | null
+  >;
+  symbol_flag: ColumnType<string | null, string | null | undefined, string | null>;
+  symbol_real_in: ColumnType<[number, number] | null, string | null | undefined, string | null>;
   created_at: Timestamp;
   updated_at: Timestamp;
+}
+
+/** Phase 14b (migration 029): the candidate column symbols of a column-plan Build. */
+export interface PageSymbolsTable {
+  build_run_id: string;
+  sheet_id: string;
+  view_id: string | null;
+  ratio: ColumnType<string, number | string, number | string>;
+  rules: string;
+  symbols: ColumnType<
+    {
+      family: string;
+      box: [number, number, number, number];
+      centre: [number, number];
+      rotation_deg: number;
+      real_in: [number, number];
+    }[],
+    string,
+    string
+  >;
+  created_at: Generated<Date>;
 }
 
 export type BuildState = 'found' | 'needs_review' | 'attention';
@@ -422,7 +453,8 @@ export type CountActionName =
   | 'approve'
   | 'project'
   | 'session'
-  | 'export';
+  | 'export'
+  | 'find_similar';
 
 /** actor / session_id (migration 027): the trigger fills them; code may leave them out. */
 type Tagged = ColumnType<string | null, string | null | undefined, never>;
@@ -812,6 +844,7 @@ export interface ViewUndoTable {
 }
 
 export interface Database {
+  page_symbols: PageSymbolsTable;
   projects: ProjectsTable;
   sheets: SheetsTable;
   members: MembersTable;

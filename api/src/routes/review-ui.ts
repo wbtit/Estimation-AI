@@ -22,6 +22,12 @@ import { defaultCatalogEdition, defaultCatalogLookup } from '../catalog/lookup.j
 import { getDb } from '../db/client.js';
 import type { Database, SheetsTable, SnapshotPiece } from '../db/types.js';
 import { XLSX_MIME } from '../excel/index.js';
+import {
+  findSimilar,
+  SYMBOL_FAMILIES,
+  symbolAt,
+  type StoredSymbol,
+} from '../review/find-similar.js';
 import { recordAction, type EditEntry } from '../review/actions.js';
 import { answerKey } from '../review/answer-key.js';
 import { logCountAction } from '../review/count-log.js';
@@ -126,6 +132,91 @@ export function snapshotSetupOf(setup: Record<string, unknown>): SetupValues {
     scale_ratio: (v('scale').value as number | null) ?? null,
     tos_mm: (v('tos').value_mm as number | null) ?? null,
     column_plan: (v('column_plan').value as string | null) ?? null,
+  };
+}
+
+/** The members row of a piece a person drew (or accepted from Find similar). */
+export function drawnValues(p: {
+  projectId: string;
+  sheetId: string;
+  runId: string;
+  viewId: string | null;
+  editor: string;
+  kind: string;
+  prefix: string;
+  number: number;
+  type: string;
+  text: string | null;
+  profile: string | null;
+  a: PagePt;
+  b: PagePt | null;
+  ratio: number;
+  tos: number | null;
+  symbol: string | null;
+  symbolSource: 'drawn' | 'find_similar' | null;
+  rotation: number | null;
+  realIn: [number, number] | null;
+}) {
+  const column = p.type === 'column';
+  const r1 = (v: number) => Math.round(v * 10) / 10;
+  const r2 = (v: number) => Math.round(v * 100) / 100;
+  const pa = planMm(p.a, p.ratio);
+  const pb = p.b ? planMm(p.b, p.ratio) : pa;
+  const b = p.b;
+  return {
+    project_id: p.projectId,
+    sheet_id: p.sheetId,
+    member_id: `LF-P-${randomUUID().replace(/-/g, '').slice(0, 16)}`,
+    origin: 'manual',
+    type: p.type,
+    kind: p.kind,
+    kind_evidence: JSON.stringify({ source: 'person' }),
+    quantity: 1,
+    profile_raw: p.text,
+    profile: p.profile,
+    tag_prefix: p.prefix,
+    tag_number: p.number,
+    build_run_id: p.runId,
+    build_view_id: p.viewId,
+    page_x0: r2(p.a[0]),
+    page_y0: r2(p.a[1]),
+    page_x1: b ? r2(b[0]) : null,
+    page_y1: b ? r2(b[1]) : null,
+    size_state: p.profile ? 'sized' : 'undefined',
+    build_state: p.profile ? 'found' : 'attention',
+    start_x_mm: r1(pa[0]),
+    start_y_mm: r1(pa[1]),
+    start_z_mm: column ? null : p.tos,
+    end_x_mm: r1(pb[0]),
+    end_y_mm: r1(pb[1]),
+    end_z_mm: column ? null : p.tos,
+    start_elevation_mm: column ? null : p.tos,
+    end_elevation_mm: column ? null : p.tos,
+    start_resolution_method: 'manual',
+    end_resolution_method: 'manual',
+    length_source: column ? 'manual' : 'plan_geometry',
+    plan_sheet_id: p.sheetId,
+    plan_start_x_mm: r1(pa[0]),
+    plan_start_y_mm: r1(pa[1]),
+    plan_end_x_mm: r1(pb[0]),
+    plan_end_y_mm: r1(pb[1]),
+    plan_scale_ratio: p.ratio,
+    plan_method: 'manual',
+    source_bbox: JSON.stringify({
+      x0: Math.min(p.a[0], b ? b[0] : p.a[0]) - (column ? 6 : 0),
+      y0: Math.min(p.a[1], b ? b[1] : p.a[1]) - (column ? 6 : 0),
+      x1: Math.max(p.a[0], b ? b[0] : p.a[0]) + (column ? 6 : 0),
+      y1: Math.max(p.a[1], b ? b[1] : p.a[1]) + (column ? 6 : 0),
+    }),
+    field_sources: '{}',
+    field_confidence: '{}',
+    review_status: 'edited',
+    added_by: p.editor,
+    added_at: new Date(),
+    rotation_deg: p.rotation,
+    symbol: p.symbol,
+    symbol_source: p.symbolSource,
+    symbol_real_in: p.realIn ? JSON.stringify(p.realIn) : null,
   };
 }
 
@@ -837,6 +928,8 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
       b?: PagePt | null;
       profile_text?: string | null;
       view_id?: string;
+      symbol?: string;
+      rotation_deg?: number;
     };
   }>(
     '/api/projects/:projectId/sheets/:sheetId/line-first/pieces',
@@ -854,6 +947,9 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
             b: { anyOf: [point, { type: 'null' }] },
             profile_text: { type: ['string', 'null'], maxLength: 80 },
             view_id: uuid,
+            // Phase 14b: the palette symbol of a drawn column and its rotation
+            symbol: { enum: [...SYMBOL_FAMILIES] },
+            rotation_deg: { type: 'number', minimum: -360, maximum: 360 },
           },
         },
       },
@@ -883,10 +979,6 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
       const text = body.profile_text?.trim() || null;
       const parsed = text ? parseProfile(text) : null;
       const tos = num(s.tos_mm);
-      const pa = planMm(body.a, ratio);
-      const pb = b ? planMm(b, ratio) : pa;
-      const r1 = (v: number) => Math.round(v * 10) / 10;
-      const r2 = (v: number) => Math.round(v * 100) / 100;
       const out = await db()
         .transaction()
         .execute(async (trx) => {
@@ -917,60 +1009,31 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
               .returning('id')
               .executeTakeFirstOrThrow();
           const number = await takeTagNumbers(trx, projectId, s.id, info.prefix);
-          const sizeState = parsed ? 'sized' : 'undefined';
           const row = await trx
             .insertInto('members')
-            .values({
-              project_id: projectId,
-              sheet_id: s.id,
-              member_id: `LF-P-${randomUUID().replace(/-/g, '').slice(0, 16)}`,
-              origin: 'manual',
-              type,
-              kind: info.kind,
-              kind_evidence: JSON.stringify({ source: 'person' }),
-              quantity: 1,
-              profile_raw: text,
-              profile: parsed?.canonical ?? null,
-              tag_prefix: info.prefix,
-              tag_number: number,
-              build_run_id: run.id,
-              build_view_id: view.row.position === 1 ? null : view.row.id,
-              page_x0: r2(body.a[0]),
-              page_y0: r2(body.a[1]),
-              page_x1: b ? r2(b[0]) : null,
-              page_y1: b ? r2(b[1]) : null,
-              size_state: sizeState,
-              build_state: parsed ? 'found' : 'attention',
-              start_x_mm: r1(pa[0]),
-              start_y_mm: r1(pa[1]),
-              start_z_mm: column ? null : tos,
-              end_x_mm: r1(pb[0]),
-              end_y_mm: r1(pb[1]),
-              end_z_mm: column ? null : tos,
-              start_elevation_mm: column ? null : tos,
-              end_elevation_mm: column ? null : tos,
-              start_resolution_method: 'manual',
-              end_resolution_method: 'manual',
-              length_source: column ? 'manual' : 'plan_geometry',
-              plan_sheet_id: s.id,
-              plan_start_x_mm: r1(pa[0]),
-              plan_start_y_mm: r1(pa[1]),
-              plan_end_x_mm: r1(pb[0]),
-              plan_end_y_mm: r1(pb[1]),
-              plan_scale_ratio: ratio,
-              plan_method: 'manual',
-              source_bbox: JSON.stringify({
-                x0: Math.min(body.a[0], b ? b[0] : body.a[0]) - (column ? 6 : 0),
-                y0: Math.min(body.a[1], b ? b[1] : body.a[1]) - (column ? 6 : 0),
-                x1: Math.max(body.a[0], b ? b[0] : body.a[0]) + (column ? 6 : 0),
-                y1: Math.max(body.a[1], b ? b[1] : body.a[1]) + (column ? 6 : 0),
-              }),
-              field_sources: '{}',
-              field_confidence: '{}',
-              review_status: 'edited',
-              added_by: editor,
-              added_at: new Date(),
-            } as never)
+            .values(
+              drawnValues({
+                projectId,
+                sheetId: s.id,
+                runId: run.id,
+                viewId: view.row.position === 1 ? null : view.row.id,
+                editor,
+                kind: info.kind,
+                prefix: info.prefix,
+                number,
+                type,
+                text,
+                profile: parsed?.canonical ?? null,
+                a: body.a,
+                b,
+                ratio,
+                tos,
+                symbol: column ? (body.symbol ?? null) : null,
+                symbolSource: column && body.symbol ? 'drawn' : null,
+                rotation: column ? (body.rotation_deg ?? null) : null,
+                realIn: null,
+              }) as never,
+            )
             .returning('id')
             .executeTakeFirstOrThrow();
           const actionId = await recordAction(trx, editor, [
@@ -1000,6 +1063,144 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
         });
       const [piece] = await loadPieces(db(), projectId, { memberIds: [out] });
       return reply.status(201).send(piece);
+    },
+  );
+
+  // ---- Phase 14b: Find similar ------------------------------------------------------------------
+  // POST /api/projects/:projectId/line-first/pieces/:memberId/find-similar { who, accept? }
+  // From a column (drawn or found), the page's stored candidate symbols (page_symbols of its
+  // Build) with the same family and real size that are not a column yet. Without accept: a
+  // preview (count and points). With accept: one undoable action creating them (same kind and
+  // size as the example), logged as 'find_similar' (session-tagged training data).
+  app.post<{
+    Params: { projectId: string; memberId: string };
+    Body: { who: string; accept?: boolean };
+  }>(
+    '/api/projects/:projectId/line-first/pieces/:memberId/find-similar',
+    {
+      schema: {
+        params: {
+          type: 'object',
+          required: ['projectId', 'memberId'],
+          properties: { projectId: uuid, memberId: uuid },
+        },
+        body: {
+          type: 'object',
+          required: ['who'],
+          additionalProperties: false,
+          properties: { who, accept: { type: 'boolean' } },
+        },
+      },
+    },
+    async (request) => {
+      const { projectId, memberId } = request.params;
+      const editor = trimWho(request.body.who);
+      const [piece] = await loadPieces(db(), projectId, { memberIds: [memberId] });
+      if (!piece || piece.deleted) throw new HttpError(404, { error: 'piece not found' });
+      if (piece.type !== 'column' || !piece.a || !piece.sheet_id)
+        throw new HttpError(400, { error: 'find similar starts from a column' });
+      const sheetId = piece.sheet_id;
+      const rows = await db()
+        .selectFrom('page_symbols')
+        .select(['build_run_id', 'symbols'])
+        .where('sheet_id', '=', sheetId)
+        .orderBy('created_at', 'desc')
+        .execute();
+      const stored = rows.find((r) => r.build_run_id === piece.build_run_id) ?? rows[0];
+      if (!stored)
+        throw new HttpError(409, { error: 'build the page first: its symbols are not stored yet' });
+      const symbols = stored.symbols as StoredSymbol[];
+      const example = symbolAt(piece.a, symbols);
+      if (!example)
+        throw new HttpError(409, {
+          error: 'no drawing symbol under this column: place it on the column symbol',
+        });
+      const columns = (await loadPieces(db(), projectId, { sheetId }))
+        .filter((p) => p.type === 'column' && !p.deleted && p.a)
+        .map((p) => p.a as [number, number]);
+      const matches = findSimilar(example, symbols, columns);
+      const preview = {
+        example: { family: example.family, real_in: example.real_in },
+        count: matches.length,
+        points: matches.map((m) => m.centre),
+      };
+      if (!request.body.accept || matches.length === 0) return { ...preview, accepted: false };
+      const sheet = await loadSheet(projectId, sheetId);
+      const info = (await loadKinds(db())).get(piece.kind ?? 'Column');
+      if (!info) throw new HttpError(400, { error: 'the column kind is not in the list' });
+      const ratio = num(piece.scale_ratio) ?? num(sheet.build_scale_ratio);
+      if (ratio === null) throw new HttpError(409, { error: 'set the scale of the page first' });
+      const runId = piece.build_run_id;
+      if (!runId) throw new HttpError(409, { error: 'the column has no build' });
+      const created = await db()
+        .transaction()
+        .execute(async (trx) => {
+          const ids: string[] = [];
+          for (const m of matches) {
+            const number = await takeTagNumbers(trx, projectId, sheetId, info.prefix);
+            const row = await trx
+              .insertInto('members')
+              .values(
+                drawnValues({
+                  projectId,
+                  sheetId,
+                  runId,
+                  viewId: piece.build_view_id,
+                  editor,
+                  kind: info.kind,
+                  prefix: info.prefix,
+                  number,
+                  type: 'column',
+                  text: piece.profile_raw,
+                  profile: piece.profile,
+                  a: m.centre,
+                  b: null,
+                  ratio,
+                  tos: null,
+                  symbol: m.family,
+                  symbolSource: 'find_similar',
+                  rotation: m.rotation_deg,
+                  realIn: m.real_in,
+                }) as never,
+              )
+              .returning('id')
+              .executeTakeFirstOrThrow();
+            ids.push(row.id);
+          }
+          const actionId = await recordAction(
+            trx,
+            editor,
+            ids.map((id) => ({
+              memberId: id,
+              field: '__created__',
+              before: null,
+              after: { type: 'column', kind: info.kind, profile: piece.profile },
+              status: 'edited' as const,
+            })),
+          );
+          await logCountAction(trx, {
+            projectId,
+            sheetId,
+            memberId,
+            action: 'find_similar',
+            who: editor,
+            editActionId: actionId,
+            detail: {
+              example_member_id: memberId,
+              created: ids.length,
+              family: example.family,
+              real_in: example.real_in,
+              member_ids: ids,
+            },
+          });
+          return { actionId, ids };
+        });
+      return {
+        ...preview,
+        accepted: true,
+        action_id: created.actionId,
+        pieces: await loadPieces(db(), projectId, { memberIds: created.ids }),
+      };
     },
   );
 

@@ -63,6 +63,32 @@ export interface PieceView {
   /** Plan frame end points in mm (x right, y up), z = elevation or 0. */
   start: [number, number, number] | null;
   end: [number, number, number] | null;
+  /** Phase 14b: the column symbol family, how it was found, the cross-check reason, the drawn
+   * rotation, the symbol's real size [short, long] in and the section's [width, depth] in from
+   * the catalog (the marker is drawn from the profile first). */
+  symbol: string | null;
+  symbol_source: string | null;
+  symbol_flag: string | null;
+  rotation_deg: number | null;
+  symbol_real_in: [number, number] | null;
+  section_in: [number, number] | null;
+}
+
+/** [width, depth] in inches of a column section from its catalog properties (W/HP/S/M: bf x d;
+ * rectangular HSS: B x Ht; round HSS / PIPE: OD x OD; C / MC: bf x d), or null. */
+export function sectionInches(
+  family: string | null,
+  props: Record<string, unknown> | null,
+): [number, number] | null {
+  if (!props) return null;
+  const n = (k: string) => {
+    const v = Number(props[k]);
+    return Number.isFinite(v) && v > 0 ? v : null;
+  };
+  if (n('OD') !== null) return [n('OD')!, n('OD')!];
+  if (family === 'HSS' && n('B') !== null && n('Ht') !== null) return [n('B')!, n('Ht')!];
+  if (n('bf') !== null && n('d') !== null) return [n('bf')!, n('d')!];
+  return null;
 }
 
 /**
@@ -136,6 +162,35 @@ export async function loadPieces(
     .execute();
   const editsOf = new Map<string, { field_name: string; corrected_value: unknown }[]>();
   for (const e of edits) editsOf.set(e.member_id, [...(editsOf.get(e.member_id) ?? []), e]);
+  // Phase 14b: catalog sections of the column profiles (2C / 2MC: twice the channel's width)
+  const colProfiles = [
+    ...new Set(
+      rows
+        .filter((r) => r.type === 'column')
+        .map((r) => views.get(r.id)?.profile ?? r.profile)
+        .filter((p): p is string => !!p)
+        .map((p) => p.toUpperCase().replace(/^2(?=M?C)/, '')),
+    ),
+  ];
+  const catalog = new Map(
+    colProfiles.length
+      ? (
+          await db
+            .selectFrom('catalog_shapes')
+            .select(['shape_name', 'family', 'properties'])
+            .where('shape_name', 'in', colProfiles)
+            .execute()
+        ).map((c) => [c.shape_name.toUpperCase(), c])
+      : [],
+  );
+  const sectionOf = (profile: string | null): [number, number] | null => {
+    if (!profile) return null;
+    const up = profile.toUpperCase();
+    const two = /^2M?C/.test(up);
+    const c = catalog.get(two ? up.slice(1) : up);
+    const dims = c ? sectionInches(c.family, c.properties as Record<string, unknown>) : null;
+    return dims && two ? [dims[0] * 2, dims[1]] : dims;
+  };
   const out: PieceView[] = [];
   for (const r of rows) {
     const v = views.get(r.id);
@@ -210,6 +265,12 @@ export async function loadPieces(
       build_view_id: r.build_view_id,
       start,
       end,
+      symbol: r.symbol ?? null,
+      symbol_source: r.symbol_source ?? null,
+      symbol_flag: r.symbol_flag ?? null,
+      rotation_deg: num(r.rotation_deg),
+      symbol_real_in: (r.symbol_real_in as [number, number] | null) ?? null,
+      section_in: v.type === 'column' ? sectionOf(v.profile) : null,
     });
   }
   return out;

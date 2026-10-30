@@ -143,6 +143,12 @@ function fin(over: Partial<PieceView>): PieceView {
     build_view_id: null,
     start: null,
     end: null,
+    symbol: null,
+    symbol_source: null,
+    symbol_flag: null,
+    rotation_deg: null,
+    symbol_real_in: null,
+    section_in: null,
     ...over,
   };
 }
