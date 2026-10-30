@@ -257,3 +257,45 @@ def pytest_approx(v: float):
     import pytest
 
     return pytest.approx(v, abs=0.2)
+
+
+def test_a_detail_page_with_only_section_words_is_a_section():
+    """Phase 14a: Detail and Section are two roles; SECTION alone gives Section."""
+    from src.build.views import detail_rules, role_name
+
+    assert detail_rules("view titles match section; also general_notes") == {"section"}
+    assert detail_rules("title match connection, detail, section") == {
+        "connection",
+        "detail",
+        "section",
+    }
+    assert detail_rules(None) == set()
+    assert role_name(None, "detail", "view titles match section") == "Section"
+    assert role_name(None, "detail", "title match section; also schedule_legend") == "Section"
+    assert role_name(None, "detail", "title match detail, section") == "Detail"
+    assert role_name(None, "detail", "view titles match connection, detail") == "Detail"
+    assert role_name(None, "detail") == "Detail"
+    assert role_name(None, "elevation", "view titles match section") == "Elevation"
+    assert role_name("framing", "detail", "view titles match section") == "Framing plan"
+
+
+def test_migration_028_section_rule_matches_the_python_rule(dbp: DbProject):
+    """The SQL that moved existing pages and the suggestion rule agree (Phase 14a)."""
+    from src.build.views import detail_rules
+
+    reasons = [
+        "view titles match section",
+        "view titles match section; also general_notes",
+        "title match detail, section",
+        "title and view titles match section; also framing_plan",
+        "view titles match connection, detail, section; also general_notes",
+        "title match detail",
+        "",
+    ]
+    for r in reasons:
+        sql = dbp.conn.execute(
+            "SELECT btrim(regexp_replace(split_part(%s, ';', 1), '^.* match ', '')) = 'section'"
+            " AS section_only",
+            (r,),
+        ).fetchone()["section_only"]
+        assert sql == (detail_rules(r) == {"section"}), r

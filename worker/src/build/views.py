@@ -8,6 +8,7 @@ page therefore builds exactly as the page did before views. Pure apart from the 
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -42,12 +43,29 @@ class View:
         return self.row["position"] == 1
 
 
-def role_name(role: str | None, page_type_guess: str | None) -> str:
-    """The role name auto mode writes for a proposed role (None = not built)."""
+SECTION_NAME = "Section"
+# the first clause of a page type reason (src/pdf_scan/pagetype.py): "<source> match <rules>"
+_REASON_RULES = re.compile(r"^[a-z ]+ match ([a-z/, ()-]+?)(?:;|$)")
+
+
+def detail_rules(page_type_reason: str | None) -> set[str]:
+    """The rule names (lower case) that chose the page type, from its stored reason."""
+    m = _REASON_RULES.match(page_type_reason or "")
+    return {r.strip() for r in m.group(1).split(",")} if m else set()
+
+
+def role_name(
+    role: str | None, page_type_guess: str | None, page_type_reason: str | None = None
+) -> str:
+    """The role name auto mode writes for a proposed role (None = not built). Phase 14a: a detail
+    page whose only matched words are SECTION(S) is a Section; any DETAIL or CONNECTION word keeps
+    Detail."""
     if role == "column_plan" and page_type_guess == "foundation_plan":
         return "Foundation plan"
     if role:
         return NAME_OF_ROLE[role]
+    if page_type_guess == "detail" and detail_rules(page_type_reason) == {"section"}:
+        return SECTION_NAME
     return NAME_OF_GUESS.get(page_type_guess or "", SKIP_NAME)
 
 
