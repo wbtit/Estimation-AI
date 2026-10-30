@@ -35,7 +35,7 @@ import psycopg
 import pymupdf
 from psycopg.types.json import Jsonb
 
-from src.build import RULES_VERSION
+from src.build import RULES_VERSION, col_image
 from src.build.col_symbols import find_symbols, symbol_json
 from src.build.duplicates import mark_duplicate_columns
 from src.build.geom import Pt, angle_deg, angle_diff, project
@@ -346,6 +346,8 @@ def build_sheet(conn: psycopg.Connection, config: WorkerConfig, run_id: str) -> 
                 _legend(conn, project_id),
                 plan_ref,
             )
+            if setup.role == "column_plan":
+                cache_page_ink(conn, config, sheet_id, run_id, doc[sheet["page_index"]], pb)
         counts = store(conn, project_id, sheet_id, run_id, sheet, pb, view)
         _finish(conn, run_id, "done", counts=counts, notes=pb.notes)
         reg = Jsonb(pb.registration.to_json()) if pb.registration else None
@@ -432,6 +434,24 @@ def _size_fields(att: Attached) -> dict[str, Any]:
         "size_state": att.size_state,
         "label_evidence": Jsonb(att.evidence()),
     }
+
+
+def cache_page_ink(conn, config, sheet_id: str, run_id: str, page, pb: PageBuild) -> None:
+    """Phase 14e: the cleaned ink of a column plan's crop, rendered once at Build time for Find
+    similar (src/build/col_image.py cache); the files of the view's older Builds go. A failure
+    here never fails the Build (Find similar then renders on its first click)."""
+    try:
+        grid = [(g.p0, g.p1) for g in pb.grid_lines]
+        r = col_image.render(page, pb.setup.crop, pb.setup.ratio, grid, col_image.Settings())
+        col_image.save_raster(col_image.cache_path(config.upload_dir, run_id), r)
+        for row in conn.execute(
+            "SELECT id FROM build_runs WHERE sheet_id = %s AND id <> %s AND view_id IS NOT"
+            " DISTINCT FROM (SELECT view_id FROM build_runs WHERE id = %s)",
+            (sheet_id, run_id, run_id),
+        ):
+            col_image.cache_path(config.upload_dir, str(row["id"])).unlink(missing_ok=True)
+    except Exception:  # noqa: BLE001 - the cache is an optimisation only
+        log.exception("page ink cache not written for build %s", run_id)
 
 
 def store_symbols(conn, sheet_id: str, run_id: str, view_id: str, pb: PageBuild) -> None:

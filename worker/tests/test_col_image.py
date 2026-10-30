@@ -125,3 +125,46 @@ def test_combine_deduplicates_by_position():
         {"centre": [10.0, 10.0], "source": "vector", "score": None, "rotation": 0},
         {"centre": [40.0, 10.0], "source": "image", "score": 0.7, "rotation": 90},
     ]
+
+
+def test_the_fast_search_equals_the_14d_search_and_the_filter_equals_a_search(page):
+    """Phase 14e: tiles + suppression give the 14d hits; strictness t over one search at 0.60 is
+    the search at t (combined in score order)."""
+    import math
+
+    from src.build import col_image as ci
+
+    draw_scene(page)
+    syms = symbols(page)
+    grid = [((260.0, 40.0), (260.0, 345.0))]
+    r = ci.render(page, CROP, RATIO, grid, Settings())
+    click = (100, 200 - 6 * IN)
+    box = ci.ink_example(r, click, RATIO)
+    for t in (0.6, 0.7, 0.8):
+        new = ci.image_matches(r, box, RATIO, Settings(threshold=t))
+        old = ci.image_matches_14d(r, box, RATIO, Settings(threshold=t))
+        assert [(round(h.centre[0], 3), round(h.centre[1], 3), h.rotation) for h in new] == [
+            (round(h.centre[0], 3), round(h.centre[1], 3), h.rotation) for h in old
+        ]
+        assert all(
+            math.isclose(a.score, b.score, abs_tol=1e-4) for a, b in zip(new, old, strict=True)
+        )
+    low = ci.search(r, RATIO, click, syms, Settings(threshold=0.6))
+    for t in (0.7, 0.8, 0.9):
+        assert (
+            ci.strict(low.combined, t)
+            == ci.search(r, RATIO, click, syms, Settings(threshold=t)).combined
+        )
+
+
+def test_the_cache_round_trip(tmp_path, page):
+    from src.build import col_image as ci
+
+    draw_scene(page)
+    r = ci.render(page, CROP, RATIO, [], Settings())
+    path = ci.cache_path(tmp_path, "run-1")
+    assert ci.load_raster(path) is None  # a miss
+    ci.save_raster(path, r)
+    got = ci.load_raster(path)
+    assert got is not None and (got.clean == r.clean).all()
+    assert (got.z, got.origin, got.crop) == (r.z, r.origin, r.crop)

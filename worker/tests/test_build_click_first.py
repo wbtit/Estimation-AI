@@ -122,3 +122,46 @@ def test_the_find_similar_job_runs_the_image_search_on_the_stored_build(dbp: DbP
     # the same answer twice
     again = run_find_similar(dbp.conn, Job("j", "find_similar", payload, 1, 3), dbp.config)
     assert again["combined"] == out["combined"]
+
+
+def test_the_build_caches_the_page_ink_and_find_similar_hits_or_misses_it(dbp: DbProject) -> None:
+    """Phase 14e: the column plan's cleaned ink is cached at Build time; a click only searches."""
+    from src.build.col_image import cache_path
+    from src.build.similar_job import run_find_similar
+    from src.queue import Job
+
+    plan_id, _ = _pdf(dbp)
+    _setup(dbp, plan_id, "column_plan", tos=False, pen=False)
+    run_id, _ = _run(dbp, plan_id, CLICK)
+    path = cache_path(dbp.config.upload_dir, run_id)
+    assert path.is_file()
+    payload = {"sheet_id": plan_id, "build_run_id": run_id, "click": [XS["A"], YS["1"]]}
+    hit = run_find_similar(dbp.conn, Job("j", "find_similar", payload, 1, 3), dbp.config)
+    assert hit["cache"]["hit"] is True
+    path.unlink()
+    miss = run_find_similar(dbp.conn, Job("j", "find_similar", payload, 1, 3), dbp.config)
+    assert miss["cache"]["hit"] is False and path.is_file()  # rendered and saved again
+    assert miss["combined"] == hit["combined"]
+    assert all(c["score"] is None or 0.6 <= c["score"] <= 1.0 for c in hit["combined"])
+    # a rebuild of the view replaces the file of its older Build
+    run2, _ = _run(dbp, plan_id, CLICK)
+    assert cache_path(dbp.config.upload_dir, run2).is_file() and not path.is_file()
+
+
+def test_the_worker_wakes_on_a_notify(dbp: DbProject) -> None:
+    import time
+
+    from src.db import connect
+    from src.main import JOBS_CHANNEL, wait_for_notify
+
+    with connect(dbp.config.database_url) as listener:
+        listener.execute(f"LISTEN {JOBS_CHANNEL}")
+        listener.commit()
+        t0 = time.perf_counter()
+        assert wait_for_notify(listener, 0.2) is False
+        assert time.perf_counter() - t0 >= 0.19
+        dbp.conn.execute(f"NOTIFY {JOBS_CHANNEL}")
+        dbp.conn.commit()
+        t0 = time.perf_counter()
+        assert wait_for_notify(listener, 5.0) is True
+        assert time.perf_counter() - t0 < 1.0

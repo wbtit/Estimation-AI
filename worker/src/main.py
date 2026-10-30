@@ -50,6 +50,14 @@ HANDLERS: dict[str, Handler] = {
 }
 
 
+JOBS_CHANNEL = "jobs"
+
+
+def wait_for_notify(conn: psycopg.Connection, timeout: float) -> bool:
+    """Sleep until a notification on JOBS_CHANNEL arrives or `timeout` passes; True if one came."""
+    return any(True for _ in conn.notifies(timeout=timeout, stop_after=1))
+
+
 def run() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     config = load_config()
@@ -72,6 +80,10 @@ def run() -> None:
     while not stopping:
         try:
             with connect(config.database_url) as conn:
+                # Phase 14e: the API notifies on JOBS_CHANNEL when it queues a job a person waits
+                # for (Find similar); the idle wait wakes at once instead of after the poll
+                conn.execute(f"LISTEN {JOBS_CHANNEL}")
+                conn.commit()
                 while not stopping:
                     fail_expired_jobs(conn, config.lock_timeout_seconds)
                     job = (
@@ -80,7 +92,7 @@ def run() -> None:
                         else None
                     )
                     if job is None:
-                        time.sleep(config.poll_interval_seconds)
+                        wait_for_notify(conn, config.poll_interval_seconds)
                         continue
                     try:
                         complete_job(conn, job.id, HANDLERS[job.type](conn, job, config))
