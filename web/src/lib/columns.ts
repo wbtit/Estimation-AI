@@ -147,3 +147,22 @@ export function savePaletteChoice(who: string, c: PaletteChoice): void {
     // private window or blocked storage: not remembered
   }
 }
+
+// ---- Phase 14d: click-first ----------------------------------------------------------------------
+export const COLUMN_HINT = "Click one column (C) → Find similar";
+
+/** The click-first hint shows on a built column-plan page with no columns (none placed yet and no
+ * Find similar open). */
+export function showColumnHint(
+  page: { setup: { role: string | null }; built_at: string | null } | null,
+  pieces: readonly { type: string; deleted: boolean }[],
+  findSimilarOpen: boolean,
+): boolean {
+  return (
+    !!page &&
+    page.setup.role === "column_plan" &&
+    !!page.built_at &&
+    !findSimilarOpen &&
+    !pieces.some((p) => p.type === "column" && !p.deleted)
+  );
+}

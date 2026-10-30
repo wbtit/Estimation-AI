@@ -2,6 +2,8 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   ALL_FAMILIES,
+  COLUMN_HINT,
+  showColumnHint,
   loadPaletteChoice,
   markerSizePt,
   PALETTE,
@@ -107,5 +109,30 @@ describe("column symbols", () => {
     });
     expect(loadPaletteChoice("bob").family).toBe("w_shape");
     vi.unstubAllGlobals();
+  });
+});
+
+describe("click-first hint (Phase 14d)", () => {
+  const page = { setup: { role: "column_plan" }, built_at: "2026-10-30" };
+  it("shows on a built column-plan page with no columns", () => {
+    expect(showColumnHint(page, [], false)).toBe(true);
+    expect(
+      showColumnHint(page, [{ type: "column", deleted: true }], false),
+    ).toBe(true); // deleted columns do not count
+    expect(
+      showColumnHint(page, [{ type: "beam", deleted: false }], false),
+    ).toBe(true);
+  });
+  it("hides once a column exists, while Find similar is open, off column plans or unbuilt", () => {
+    expect(
+      showColumnHint(page, [{ type: "column", deleted: false }], false),
+    ).toBe(false);
+    expect(showColumnHint(page, [], true)).toBe(false);
+    expect(
+      showColumnHint({ ...page, setup: { role: "framing" } }, [], false),
+    ).toBe(false);
+    expect(showColumnHint({ ...page, built_at: null }, [], false)).toBe(false);
+    expect(showColumnHint(null, [], false)).toBe(false);
+    expect(COLUMN_HINT).toBe("Click one column (C) → Find similar");
   });
 });

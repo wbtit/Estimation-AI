@@ -1,4 +1,5 @@
-import { FindSimilarBar } from "./FindSimilarBar";
+import { ColumnHint, FindSimilarBar } from "./FindSimilarBar";
+import { COLUMN_HINT, showColumnHint } from "../lib/columns";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Download, House, PanelLeft, Save } from "lucide-react";
 import { api, ApiError, send } from "../lib/api";
@@ -624,6 +625,9 @@ export const Workspace: React.FC<{
               )}
             </div>
           </div>
+          {showColumnHint(page, pieces, !!lastColumn) && (
+            <ColumnHint text={COLUMN_HINT} />
+          )}
           {page && lastColumn && (
             <FindSimilarBar
               key={lastColumn}

@@ -6,11 +6,17 @@ export interface SimilarPreview {
   count: number;
   points: [number, number][];
   accepted: boolean;
+  /** Phase 14d: the image search (FIND_SIMILAR_IMAGE): its run, sources and runtime */
+  image?: boolean;
+  run_id?: string | null;
+  sources?: ("vector" | "image")[];
+  runtime_s?: number | null;
 }
 
-/** Phase 14b: after a column is placed, "Find similar" previews the symbols of the drawing with
- * the same family and real size (a count first), then Accept adds them as one undoable action
- * (logged for training data) or Cancel leaves the page as it is. */
+/** Phase 14b/14d: after a column is placed, "Find similar" previews the symbols of the drawing with
+ * the same shape and real size (a count first; a spinner while the search runs), then Accept adds
+ * exactly the previewed ones as one undoable action (logged for training data) or Cancel leaves
+ * the page as it is. */
 export const FindSimilarBar: React.FC<{
   projectId: string;
   memberId: string;
@@ -24,7 +30,9 @@ export const FindSimilarBar: React.FC<{
   const url = `/api/projects/${projectId}/line-first/pieces/${memberId}/find-similar`;
   const run = (accept: boolean) => {
     setBusy(true);
-    send<SimilarPreview>("POST", url, { who, accept })
+    const body: Record<string, unknown> = { who, accept };
+    if (accept && preview?.run_id) body.run_id = preview.run_id;
+    send<SimilarPreview>("POST", url, body)
       .then((r) => {
         if (accept) onDone(r.accepted ? r.count : 0);
         else setPreview(r);
@@ -34,11 +42,18 @@ export const FindSimilarBar: React.FC<{
   const size = preview
     ? preview.example.real_in.map((v) => Math.round(v * 10) / 10).join(" × ")
     : "";
+  const byImage = preview?.sources?.filter((s) => s === "image").length ?? 0;
   return (
     <div className="find-similar" data-testid="find-similar">
+      {busy && (
+        <span className="spinner" data-testid="similar-spinner" role="status">
+          <span className="spin" aria-hidden />
+          Searching…
+        </span>
+      )}
       {!preview ? (
         <>
-          <span>Column placed.</span>
+          {!busy && <span>Column placed.</span>}
           <button disabled={busy} onClick={() => run(false)}>
             Find similar
           </button>
@@ -52,6 +67,7 @@ export const FindSimilarBar: React.FC<{
             {preview.count === 0
               ? "No similar symbols found"
               : `${preview.count} similar (${preview.example.family.replace(/_/g, " ")}, ${size} in)`}
+            {preview.image && preview.count > 0 ? ` · ${byImage} by image` : ""}
           </span>
           {preview.count > 0 && (
             <button disabled={busy} onClick={() => run(true)}>
@@ -66,3 +82,10 @@ export const FindSimilarBar: React.FC<{
     </div>
   );
 };
+
+/** Phase 14d: on a built column-plan page with no columns, the click-first hint. */
+export const ColumnHint: React.FC<{ text: string }> = ({ text }) => (
+  <div className="find-similar column-hint" data-testid="column-hint">
+    {text}
+  </div>
+);

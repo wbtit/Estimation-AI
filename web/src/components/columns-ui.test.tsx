@@ -13,7 +13,7 @@ import type { PaletteChoice } from "../lib/columns";
 import type { Piece } from "../lib/lf";
 import { PieceMark } from "./Canvas";
 import { ColumnPalette } from "./ColumnPalette";
-import { FindSimilarBar } from "./FindSimilarBar";
+import { ColumnHint, FindSimilarBar } from "./FindSimilarBar";
 
 afterEach(() => {
   cleanup();
@@ -141,6 +141,69 @@ describe("find similar bar", () => {
     stubFetch({ [url]: { ...preview, accepted: true } });
     fireEvent.click(screen.getByText("Accept"));
     await waitFor(() => expect(done).toHaveBeenCalledWith(3));
+  });
+
+  it("shows a spinner while the image search runs, then accepts the previewed run (14d)", async () => {
+    let release: (v: unknown) => void = () => undefined;
+    const calls: { body: unknown }[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init?: RequestInit) => {
+        const body = init?.body ? JSON.parse(String(init.body)) : null;
+        calls.push({ body });
+        if (!body.accept) await new Promise((r) => (release = r));
+        const res = {
+          example: { family: "drawn_symbol", real_in: [12, 12] },
+          count: 3,
+          points: [],
+          accepted: !!body.accept,
+          image: true,
+          run_id: "11111111-1111-1111-1111-111111111111",
+          sources: ["vector", "image", "image"],
+          runtime_s: 1.2,
+        };
+        return {
+          ok: true,
+          status: 200,
+          statusText: "",
+          text: async () => JSON.stringify(res),
+        };
+      }),
+    );
+    const done = vi.fn();
+    render(
+      <FindSimilarBar
+        projectId="p1"
+        memberId="m1"
+        who="ann"
+        onDone={done}
+        onClose={() => undefined}
+        onError={() => undefined}
+      />,
+    );
+    fireEvent.click(screen.getByText("Find similar"));
+    await waitFor(() => screen.getByTestId("similar-spinner"));
+    release(null);
+    await waitFor(() =>
+      expect(screen.getByTestId("similar-count").textContent).toBe(
+        "3 similar (drawn symbol, 12 × 12 in) · 2 by image",
+      ),
+    );
+    expect(screen.queryByTestId("similar-spinner")).toBeNull();
+    fireEvent.click(screen.getByText("Accept"));
+    await waitFor(() => expect(done).toHaveBeenCalledWith(3));
+    expect(calls[1]!.body).toEqual({
+      who: "ann",
+      accept: true,
+      run_id: "11111111-1111-1111-1111-111111111111",
+    });
+  });
+
+  it("the click-first hint", () => {
+    render(<ColumnHint text="Click one column (C) → Find similar" />);
+    expect(screen.getByTestId("column-hint").textContent).toBe(
+      "Click one column (C) → Find similar",
+    );
   });
 
   it("cancel closes without accepting", async () => {
