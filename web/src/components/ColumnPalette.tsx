@@ -7,7 +7,7 @@ import {
   type PaletteChoice,
 } from "../lib/columns";
 
-/** Phase 14b: the Draw column palette (key C). The 14 plan symbols in three groups plus Stud/Post;
+/** Phase 14b/14c: the Draw column palette (key C). The five column types plus Stud/Post;
  * typing a size picks its symbol; R rotates the next column 90 degrees; the choice is remembered.
  * A click on the drawing places the column (snapped to a grid crossing when one is near). */
 export const ColumnPalette: React.FC<{

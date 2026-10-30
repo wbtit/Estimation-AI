@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// Phase 14b: the Draw column palette, the Find similar bar and the column markers (SYNTHETIC).
+// Phase 14b/14c: the Draw column palette, the Find similar bar and the column markers (SYNTHETIC).
 import {
   cleanup,
   fireEvent,
@@ -64,19 +64,26 @@ const Harness: React.FC<{ onChoice?: (c: PaletteChoice) => void }> = ({
 };
 
 describe("column palette", () => {
-  it("shows the 14 symbols in three groups, picks one, and Stud/Post", () => {
+  it("shows the five column types, picks one, and Stud/Post", () => {
     const got: PaletteChoice[] = [];
     render(<Harness onChoice={(c) => got.push(c)} />);
     const p = screen.getByTestId("column-palette");
-    expect(p.querySelectorAll(".group button")).toHaveLength(14);
-    expect(p.textContent).toContain("W family");
+    const buttons = [...p.querySelectorAll(".group button")];
+    expect(buttons.map((b) => b.getAttribute("aria-label"))).toEqual([
+      "W-shape",
+      "W with cover plates",
+      "Square HSS",
+      "Rectangular HSS",
+      "Round HSS / pipe",
+    ]);
+    expect(p.textContent).toContain("Stud/Post");
     expect(p.textContent).toContain("90° (R)");
-    fireEvent.click(screen.getByLabelText("Welded box"));
+    fireEvent.click(screen.getByLabelText("Rectangular HSS"));
     expect(
-      screen.getByLabelText("Welded box").getAttribute("aria-pressed"),
+      screen.getByLabelText("Rectangular HSS").getAttribute("aria-pressed"),
     ).toBe("true");
     fireEvent.click(screen.getByLabelText("stud or post"));
-    expect(got.at(-1)).toEqual({ family: "welded_box", stud: true });
+    expect(got.at(-1)).toEqual({ family: "hss_rect", stud: true });
   });
 
   it("typing a size picks its symbol", () => {
@@ -86,6 +93,12 @@ describe("column palette", () => {
     });
     expect(
       screen.getByLabelText("Square HSS").getAttribute("aria-pressed"),
+    ).toBe("true");
+    fireEvent.change(screen.getByLabelText("column size"), {
+      target: { value: "W14X90 W/ PL3/4X16" },
+    });
+    expect(
+      screen.getByLabelText("W with cover plates").getAttribute("aria-pressed"),
     ).toBe("true");
     fireEvent.change(screen.getByLabelText("column size"), {
       target: { value: "PIPE6STD" },
@@ -206,8 +219,12 @@ describe("column markers", () => {
 
   it("falls back to the drawn family, else a neutral unknown marker", () => {
     expect(
+      mark(column({ symbol: "hss_round" })).getAttribute("data-symbol"),
+    ).toBe("hss_round");
+    cleanup();
+    expect(
       mark(column({ symbol: "welded_box" })).getAttribute("data-symbol"),
-    ).toBe("welded_box");
+    ).toBe("unknown"); // a 14b family that is not one of the five
     cleanup();
     expect(mark(column({ symbol: null })).getAttribute("data-symbol")).toBe(
       "unknown",
