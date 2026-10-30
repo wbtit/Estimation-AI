@@ -1,8 +1,9 @@
 // Phase 14d global settings (environment), recorded on each Build and each Find similar run.
 //   COLUMN_MODE          click_first (default): a column-plan Build makes no automatic columns;
 //                        glyph: the old glyph / grid / base-plate rules.
-//   FIND_SIMILAR_IMAGE   on / 1 / true: Find similar runs the worker's image search (vector + image
-//                        matches; docs/PHASE14D_PREREGISTRATION.md); default off (vector only).
+//   FIND_SIMILAR_IMAGE   Find similar runs the worker's image search (vector + image matches;
+//                        docs/PHASE14D_PREREGISTRATION.md). Phase 14e: on by default; off / 0 /
+//                        false / no turns it off (vector only).
 
 export const COLUMN_MODES = ['click_first', 'glyph'] as const;
 export type ColumnMode = (typeof COLUMN_MODES)[number];
@@ -15,5 +16,5 @@ export function columnMode(env: NodeJS.ProcessEnv = process.env): ColumnMode {
 }
 
 export function findSimilarImage(env: NodeJS.ProcessEnv = process.env): boolean {
-  return ['1', 'on', 'true', 'yes'].includes((env.FIND_SIMILAR_IMAGE ?? '').trim().toLowerCase());
+  return !['0', 'off', 'false', 'no'].includes((env.FIND_SIMILAR_IMAGE ?? '').trim().toLowerCase());
 }

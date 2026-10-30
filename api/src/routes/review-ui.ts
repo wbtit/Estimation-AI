@@ -57,7 +57,16 @@ import {
 } from '../review/build-views.js';
 import { parseProfile } from '../review/profile.js';
 import { systemReport, type SetupValues } from '../review/system-report.js';
-import { imageJob, type ImageRun, type Match } from '../review/image-similar.js';
+import {
+  atStrictness,
+  imageJob,
+  STRICTNESS_DEFAULT,
+  STRICTNESS_MAX,
+  STRICTNESS_MIN,
+  withoutUnticked,
+  type ImageRun,
+  type Match,
+} from '../review/image-similar.js';
 import { findSimilarImage } from '../review/settings.js';
 import { takeTagNumbers } from '../review/tag-counter.js';
 import { HttpError } from './http-error.js';
@@ -1071,14 +1080,23 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
   );
 
   // ---- Phase 14b: Find similar ------------------------------------------------------------------
-  // POST /api/projects/:projectId/line-first/pieces/:memberId/find-similar { who, accept? }
+  // POST /api/projects/:projectId/line-first/pieces/:memberId/find-similar
+  //   { who, accept?, run_id?, strictness?, unticked? }
   // From a column (drawn or found), the page's stored candidate symbols (page_symbols of its
-  // Build) with the same family and real size that are not a column yet. Without accept: a
-  // preview (count and points). With accept: one undoable action creating them (same kind and
-  // size as the example), logged as 'find_similar' (session-tagged training data).
+  // Build) with the same family and real size that are not a column yet, and (Phase 14d/14e,
+  // FIND_SIMILAR_IMAGE, on by default) the image matches with their scores. Without accept: a
+  // preview (every match with its source and score). With accept: one undoable action creating
+  // the matches at the strictness (image score >= it; vector matches always) minus the unticked
+  // ones, logged as 'find_similar' with the strictness and the untick list (training data).
   app.post<{
     Params: { projectId: string; memberId: string };
-    Body: { who: string; accept?: boolean; run_id?: string };
+    Body: {
+      who: string;
+      accept?: boolean;
+      run_id?: string;
+      strictness?: number;
+      unticked?: [number, number][];
+    };
   }>(
     '/api/projects/:projectId/line-first/pieces/:memberId/find-similar',
     {
@@ -1092,7 +1110,22 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
           type: 'object',
           required: ['who'],
           additionalProperties: false,
-          properties: { who, accept: { type: 'boolean' }, run_id: uuid },
+          properties: {
+            who,
+            accept: { type: 'boolean' },
+            run_id: uuid,
+            strictness: { type: 'number', minimum: STRICTNESS_MIN, maximum: STRICTNESS_MAX },
+            unticked: {
+              type: 'array',
+              maxItems: 5000,
+              items: {
+                type: 'array',
+                minItems: 2,
+                maxItems: 2,
+                items: { type: 'number' },
+              },
+            },
+          },
         },
       },
     },
@@ -1161,12 +1194,14 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
             rotation_deg: ((piece.rotation_deg ?? 0) + (c.rotation === 90 ? 90 : 0)) % 180,
             real_in: r.example!.real_in,
             source: c.source,
+            score: c.score,
           }));
         image = {
           run_id: job.id,
           runtime_s: r.runtime_s,
           vector: r.vector,
           image: r.image,
+          cache: r.cache ?? null,
           settings: r.settings,
         };
       } else {
@@ -1180,6 +1215,7 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
           rotation_deg: m.rotation_deg,
           real_in: m.real_in,
           source: 'vector' as const,
+          score: null,
         }));
       }
       const preview = {
@@ -1187,11 +1223,20 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
         count: matches.length,
         points: matches.map((m) => m.centre),
         sources: matches.map((m) => m.source),
+        // Phase 14e: every match with its score (null: a vector match), filtered by the slider
+        matches: matches.map((m) => ({ centre: m.centre, source: m.source, score: m.score })),
+        strictness_default: STRICTNESS_DEFAULT,
         image: image !== null,
         run_id: image?.run_id ?? null,
         runtime_s: image?.runtime_s ?? null,
+        cache: image?.cache ?? null,
       };
-      if (!request.body.accept || matches.length === 0) return { ...preview, accepted: false };
+      if (!request.body.accept) return { ...preview, accepted: false };
+      const strictness = request.body.strictness ?? STRICTNESS_DEFAULT;
+      const unticked = request.body.unticked ?? [];
+      const shown = atStrictness(matches, strictness);
+      const chosen = withoutUnticked(shown, unticked);
+      if (chosen.length === 0) return { ...preview, accepted: false, count: 0 };
       const sheet = await loadSheet(projectId, sheetId);
       const info = (await loadKinds(db())).get(piece.kind ?? 'Column');
       if (!info) throw new HttpError(400, { error: 'the column kind is not in the list' });
@@ -1203,7 +1248,7 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
         .transaction()
         .execute(async (trx) => {
           const ids: string[] = [];
-          for (const m of matches) {
+          for (const m of chosen) {
             const number = await takeTagNumbers(trx, projectId, sheetId, info.prefix);
             const row = await trx
               .insertInto('members')
@@ -1260,7 +1305,14 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
               member_ids: ids,
               // Phase 14d: the settings in force (image search on / off, its job and runtime)
               image: image ?? false,
-              sources: matches.map((m) => m.source),
+              sources: chosen.map((m) => m.source),
+              // Phase 14e: what the person saw and changed (training data)
+              strictness,
+              shown: shown.length,
+              found: matches.length,
+              unticked: shown
+                .filter((m) => !chosen.includes(m))
+                .map((m) => ({ centre: m.centre, source: m.source, score: m.score })),
             },
           });
           return { actionId, ids };
@@ -1268,6 +1320,8 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
       return {
         ...preview,
         accepted: true,
+        count: created.ids.length,
+        strictness,
         action_id: created.actionId,
         pieces: await loadPieces(db(), projectId, { memberIds: created.ids }),
       };

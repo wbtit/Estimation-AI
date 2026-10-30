@@ -16,8 +16,11 @@ describe('settings', () => {
     expect(columnMode({})).toBe('click_first');
     expect(columnMode({ COLUMN_MODE: 'glyph' })).toBe('glyph');
     expect(() => columnMode({ COLUMN_MODE: 'other' })).toThrow();
-    expect(findSimilarImage({})).toBe(false);
+    // Phase 14e: on by default, an env switch turns it off
+    expect(findSimilarImage({})).toBe(true);
     expect(findSimilarImage({ FIND_SIMILAR_IMAGE: 'on' })).toBe(true);
+    expect(findSimilarImage({ FIND_SIMILAR_IMAGE: 'off' })).toBe(false);
+    expect(findSimilarImage({ FIND_SIMILAR_IMAGE: '0' })).toBe(false);
   });
 });
 
@@ -61,9 +64,11 @@ describe('find similar with the image search (test database)', () => {
                       vector: 0,
                       image: 3,
                       combined: [
-                        { centre: [x, y], source: 'image', rotation: 0 },
-                        { centre: [x + 100, y], source: 'image', rotation: 0 },
-                        { centre: [x + 200, y], source: 'image', rotation: 90 },
+                        { centre: [x, y], source: 'image', score: 1, rotation: 0 },
+                        { centre: [x + 100, y], source: 'image', score: 0.95, rotation: 0 },
+                        { centre: [x + 200, y], source: 'image', score: 0.85, rotation: 90 },
+                        { centre: [x, y + 100], source: 'vector', score: null, rotation: 0 },
+                        { centre: [x + 100, y + 100], source: 'image', score: 0.7, rotation: 0 },
                       ],
                       runtime_s: 0.5,
                       settings: { image: true, threshold: 0.7 },
@@ -78,7 +83,6 @@ describe('find similar with the image search (test database)', () => {
   };
 
   beforeAll(async () => {
-    process.env.FIND_SIMILAR_IMAGE = 'on';
     projectId = await insertProject(db);
     sheetId = await insertSheet(db, projectId, { page_index: 0, width_pt: 1000, height_pt: 800 });
     await setFirstView(db, sheetId, {
@@ -144,12 +148,14 @@ describe('find similar with the image search (test database)', () => {
     // the clicked column itself is already a column: two new points
     expect(pv).toMatchObject({
       example: { family: 'drawn_symbol', real_in: [12, 12] },
-      count: 2,
-      points: [
-        [200, 100],
-        [300, 100],
+      count: 4,
+      matches: [
+        { centre: [200, 100], source: 'image', score: 0.95 },
+        { centre: [300, 100], source: 'image', score: 0.85 },
+        { centre: [100, 200], source: 'vector', score: null },
+        { centre: [200, 200], source: 'image', score: 0.7 },
       ],
-      sources: ['image', 'image'],
+      strictness_default: 0.8,
       image: true,
       runtime_s: 0.5,
       accepted: false,
@@ -160,12 +166,20 @@ describe('find similar with the image search (test database)', () => {
       .where('id', '=', pv.run_id)
       .executeTakeFirstOrThrow();
     expect(job.payload).toMatchObject({ member_id: id, click: [100, 100] }); // recorded
+    // at the default strictness 0.8 three are shown (the 0.7 one is not); the person unticks the
+    // vector match at 100, 200: two are added
     const acc = await post(`/line-first/pieces/${id}/find-similar`, {
       who: WHO,
       accept: true,
       run_id: pv.run_id,
+      unticked: [[100, 200]],
     });
-    expect(acc.json()).toMatchObject({ accepted: true, count: 2, run_id: pv.run_id });
+    expect(acc.json()).toMatchObject({
+      accepted: true,
+      count: 2,
+      strictness: 0.8,
+      run_id: pv.run_id,
+    });
     const made = acc.json().pieces as PieceView[];
     const byX = [...made].sort((p, q) => p.a![0] - q.a![0]); // pieces come in no fixed order
     expect(byX.map((p) => [p.a, p.symbol, p.rotation_deg])).toEqual([
@@ -178,7 +192,14 @@ describe('find similar with the image search (test database)', () => {
       .where('project_id', '=', projectId)
       .where('action', '=', 'find_similar')
       .executeTakeFirstOrThrow();
-    expect(log.detail).toMatchObject({ image: { run_id: pv.run_id, runtime_s: 0.5 } });
+    expect(log.detail).toMatchObject({
+      image: { run_id: pv.run_id, runtime_s: 0.5 },
+      strictness: 0.8,
+      shown: 3,
+      found: 4,
+      created: 2,
+      unticked: [{ centre: [100, 200], source: 'vector', score: null }],
+    });
     // a run of another column is refused
     const other = await post(`/sheets/${sheetId}/line-first/pieces`, {
       who: WHO,
@@ -191,6 +212,44 @@ describe('find similar with the image search (test database)', () => {
       run_id: pv.run_id,
     });
     expect(bad.statusCode).toBe(400);
+  });
+
+  it('the strictness filters the matches; only the ticked ones are added', async () => {
+    startWorker();
+    const drawn = await post(`/sheets/${sheetId}/line-first/pieces`, {
+      who: WHO,
+      kind: 'Column',
+      a: [100, 500],
+      symbol: 'hss_square',
+    });
+    const id = (drawn.json() as PieceView).id;
+    const pv = (await post(`/line-first/pieces/${id}/find-similar`, { who: WHO })).json();
+    const acc = await post(`/line-first/pieces/${id}/find-similar`, {
+      who: WHO,
+      accept: true,
+      run_id: pv.run_id,
+      strictness: 0.9,
+      unticked: [[200, 500]],
+    });
+    // at 0.9: the 0.95 image match and the vector match; the 0.95 one unticked: only the vector one
+    expect(acc.json()).toMatchObject({ accepted: true, count: 1, strictness: 0.9 });
+    expect((acc.json().pieces as PieceView[]).map((p) => p.a)).toEqual([[100, 600]]);
+    // everything unticked: nothing is added
+    const none = await post(`/line-first/pieces/${id}/find-similar`, {
+      who: WHO,
+      accept: true,
+      run_id: pv.run_id,
+      strictness: 0.9,
+      unticked: [[200, 500]],
+    });
+    expect(none.json()).toMatchObject({ accepted: false, count: 0 }); // the vector one is taken now
+    const bad = await post(`/line-first/pieces/${id}/find-similar`, {
+      who: WHO,
+      accept: true,
+      run_id: pv.run_id,
+      strictness: 0.95,
+    });
+    expect(bad.statusCode).toBe(400); // outside 0.6-0.9
   });
 
   it('reports a failed search', async () => {

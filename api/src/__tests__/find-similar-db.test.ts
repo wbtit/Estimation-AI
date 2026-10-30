@@ -31,6 +31,7 @@ describe('find similar (test database)', () => {
     app.inject({ method: 'POST', url: `/api/projects/${projectId}${url}`, payload });
 
   beforeAll(async () => {
+    process.env.FIND_SIMILAR_IMAGE = 'off'; // Phase 14e: the vector path (the image search is on by default)
     projectId = await insertProject(db);
     sheetId = await insertSheet(db, projectId, { page_index: 0, width_pt: 1000, height_pt: 800 });
     await setFirstView(db, sheetId, {
