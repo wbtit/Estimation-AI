@@ -214,7 +214,34 @@ export interface SizeEvidence {
   camber?: { raw: string } | null;
 }
 
+// ---- Phase 14f: Renumber tags ---------------------------------------------------------------------
+/** GET /tags/renumber: tags "Renumber tags" would change, per prefix, and duplicate tags. */
+export interface TagPreview {
+  changes: number;
+  by_prefix: Record<string, number>;
+  duplicates: number;
+}
+
+export const TAG_GAPS_ASK = "Tags have gaps or duplicates — renumber first?";
+
+export const tagsNeedRenumber = (p: TagPreview): boolean =>
+  p.changes > 0 || p.duplicates > 0;
+
+/** The explanation in the renumber dialog. */
+export function tagAskText(p: TagPreview): string {
+  if (!tagsNeedRenumber(p)) return "Every tag already runs without gaps.";
+  const parts = [
+    p.changes ? `${p.changes} tag${p.changes === 1 ? "" : "s"} would change` : "",
+    p.duplicates
+      ? `${p.duplicates} piece${p.duplicates === 1 ? " has" : "s have"} a duplicate tag`
+      : "",
+  ].filter(Boolean);
+  return `${parts.join("; ")}. Renumbering is one action: Undo puts every tag back. Tags a person typed are not changed.`;
+}
+
 export interface Piece {
+  /** Phase 14f: another piece of the job (or sheet) has the same tag. */
+  duplicate_tag?: boolean;
   /** Phase 14b: the column symbol family, how it was found, the cross-check reason, the drawn
    * rotation, the symbol's real size and the catalog section [width, depth] in inches. */
   symbol?: string | null;

@@ -69,6 +69,7 @@ import {
 } from '../review/image-similar.js';
 import { findSimilarImage } from '../review/settings.js';
 import { takeTagNumbers } from '../review/tag-counter.js';
+import { projectDuplicateTags, renumberPreview, renumberTags } from '../review/renumber-tags.js';
 import { HttpError } from './http-error.js';
 import { loadMemberViews } from './members.js';
 import { ftIn, setupReasons } from './build.js';
@@ -602,6 +603,7 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
             .execute()
         : [];
       const pieces = await loadPieces(db(), projectId, { sheetId });
+      const dupes = await projectDuplicateTags(db(), projectId);
       return {
         sheet_id: s.id,
         crop: s.crop_region,
@@ -625,7 +627,13 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
           b: [Number(g.x1), Number(g.y1)],
           bubble: g.bubble,
         })),
-        pieces: pieces.filter((p) => !p.deleted).map(({ start: _s, end: _e, ...rest }) => rest),
+        // Phase 14f: a tag another member of the scope also has is shown red on the canvas
+        pieces: pieces
+          .filter((p) => !p.deleted)
+          .map(({ start: _s, end: _e, ...rest }) => ({
+            ...rest,
+            duplicate_tag: dupes.has(rest.id),
+          })),
       };
     },
   );
@@ -883,6 +891,36 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
         },
       );
       return { action_id: actionId, deleted: entries.length };
+    },
+  );
+
+  // ---- Phase 14f: Renumber tags (project level, one recorded action) ---------------------------
+  app.get<{ Params: { projectId: string } }>(
+    '/api/projects/:projectId/tags/renumber',
+    { schema: { params: projectParams } },
+    async (request) => {
+      await loadProject(request.params.projectId);
+      return renumberPreview(db(), request.params.projectId);
+    },
+  );
+
+  app.post<{ Params: { projectId: string }; Body: { who: string } }>(
+    '/api/projects/:projectId/tags/renumber',
+    {
+      schema: {
+        params: projectParams,
+        body: {
+          type: 'object',
+          required: ['who'],
+          additionalProperties: false,
+          properties: { who },
+        },
+      },
+    },
+    async (request) => {
+      const { projectId } = request.params;
+      await loadProject(projectId);
+      return renumberTags(db(), projectId, trimWho(request.body.who));
     },
   );
 

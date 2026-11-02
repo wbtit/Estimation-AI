@@ -8,6 +8,7 @@ import pymupdf
 import pytest
 from build_factory import XS, YS, column, framing_plan, grids, line
 from db_fixtures import DbProject
+from psycopg.types.json import Jsonb
 
 from src.build.auto import auto_build, person_actions
 from src.build.job import build_sheet, setup_reasons, take_tag_numbers
@@ -334,6 +335,34 @@ def test_one_tag_counter_per_project_never_reuses_a_number(dbp: DbProject) -> No
     dbp.conn.execute("UPDATE projects SET tag_scope = 'sheet' WHERE id = %s", (dbp.project_id,))
     # per-sheet numbering: the sheet's own count
     assert take_tag_numbers(dbp.conn, dbp.project_id, plan_id, "B", 1) == 8
+    dbp.conn.rollback()
+
+
+def test_tag_counter_uses_current_tags_of_members_that_are_not_deleted(dbp: DbProject) -> None:
+    """Phase 14f: the counter continues from the highest CURRENT tag (the latest tag edit applied)
+    of members that are not deleted; a counter row set back by "Renumber tags" is then followed."""
+    plan_id, _, _ = _project(dbp)
+    ids = {}
+    for key, n in (("a", 3), ("b", 9), ("c", 12)):
+        ids[key] = dbp.conn.execute(
+            "INSERT INTO members (project_id, sheet_id, member_id, origin, type, quantity,"
+            " tag_prefix, tag_number) VALUES (%s, %s, %s, 'manual', 'column', 1, 'C', %s)"
+            " RETURNING id",
+            (dbp.project_id, plan_id, f"M-{key}", n),
+        ).fetchone()["id"]
+    edit = (
+        "INSERT INTO member_edits (member_id, field_name, original_value, corrected_value,"
+        " review_status, reviewer) VALUES (%s, %s, %s, %s, 'edited', 'tester')"
+    )
+    # c (C12) is deleted; b's tag was renumbered to C2 (an edit; the stored row keeps 9)
+    dbp.conn.execute(edit, (ids["c"], "review_status", Jsonb("edited"), Jsonb("rejected")))
+    dbp.conn.execute(
+        edit,
+        (ids["b"], "tag", Jsonb({"prefix": "C", "number": 9}), Jsonb({"prefix": "C", "number": 2})),
+    )
+    assert take_tag_numbers(dbp.conn, dbp.project_id, plan_id, "C", 1) == 4
+    # the counter row keeps what it handed out (a delete alone frees no number)
+    assert take_tag_numbers(dbp.conn, dbp.project_id, plan_id, "C", 1) == 5
     dbp.conn.rollback()
 
 

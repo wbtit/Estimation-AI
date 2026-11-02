@@ -741,17 +741,33 @@ def take_tag_numbers(
 ) -> int:
     """Reserve n tag numbers for a prefix from the project's one tag counter (tag_counters; the
     API's copilot and review UI use the same table and rule) and return the first. The counter
-    never goes below the highest number already in use for that prefix in the scope (the job, or
-    the sheet when the project numbers tags per sheet), so numbers are never reused."""
+    never goes below the highest number in use for that prefix in the scope (the job, or
+    the sheet when the project numbers tags per sheet). Phase 14f: "in use" is the CURRENT tag (the
+    latest tag edit, else the stored tag) of members that are not deleted; a delete alone frees no
+    number (the counter row keeps it), "Renumber tags" sets the row back. Same SQL as the API's
+    highestCurrentTag (api/src/review/tag-counter.ts)."""
     scope = conn.execute("SELECT tag_scope FROM projects WHERE id = %s", (project_id,)).fetchone()[
         "tag_scope"
     ]
     per_sheet = scope == "sheet" and sheet_id is not None
     key = str(sheet_id) if per_sheet else ""
-    where = "sheet_id = %s" if per_sheet else "project_id = %s"
+    where = "m.sheet_id = %s" if per_sheet else "m.project_id = %s"
     used = conn.execute(
-        f"SELECT COALESCE(MAX(tag_number), 0) AS n FROM members WHERE {where}"
-        " AND COALESCE(tag_prefix, '') = %s AND tag_number IS NOT NULL",
+        "SELECT COALESCE(MAX((t.tag ->> 'number')::int), 0) AS n FROM ("
+        " SELECT COALESCE("
+        "   (SELECT e.corrected_value FROM member_edits e"
+        "     WHERE e.member_id = m.id AND e.field_name = 'tag'"
+        "     ORDER BY e.created_at DESC, e.id DESC LIMIT 1),"
+        "   jsonb_build_object('prefix', m.tag_prefix, 'number', m.tag_number)) AS tag,"
+        "  COALESCE("
+        "   (SELECT e.corrected_value #>> '{}' FROM member_edits e"
+        "     WHERE e.member_id = m.id AND e.field_name = 'review_status'"
+        "     ORDER BY e.created_at DESC, e.id DESC LIMIT 1),"
+        "   m.review_status::text) AS status"
+        f" FROM members m WHERE {where}) t"
+        " WHERE t.status IS DISTINCT FROM 'rejected'"
+        " AND COALESCE(t.tag ->> 'prefix', '') = %s"
+        " AND jsonb_typeof(t.tag -> 'number') = 'number'",
         (sheet_id if per_sheet else project_id, prefix or ""),
     ).fetchone()["n"]
     last = conn.execute(

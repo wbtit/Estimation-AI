@@ -35,6 +35,7 @@ import { PageCard, type PageActions } from "./PageCard";
 import { PropertiesPanel, type Kind, type PieceEdit } from "./PropertiesPanel";
 import { ReportTab } from "./ReportTab";
 import { SessionControl } from "./SessionControl";
+import { useTagRenumber } from "./TagRenumber";
 import { pingDue } from "../lib/session";
 
 type WsRoute = Extract<Route, { view: "workspace" }>;
@@ -252,6 +253,17 @@ export const Workspace: React.FC<{
       if (done) say(done);
       return refresh();
     }, fail);
+
+  // Phase 14f: Renumber tags (one recorded action) and the check before an Excel export
+  const bomXlsx = `/api/projects/${projectId}/line-first/bom.xlsx?who=${encodeURIComponent(who)}`;
+  const reportXlsx = `/api/projects/${projectId}/report.xlsx?who=${encodeURIComponent(who)}`;
+  const { startExport, askRenumber, dialog: tagDialog } = useTagRenumber({
+    projectId,
+    who,
+    say,
+    fail,
+    refresh,
+  });
 
   const withView = (viewId: string | null) =>
     viewId ? { view_id: viewId } : {};
@@ -537,16 +549,15 @@ export const Workspace: React.FC<{
             </button>
             {exportOpen && (
               <div className="menu" onClick={() => setExportOpen(false)}>
-                <a
-                  href={`/api/projects/${projectId}/line-first/bom.xlsx?who=${encodeURIComponent(who)}`}
-                >
-                  <button>BOM (Excel)</button>
-                </a>
-                <a
-                  href={`/api/projects/${projectId}/report.xlsx?who=${encodeURIComponent(who)}`}
-                >
-                  <button>Report (Excel)</button>
-                </a>
+                <button onClick={() => void startExport(bomXlsx)}>
+                  BOM (Excel)
+                </button>
+                <button onClick={() => void startExport(reportXlsx)}>
+                  Report (Excel)
+                </button>
+                <button onClick={() => void askRenumber()}>
+                  Renumber tags…
+                </button>
                 <a href={`/api/projects/${projectId}/answer-key.json`}>
                   <button>Answer key</button>
                 </a>
@@ -559,7 +570,14 @@ export const Workspace: React.FC<{
           </span>
         </div>
       </div>
-      {tab === "bom" && <BomTab bom={bom} projectId={projectId} who={who} />}
+      {tab === "bom" && (
+        <BomTab
+          bom={bom}
+          projectId={projectId}
+          who={who}
+          onExport={() => void startExport(bomXlsx)}
+        />
+      )}
       {tab === "report" && <ReportTab projectId={projectId} who={who} />}
       {tab === "plans" && (
         <div className="ws-body">
@@ -919,6 +937,7 @@ export const Workspace: React.FC<{
           </div>
         </div>
       )}
+      {tagDialog}
       {toast && <div className="toast">{toast}</div>}
     </div>
   );

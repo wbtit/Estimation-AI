@@ -177,6 +177,9 @@ const TOOLS: { tool: Tool; Icon: LucideIcon; label: string }[] = [
 ];
 const ICON = { size: 20, strokeWidth: 2 } as const;
 
+/** Phase 14f: the tooltip of a tag another piece of the job also has (the tag is drawn red). */
+const DUPLICATE_TAG = "duplicate tag";
+
 const SNAP_PX = 10;
 /** Where the page sits in the viewport (styles.css .page-wrap margin: 16 72 left). */
 export const PAGE_OFFSET = { x: 72, y: 16 };
@@ -1422,6 +1425,7 @@ export const PieceMark: React.FC<{
   if (!p.a) return null;
   const tip = [
     `${p.tag ?? ""} ${p.profile ?? "no size"}`.trim(),
+    p.duplicate_tag ? DUPLICATE_TAG : "",
     p.length_mm !== null ? formatFtIn(p.length_mm) : "",
     `Read: ${evidenceText(p)}`,
     stateReason(p),
@@ -1535,12 +1539,14 @@ export const PieceMark: React.FC<{
             x={p.a[0] + t + 3 * px}
             y={p.a[1] + t + 9 * px}
             fontSize={10 * px}
-            fill="var(--column-id)"
+            fill={p.duplicate_tag ? "var(--attention)" : "var(--column-id)"}
             stroke="#fff"
             strokeWidth={3 * px}
             paintOrder="stroke"
-            pointerEvents="none"
+            pointerEvents={p.duplicate_tag ? "auto" : "none"}
+            data-duplicate={p.duplicate_tag ? "true" : undefined}
           >
+            {p.duplicate_tag && <title>{DUPLICATE_TAG}</title>}
             {p.tag}
           </text>
         )}

@@ -26,7 +26,9 @@ export const BomTab: React.FC<{
   bom: Bom | null;
   projectId: string;
   who?: string;
-}> = ({ bom, projectId, who = "" }) => {
+  /** Phase 14f: the export goes through the tag check (Workspace); else a plain link. */
+  onExport?: () => void;
+}> = ({ bom, projectId, who = "", onExport }) => {
   const [category, setCategory] = useState("");
   const [section, setSection] = useState("");
   const [status, setStatus] = useState("");
@@ -117,13 +119,19 @@ export const BomTab: React.FC<{
             <h3>Bill of Materials</h3>
             <span className="count-pill">{rows.length}</span>
             <span className="grow" />
-            <a
-              href={`/api/projects/${projectId}/line-first/bom.xlsx?who=${encodeURIComponent(who)}`}
-            >
-              <button className="row" style={{ gap: 6 }}>
+            {onExport ? (
+              <button className="row" style={{ gap: 6 }} onClick={onExport}>
                 <Download size={15} /> Export to Excel
               </button>
-            </a>
+            ) : (
+              <a
+                href={`/api/projects/${projectId}/line-first/bom.xlsx?who=${encodeURIComponent(who)}`}
+              >
+                <button className="row" style={{ gap: 6 }}>
+                  <Download size={15} /> Export to Excel
+                </button>
+              </a>
+            )}
           </div>
           <div className="table-scroll">
             <table className="grid bom" data-testid="bom">
