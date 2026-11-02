@@ -2251,3 +2251,10 @@ table.grid tr.total td {
   color: var(--text, #111);
   font-variant-numeric: tabular-nums;
 }
+
+/* Phase 14f: "Preparing lines…" / "Lines not ready Retry" next to Save page */
+.lines-status {
+  font-size: 12px;
+  align-self: center;
+  margin-right: 8px;
+}

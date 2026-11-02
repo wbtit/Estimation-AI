@@ -18,7 +18,8 @@
     "test-db": "tsx src/scripts/ensure-test-db.ts",
     "prefixes:load": "tsx src/scripts/load-prefix-meanings.ts",
     "session:export": "tsx src/scripts/session-export.ts",
-    "session:report": "tsx src/scripts/session-report.ts"
+    "session:report": "tsx src/scripts/session-report.ts",
+    "lines:backfill": "tsx src/scripts/backfill-sheet-lines.ts"
   },
   "dependencies": {
     "@fastify/multipart": "^10.1.2",

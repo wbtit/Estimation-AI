@@ -27,6 +27,7 @@ import { recordAction } from '../review/actions.js';
 import { logCountAction, pageTimes } from '../review/count-log.js';
 import { loadKinds, typeOfKind } from '../review/kinds.js';
 import { nextTagNumber } from '../review/member-ops.js';
+import { JOBS_CHANNEL } from '../review/image-similar.js';
 import { takeTagNumbers } from '../review/tag-counter.js';
 import { tagPool, type TagScope } from '../review/tag-scope.js';
 import {
@@ -229,6 +230,8 @@ export const countRoutes: FastifyPluginAsync<CountRouteOptions> = async (app, op
         .values({ type: 'sheet_lines', payload: JSON.stringify({ sheet_id: sheetId }) })
         .returning('id')
         .executeTakeFirstOrThrow();
+      // Phase 14f: wake the worker at once (a person waits for the lines)
+      await sql`SELECT pg_notify(${JOBS_CHANNEL}, ${job.id})`.execute(db());
       return reply.status(202).send({ status: 'queued', job_id: job.id });
     },
   );

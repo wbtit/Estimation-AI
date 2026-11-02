@@ -26,9 +26,13 @@ import {
   type Pt2,
   type RoleName,
   type Route,
-  type SheetLines,
 } from "../lib/lf";
 import { usePdf } from "../lib/usePdf";
+import {
+  LINES_NOT_READY,
+  PREPARING_LINES,
+  useSheetLines,
+} from "../lib/useSheetLines";
 import { BomTab } from "./BomTab";
 import { Canvas, type PickMode, type Tool } from "./Canvas";
 import { PageCard, type PageActions } from "./PageCard";
@@ -77,7 +81,6 @@ export const Workspace: React.FC<{
   const [project, setProject] = useState<Project | null>(null);
   const [pages, setPages] = useState<Page[]>([]);
   const [data, setData] = useState<LineFirstPage | null>(null);
-  const [lines, setLines] = useState<SheetLines | null>(null);
   const [bom, setBom] = useState<Bom | null>(null);
   const [kinds, setKinds] = useState<Kind[]>([]);
   const [roles, setRoles] = useState<RoleName[]>([]);
@@ -120,6 +123,16 @@ export const Workspace: React.FC<{
     pages[0]?.id ??
     null;
   const page = pages.find((p) => p.id === sheetId) ?? null;
+  // Phase 14f: the page's lines, prepared on open when the page has none yet
+  const {
+    lines,
+    status: linesStatus,
+    prepare: prepareLines,
+  } = useSheetLines(projectId, sheetId ?? null, {
+    vector: (page?.page_kind ?? "vector") === "vector",
+  });
+  // a pick that found no lines waits for them, then is sent again
+  const pendingPickPt = React.useRef<{ p: Pt2; mode: PickMode } | null>(null);
   // Phase 14a: the drawing visibility is remembered per person and page
   const [drawing, setDrawingState] = useState(() => loadDrawing(who, sheetId));
   useEffect(() => setDrawingState(loadDrawing(who, sheetId)), [who, sheetId]);
@@ -174,6 +187,36 @@ export const Workspace: React.FC<{
     void loadRoles();
   }, [projectId]);
 
+  const pickPen = (p: Pt2, mode: PickMode) => {
+    if (!page) return Promise.resolve();
+    return send<{ pen_class: string }>(
+      "POST",
+      sheetUrl(page, "build-setup/pick-pen"),
+      { x: p[0], y: p[1], mode, ...(view ? { view_id: view.id } : {}), who },
+    ).then(
+      () => {
+        say(mode === "add" ? "Beam pen added" : "Beam pen picked");
+        return refresh();
+      },
+      (e: unknown) => {
+        // Phase 14f: no lines yet: prepare them and pick again when they are there
+        if (e instanceof ApiError && e.message === LINES_NOT_READY) {
+          pendingPickPt.current = { p, mode };
+          say(PREPARING_LINES);
+          if (linesStatus !== "preparing") void prepareLines();
+          return;
+        }
+        fail(e);
+      },
+    );
+  };
+  useEffect(() => {
+    if (linesStatus !== "ready" || !pendingPickPt.current) return;
+    const { p, mode } = pendingPickPt.current;
+    pendingPickPt.current = null;
+    void pickPen(p, mode);
+  }, [linesStatus]);
+
   // Phase 14f: "Pick a beam pen" from a page card: once the page is open, its view and the tool
   const pendingPick = React.useRef<{
     sheetId: string;
@@ -203,14 +246,9 @@ export const Workspace: React.FC<{
   useEffect(() => {
     setSelected(new Set());
     setData(null);
-    setLines(null);
     setViewId(null);
     if (!sheetId) return;
     void loadData();
-    api<SheetLines>(`/api/projects/${projectId}/sheets/${sheetId}/lines`).then(
-      setLines,
-      () => setLines(null),
-    );
     void send("POST", `/api/projects/${projectId}/sheets/${sheetId}/view`, {
       who,
     }).catch(() => undefined);
@@ -552,6 +590,19 @@ export const Workspace: React.FC<{
           ))}
         </div>
         <div className="side right">
+          {tab === "plans" && page && linesStatus === "preparing" && (
+            <span className="muted lines-status" data-testid="lines-status">
+              {PREPARING_LINES}
+            </span>
+          )}
+          {tab === "plans" && page && linesStatus === "failed" && (
+            <span className="lines-status" data-testid="lines-status">
+              Lines not ready{" "}
+              <button className="link" onClick={() => void prepareLines()}>
+                Retry
+              </button>
+            </span>
+          )}
           {tab === "plans" && page && (
             <button
               className="primary row"
@@ -755,16 +806,7 @@ export const Workspace: React.FC<{
                   }),
                 )
               }
-              onPick={(p: Pt2, mode: PickMode) =>
-                void act(
-                  send<{ pen_class: string }>(
-                    "POST",
-                    sheetUrl(page, "build-setup/pick-pen"),
-                    { x: p[0], y: p[1], mode, ...viewBody, who },
-                  ),
-                  mode === "add" ? "Beam pen added" : "Beam pen picked",
-                )
-              }
+              onPick={(p: Pt2, mode: PickMode) => void pickPen(p, mode)}
               drawing={drawing}
               onDrawing={setDrawing}
               activeViewId={view?.id ?? null}

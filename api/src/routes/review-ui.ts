@@ -433,6 +433,22 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
       const piecesOf = new Map<string, PieceView[]>();
       for (const p of pieces)
         if (p.sheet_id) piecesOf.set(p.sheet_id, [...(piecesOf.get(p.sheet_id) ?? []), p]);
+      // Phase 14f: pages whose lines (Pick beam, snapping) are extracted
+      const withLines = new Set(
+        sheets.length
+          ? (
+              await db()
+                .selectFrom('sheet_lines')
+                .select('sheet_id')
+                .where(
+                  'sheet_id',
+                  'in',
+                  sheets.map((x) => x.id),
+                )
+                .execute()
+            ).map((r) => r.sheet_id)
+          : [],
+      );
       return {
         pages: sheets.map((page) => {
           const views = viewsBy.get(page.id) ?? [];
@@ -534,6 +550,7 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
             name: s.view_title ?? s.title_block_name ?? null,
             page_type: s.page_type_guess,
             page_kind: s.page_kind,
+            lines_ready: withLines.has(s.id),
             width_pt: num(s.width_pt),
             height_pt: num(s.height_pt),
             rotation: s.rotation,

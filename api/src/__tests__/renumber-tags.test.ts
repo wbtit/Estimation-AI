@@ -170,7 +170,7 @@ describe('Renumber tags (test database)', () => {
       member_ids: [ids.a2!, ids.a4!],
     });
     expect(del.statusCode).toBe(200);
-    // a person types a tag on a5 (C7 → C40); it must never be renumbered
+    // a person types a tag on a5 (C7 -> C40); it must never be renumbered
     const typed = await app.inject({
       method: 'PATCH',
       url: `/api/projects/${projectId}/members/${ids.a5}`,
@@ -178,7 +178,7 @@ describe('Renumber tags (test database)', () => {
     });
     expect(typed.statusCode).toBe(200);
     const preview = (await get('/tags/renumber')).json();
-    // a1 C1 stays; a3 C3 → C2; b1 C6 → C3; b2 C7 → C4
+    // a1 C1 stays; a3 C3 -> C2; b1 C6 -> C3; b2 C7 -> C4
     expect(preview).toMatchObject({ changes: 3, by_prefix: { C: 3 }, duplicates: 0 });
   });
 
