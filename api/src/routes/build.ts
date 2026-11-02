@@ -909,13 +909,15 @@ export const buildRoutes: FastifyPluginAsync<BuildRouteOptions> = async (app, op
         if (s.build_role === 'framing' && reasons.length === 0 && !inputs.no_column_plan) {
           const others = plans.filter((p) => p.id !== v.row.id);
           const named = inputs.column_plan_view_id as string | undefined;
-          if (named && !others.some((p) => p.id === named))
-            reasons.push('the named column plan page is not built');
-          else if (!named && others.length !== 1 && allowSystem) inputs.no_column_plan = true;
-          else if (!named && others.length === 0)
-            reasons.push('build the column plan page first, or say the job has none');
-          else if (!named && others.length > 1)
-            reasons.push('several column plan pages are built: name one');
+          // Phase 14f: a named column plan that is not built is not a reason to refuse: the
+          // worker builds the page without column supports and notes a warning
+          if (!named) {
+            if (others.length !== 1 && allowSystem) inputs.no_column_plan = true;
+            else if (others.length === 0)
+              reasons.push('build the column plan page first, or say the job has none');
+            else if (others.length > 1)
+              reasons.push('several column plan pages are built: name one');
+          }
         }
         if (!file || file.scan_status !== 'done') reasons.push('the PDF scan is not finished');
         return { v, inputs, reasons };

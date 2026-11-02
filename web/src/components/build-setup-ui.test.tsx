@@ -1,0 +1,199 @@
+// @vitest-environment jsdom
+// Phase 14f: the red Pen chip (Pick a beam pen / No beams), the card note, a Build's warnings on the
+// card and badge, and the tooltips of the missing chips (SYNTHETIC).
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  COLUMN_PLAN_HINT,
+  notBuiltNote,
+  PEN_HINT,
+  setupChips,
+  type Page,
+  type PageViewInfo,
+} from "../lib/lf";
+import { PageCard, type PageActions } from "./PageCard";
+
+afterEach(cleanup);
+
+const counts = {
+  pieces: 0,
+  beams: 0,
+  columns: 0,
+  braces: 0,
+  found: 0,
+  needs_review: 0,
+  attention: 0,
+};
+
+const view = (over: Partial<PageViewInfo> = {}): PageViewInfo => ({
+  id: "v1",
+  position: 1,
+  name: "View 1",
+  box: { x0: 100, y0: 100, x1: 500, y1: 400 },
+  role_name: "Framing plan",
+  behaviour: "framing",
+  scale_ratio: 96,
+  scale_text: null,
+  tos_mm: null,
+  tos_raw: null,
+  pens: [],
+  no_beams: false,
+  column_plan_view_id: null,
+  column_plan_sheet_id: null,
+  exclusions: [],
+  deselections: [],
+  setup_changed_at: null,
+  built_at: null,
+  badge: "Not built",
+  reasons: ["no beam pen class"],
+  system_values: [],
+  counts,
+  ...over,
+});
+
+const page = (v: PageViewInfo, over: Partial<Page> = {}): Page =>
+  ({
+    id: "s1",
+    page_index: 11,
+    page_number: 12,
+    sheet_number: "S-1",
+    title: null,
+    page_type: "framing_plan",
+    page_kind: "vector",
+    width_pt: 1000,
+    height_pt: 800,
+    rotation: 0,
+    thumbnail_url: null,
+    badge: v.badge,
+    reasons: v.reasons,
+    notes: [],
+    warnings: v.warnings ?? [],
+    system_values: v.system_values,
+    setup: {
+      role: "framing",
+      crop: v.box,
+      pen_class: null,
+      pen_class_source: null,
+      scale_ratio: 96,
+      scale_text: null,
+      tos_mm: null,
+      tos_raw: null,
+      column_plan_sheet_id: null,
+    },
+    views: [v],
+    scales_found: [],
+    built_at: null,
+    reviewed_by: null,
+    reviewed_at: null,
+    pending_edits: 0,
+    counts,
+    ...over,
+  }) as Page;
+
+function actions(): PageActions & Record<string, ReturnType<typeof vi.fn>> {
+  return {
+    build: vi.fn(),
+    setRole: vi.fn(),
+    setColumnPlan: vi.fn(),
+    setTos: vi.fn(),
+    setScale: vi.fn(),
+    noBeams: vi.fn(),
+    pickPen: vi.fn(),
+  };
+}
+
+const card = (a: PageActions, p: Page) =>
+  render(
+    <PageCard
+      page={p}
+      columnPlans={[]}
+      selected
+      onSelect={() => undefined}
+      actions={a}
+      activeViewId="v1"
+      onActiveView={() => undefined}
+    />,
+  );
+
+describe("the red Pen chip", () => {
+  it("says what to do and offers Pick a beam pen and No beams", () => {
+    const a = actions();
+    card(a, page(view()));
+    const chip = screen.getByTestId("pen-chip");
+    expect(chip.getAttribute("title")).toBe(PEN_HINT);
+    expect(screen.getByText(`Not built: ${PEN_HINT}`)).toBeTruthy();
+    fireEvent.click(chip);
+    expect(screen.getByTestId("pen-menu").textContent).toContain(PEN_HINT);
+    fireEvent.click(screen.getByText("Pick a beam pen"));
+    expect(a.pickPen).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "s1" }),
+      "v1",
+    );
+    fireEvent.click(screen.getByTestId("pen-chip"));
+    fireEvent.click(screen.getByText("No beams"));
+    expect(a.noBeams).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "s1" }),
+      "v1",
+    );
+  });
+
+  it("is a plain chip once a pen or No beams is set", () => {
+    card(
+      actions(),
+      page(view({ no_beams: true, reasons: [], badge: "Requesting Build" })),
+    );
+    expect(screen.queryByTestId("pen-chip")).toBeNull();
+  });
+});
+
+describe("the card note", () => {
+  it("names the pen first and counts the rest", () => {
+    expect(notBuiltNote(["no beam pen class"])).toBe(`Not built: ${PEN_HINT}`);
+    expect(notBuiltNote(["no crop", "View 2: no beam pen class"])).toBe(
+      `Not built: ${PEN_HINT} (+1 more to set)`,
+    );
+    expect(notBuiltNote(["no crop", "no scale"])).toBe(
+      "Not built: 2 things to set",
+    );
+  });
+});
+
+describe("a Build's warnings", () => {
+  it("show on the card and on the badge", () => {
+    const w =
+      "Built without column supports: the column plan page is not built";
+    card(
+      actions(),
+      page(
+        view({
+          badge: "Built",
+          reasons: [],
+          pens: [{ pen_class: "p", position: 1, source: "person" }],
+          warnings: [w],
+          built_at: "2026-01-01T00:00:00Z",
+        }),
+      ),
+    );
+    expect(screen.getByTestId("card-warning").textContent).toBe(`⚠ ${w}`);
+    expect(screen.getByTestId("badge-warning")).toBeTruthy();
+    expect(
+      screen.getByTestId("badge-warning").parentElement!.getAttribute("title"),
+    ).toContain(w);
+  });
+});
+
+describe("missing chip tooltips", () => {
+  it("Pen and Column plan say how to set them", () => {
+    const chips = setupChips(
+      view({ system_values: ["column_plan"], pens: [] }),
+    );
+    expect(chips.find((c) => c.key === "pen")!.tip).toBe(PEN_HINT);
+    expect(chips.find((c) => c.key === "column_plan")!.tip).toBe(
+      "Choose the column plan page or None (⋮ menu)",
+    );
+    expect(COLUMN_PLAN_HINT).toBe(
+      "Choose the column plan page or None (⋮ menu)",
+    );
+    expect(chips.find((c) => c.key === "role")!.tip).toBe("Role: confirmed");
+  });
+});

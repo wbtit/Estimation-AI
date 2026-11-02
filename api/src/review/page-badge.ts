@@ -93,3 +93,20 @@ export function combineBadges(badges: Badge[]): Badge {
   if (badges.length === 0) return 'Skip';
   return PAGE_ORDER.find((b) => badges.includes(b)) ?? badges[0]!;
 }
+
+/** Phase 14f: the warnings of a finished Build (worker src/build/job.py WARN_*): the page was built
+ * without column supports. Codes in the run's notes; unknown codes are left out. */
+export const BUILD_WARNINGS: Record<string, string> = {
+  'warning:column_plan_not_built':
+    'Built without column supports: the column plan page is not built',
+  'warning:column_plan_no_finished_build':
+    'Built without column supports: the column plan page has no finished build',
+  'warning:no_placed_columns':
+    'Built without column supports: no columns are placed on the column plan page',
+};
+
+/** The warnings of a view's latest run (only when that run finished). */
+export function buildWarnings(run: { status: string; notes: string[] | null } | null): string[] {
+  if (!run || run.status !== 'done') return [];
+  return (run.notes ?? []).filter((n) => n in BUILD_WARNINGS).map((n) => BUILD_WARNINGS[n]!);
+}

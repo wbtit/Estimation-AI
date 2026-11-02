@@ -11,7 +11,9 @@ import {
 import { formatFtIn, parseFtIn } from "../lib/ftin";
 import {
   activeView,
+  notBuiltNote,
   PAGE_TYPE_SHORT,
+  PEN_HINT,
   setupChips,
   SHOW_ELEVATIONS,
   type Behaviour,
@@ -38,6 +40,8 @@ export interface PageActions {
   ) => void;
   /** "No beams": beam pen = none (a person's choice); the next build makes no beams. */
   noBeams: (p: Page, viewId: string | null) => void;
+  /** Phase 14f: open the page with the Pick beam tool (from the red Pen chip). */
+  pickPen?: (p: Page, viewId: string | null) => void;
   createRole?: (
     name: string,
     behaviour: Behaviour,
@@ -146,6 +150,7 @@ export const PageCard: React.FC<{
   const [tosBad, setTosBad] = useState(false);
   const [typing, setTyping] = useState(false);
   const [scaleText, setScaleText] = useState("");
+  const [penMenu, setPenMenu] = useState(false);
   useEffect(() => {
     setTos(view.tos_mm === null ? "" : formatFtIn(view.tos_mm));
     setTosBad(false);
@@ -310,8 +315,14 @@ export const PageCard: React.FC<{
         {page.badge !== "Skip" && (
           <span
             className={`tag top ${badgeClass(page.badge)}`}
-            title={page.reasons.join("; ")}
+            title={[...page.reasons, ...(page.warnings ?? [])].join("; ")}
           >
+            {/* Phase 14f: built without column supports */}
+            {!!page.warnings?.length && (
+              <span data-testid="badge-warning" aria-label="warning">
+                ⚠
+              </span>
+            )}
             {page.badge === "Requesting Build" && <Bell size={11} />}
             {(page.badge === "Built" || page.badge === "Reviewed") && (
               <Check size={11} />
@@ -527,28 +538,82 @@ export const PageCard: React.FC<{
           )}
           <div className="field setup">
             <span className="chips" data-testid="setup-chips">
-              {chips.map((c) => (
-                <span
-                  key={c.key}
-                  className={`chip ${c.state}`}
-                  title={c.tip}
-                  data-state={c.state}
-                >
-                  {c.state === "ok" ? (
-                    <Check size={10} strokeWidth={3} />
-                  ) : c.state === "missing" ? (
-                    "!"
-                  ) : null}
-                  {c.label}
-                </span>
-              ))}
+              {chips.map((c) =>
+                c.key === "pen" && c.state === "missing" ? (
+                  // Phase 14f: the red Pen chip offers both ways to set it
+                  <span key={c.key} style={{ position: "relative" }}>
+                    <button
+                      className={`chip ${c.state}`}
+                      title={c.tip}
+                      data-state={c.state}
+                      data-testid="pen-chip"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setPenMenu(!penMenu);
+                      }}
+                    >
+                      !{c.label}
+                    </button>
+                    {penMenu && (
+                      <div
+                        className="menu"
+                        data-testid="pen-menu"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <span className="label">{PEN_HINT}</span>
+                        {actions.pickPen && (
+                          <button
+                            onClick={() => {
+                              setPenMenu(false);
+                              actions.pickPen!(page, vid);
+                            }}
+                          >
+                            Pick a beam pen
+                          </button>
+                        )}
+                        <button
+                          onClick={() => {
+                            setPenMenu(false);
+                            actions.noBeams(page, vid);
+                          }}
+                        >
+                          No beams
+                        </button>
+                      </div>
+                    )}
+                  </span>
+                ) : (
+                  <span
+                    key={c.key}
+                    className={`chip ${c.state}`}
+                    title={c.tip}
+                    data-state={c.state}
+                  >
+                    {c.state === "ok" ? (
+                      <Check size={10} strokeWidth={3} />
+                    ) : c.state === "missing" ? (
+                      "!"
+                    ) : null}
+                    {c.label}
+                  </span>
+                ),
+              )}
             </span>
           </div>
           {(saved ||
             (view.badge === "Not built" && view.reasons.length > 0)) && (
             <div className="card-note" title={view.reasons.join("; ")}>
-              {saved ??
-                `Not built: ${view.reasons.length} thing${view.reasons.length === 1 ? "" : "s"} to set`}
+              {saved ?? notBuiltNote(view.reasons)}
+            </div>
+          )}
+          {!saved && view.badge !== "Not built" && !!view.warnings?.length && (
+            <div
+              className="card-note warning"
+              data-testid="card-warning"
+              title={view.warnings.join("; ")}
+            >
+              ⚠ {view.warnings[0]}
+              {view.warnings.length > 1 && ` (+${view.warnings.length - 1})`}
             </div>
           )}
         </div>

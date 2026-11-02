@@ -45,7 +45,7 @@ import {
   type PieceView,
 } from '../review/line-first-pieces.js';
 import { deleteEntries, kindValue, patchEntries } from '../review/member-ops.js';
-import { combineBadges, pageBadge, systemValues } from '../review/page-badge.js';
+import { buildWarnings, combineBadges, pageBadge, systemValues } from '../review/page-badge.js';
 import {
   asSheet,
   loadViews,
@@ -507,6 +507,8 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
                 badge,
                 reasons,
                 notes: run?.notes ?? [],
+                // Phase 14f: built without column supports (shown on the card and badge)
+                warnings: buildWarnings(run ?? null),
                 system_values: sys,
                 deselections_unmatched:
                   typeof counts.deselections_unmatched === 'number'
@@ -543,6 +545,9 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
               several ? x.reasons.map((m) => `${x.v.row.name}: ${m}`) : x.reasons,
             ),
             notes: firstRun?.notes ?? [],
+            warnings: perView.flatMap((x) =>
+              buildWarnings(x.run ?? null).map((w) => (several ? `${x.v.row.name}: ${w}` : w)),
+            ),
             system_values: sys,
             setup: {
               role: s.build_role,

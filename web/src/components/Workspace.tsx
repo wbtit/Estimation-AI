@@ -174,6 +174,23 @@ export const Workspace: React.FC<{
     void loadRoles();
   }, [projectId]);
 
+  // Phase 14f: "Pick a beam pen" from a page card: once the page is open, its view and the tool
+  const pendingPick = React.useRef<{
+    sheetId: string;
+    viewId: string | null;
+  } | null>(null);
+  const applyPendingPick = () => {
+    const want = pendingPick.current;
+    if (!want) return;
+    pendingPick.current = null;
+    if (want.viewId) setViewId(want.viewId);
+    askTool("pick");
+  };
+  useEffect(() => {
+    if (pendingPick.current && data?.sheet_id === pendingPick.current.sheetId)
+      applyPendingPick();
+  }, [data]);
+
   // a page opened from Members by size: select its members once its pieces are in
   useEffect(() => {
     const want = pendingSelect.current;
@@ -257,7 +274,11 @@ export const Workspace: React.FC<{
   // Phase 14f: Renumber tags (one recorded action) and the check before an Excel export
   const bomXlsx = `/api/projects/${projectId}/line-first/bom.xlsx?who=${encodeURIComponent(who)}`;
   const reportXlsx = `/api/projects/${projectId}/report.xlsx?who=${encodeURIComponent(who)}`;
-  const { startExport, askRenumber, dialog: tagDialog } = useTagRenumber({
+  const {
+    startExport,
+    askRenumber,
+    dialog: tagDialog,
+  } = useTagRenumber({
     projectId,
     who,
     say,
@@ -395,6 +416,12 @@ export const Workspace: React.FC<{
         }),
         "No beams: press ▶ to rebuild",
       ),
+    // Phase 14f: from the red Pen chip: open the page (and view) with the Pick beam tool
+    pickPen: (p, viewId) => {
+      pendingPick.current = { sheetId: p.id, viewId };
+      if (p.id !== sheetId) selectSheet(p.id);
+      else if (data?.sheet_id === p.id) applyPendingPick();
+    },
     setScale: (p, viewId, v) =>
       act(
         send("POST", sheetUrl(p, "build-setup/scale"), {

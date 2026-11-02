@@ -113,6 +113,8 @@ export interface Page {
   badge: Badge;
   reasons: string[];
   notes: string[];
+  /** Phase 14f: built without column supports (the worker's warnings), per view name. */
+  warnings?: string[];
   system_values: string[];
   setup: {
     role: Role;
@@ -191,6 +193,8 @@ export interface BuildView {
 export interface PageViewInfo extends BuildView {
   badge: Badge;
   reasons: string[];
+  /** Phase 14f: the warnings of the view's finished Build. */
+  warnings?: string[];
   system_values: string[];
   counts: Page["counts"];
 }
@@ -231,7 +235,9 @@ export const tagsNeedRenumber = (p: TagPreview): boolean =>
 export function tagAskText(p: TagPreview): string {
   if (!tagsNeedRenumber(p)) return "Every tag already runs without gaps.";
   const parts = [
-    p.changes ? `${p.changes} tag${p.changes === 1 ? "" : "s"} would change` : "",
+    p.changes
+      ? `${p.changes} tag${p.changes === 1 ? "" : "s"} would change`
+      : "",
     p.duplicates
       ? `${p.duplicates} piece${p.duplicates === 1 ? " has" : "s have"} a duplicate tag`
       : "",
@@ -660,6 +666,23 @@ export interface SetupChip {
   tip: string;
 }
 
+/** Phase 14f: what a missing chip asks for (its tooltip; the pen one also on the card note). */
+export const PEN_HINT = "Pick a beam pen or choose No beams";
+export const COLUMN_PLAN_HINT = "Choose the column plan page or None (⋮ menu)";
+/** The Build refusals that mean "no beam pen" (API build.ts setupReasons). */
+const PEN_REASONS = ["no beam pen class", "beam pen class not confirmed"];
+export const isPenReason = (r: string): boolean =>
+  PEN_REASONS.some((x) => r === x || r.endsWith(`: ${x}`));
+
+/** The note under a card that was not built: the pen hint when the pen is missing, else a count. */
+export function notBuiltNote(reasons: readonly string[]): string {
+  const pen = reasons.some(isPenReason);
+  const others = reasons.filter((r) => !isPenReason(r)).length;
+  if (pen)
+    return `Not built: ${PEN_HINT}${others ? ` (+${others} more to set)` : ""}`;
+  return `Not built: ${reasons.length} thing${reasons.length === 1 ? "" : "s"} to set`;
+}
+
 /** The setup of a view as chips: green when a person confirmed it, grey when the system set it,
  * red when missing. Pen, Column plan (and T.O.S. when elevations are shown) only for framing; only
  * Role when nothing builds. */
@@ -693,7 +716,11 @@ export function setupChips(
         : "ok";
     const tip =
       state === "missing"
-        ? `${what}: missing`
+        ? key === "pen"
+          ? PEN_HINT
+          : key === "column_plan"
+            ? COLUMN_PLAN_HINT
+            : `${what}: missing`
         : state === "system"
           ? `${what}: set by the system, not confirmed`
           : `${what}: confirmed`;

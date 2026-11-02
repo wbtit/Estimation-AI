@@ -10,9 +10,9 @@ import pytest
 from build_factory import XS, YS
 from db_fixtures import DbProject
 from psycopg.types.json import Jsonb
-from test_build_job import _members, _pdf, _run, _setup
+from test_build_job import _members, _pdf, _run, _setup, first_view_id
 
-from src.build.job import NO_PLACED_COLUMNS
+from src.build.job import WARN_NO_PLACED_COLUMNS, WARN_PLAN_NO_RUN, WARN_PLAN_NOT_BUILT
 from src.build.page import column_mode_default
 
 CLICK = {"column_mode": "click_first"}
@@ -71,8 +71,14 @@ def test_a_framing_build_splits_beams_at_the_placed_columns(dbp: DbProject) -> N
     _setup(dbp, plan_id, "column_plan", tos=False, pen=False)
     _run(dbp, plan_id, CLICK)
     _setup(dbp, framing_id, "framing")
-    _, out = _run(dbp, framing_id, CLICK)
-    assert out["refused"] == [NO_PLACED_COLUMNS]
+    run_id, out = _run(dbp, framing_id, CLICK)
+    # Phase 14f: no placed columns is a warning: beams and grids are built without column supports
+    assert "refused" not in out and WARN_NO_PLACED_COLUMNS in out["notes"]
+    assert out["pieces"] > 0 and out["nodes_projected"] == 0
+    run = dbp.conn.execute(
+        "SELECT status, notes FROM build_runs WHERE id = %s", (run_id,)
+    ).fetchone()
+    assert run["status"] == "done" and WARN_NO_PLACED_COLUMNS in run["notes"]
     # the "column plan = none" escape still works
     _, out = _run(dbp, framing_id, {**CLICK, "no_column_plan": True})
     assert "refused" not in out and out["nodes_projected"] == 0
@@ -165,3 +171,31 @@ def test_the_worker_wakes_on_a_notify(dbp: DbProject) -> None:
         t0 = time.perf_counter()
         assert wait_for_notify(listener, 5.0) is True
         assert time.perf_counter() - t0 < 1.0
+
+
+def test_a_named_column_plan_that_is_not_built_is_a_warning(dbp: DbProject) -> None:
+    """Phase 14f: the framing page builds beams and grids without column supports."""
+    plan_id, framing_id = _pdf(dbp)
+    _setup(dbp, plan_id, "column_plan", tos=False, pen=False)  # set up, never built
+    _setup(dbp, framing_id, "framing")
+    run_id, out = _run(
+        dbp, framing_id, {**CLICK, "column_plan_view_id": first_view_id(dbp, plan_id)}
+    )
+    assert "refused" not in out and out["pieces"] > 0
+    assert WARN_PLAN_NOT_BUILT in out["notes"] and "no_column_plan" in out["notes"]
+    run = dbp.conn.execute(
+        "SELECT status, notes FROM build_runs WHERE id = %s", (run_id,)
+    ).fetchone()
+    assert run["status"] == "done" and WARN_PLAN_NOT_BUILT in run["notes"]
+
+
+def test_a_column_plan_with_no_finished_build_is_a_warning(dbp: DbProject) -> None:
+    plan_id, framing_id = _pdf(dbp)
+    _setup(dbp, plan_id, "column_plan", tos=False, pen=False)
+    # marked built, but no finished run (e.g. its last run failed)
+    dbp.conn.execute("UPDATE build_views SET built_at = now() WHERE sheet_id = %s", (plan_id,))
+    dbp.conn.commit()
+    _setup(dbp, framing_id, "framing")
+    _, out = _run(dbp, framing_id, CLICK)
+    assert "refused" not in out and out["pieces"] > 0
+    assert WARN_PLAN_NO_RUN in out["notes"]

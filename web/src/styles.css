@@ -1783,6 +1783,21 @@ table.grid tr.total td {
   color: var(--shell-muted);
 }
 
+/* Phase 14f: the red Pen chip is a button (Pick a beam pen / No beams); a Build's warning */
+.page-card button.chip {
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.page-card .chips .menu {
+  left: 0;
+  right: auto;
+}
+
+.page-card .card-note.warning {
+  color: var(--amber);
+}
+
 .page-card .building-spin {
   color: #82b1ff;
 }

@@ -3,9 +3,11 @@
 Payload: {"build_run_id": "<uuid>"} (the API writes the build_runs row and the job together). The
 job refuses, with a clear reason stored on the run, when the page is not set up:
   - every page: a role (column plan or framing), a confirmed crop and a confirmed scale;
-  - a framing page: also a confirmed T.O.S. and a confirmed beam pen class, and a built column plan
-    (the one named in the run inputs or on the sheet, or the only built one of the project) unless
-    the run or the sheet says there is none.
+  - a framing page: also a confirmed beam pen class (or "No beams"), and a built column plan in
+    the project unless the run or the sheet says there is none (T.O.S. is not required since
+    Phase 14a). Phase 14f: a named column plan that is not built, a plan with no finished build and
+    (click-first) no placed columns are WARNINGS, not refusals: the page builds beams and grids
+    without column supports and the run's notes say why (WARN_*).
 System values (Phase 11b): an auto run (mode 'auto') and a run whose inputs say
 "allow_system_values" need the values to be there, not confirmed by a person, and no T.O.S. (the
 ends then have no elevation; the length is the same plan length). They still refuse a page with no
@@ -127,9 +129,11 @@ def _refuse(conn, run_id: str, reasons: list[str]) -> dict[str, Any]:
     return {"refused": reasons}
 
 
-NO_PLACED_COLUMNS = (
-    "Place the columns on the column plan page first (or set the column plan to none)"
-)
+# Phase 14f (owner decision): these no longer refuse a framing Build. The page builds beams and
+# grids without column supports; the run's notes carry the warning (shown on the page card).
+WARN_PLAN_NOT_BUILT = "warning:column_plan_not_built"
+WARN_PLAN_NO_RUN = "warning:column_plan_no_finished_build"
+WARN_NO_PLACED_COLUMNS = "warning:no_placed_columns"
 
 
 def _placed_columns(conn, sheet_id: str, view_id: str, first: bool) -> list[tuple[Pt, dict]]:
@@ -158,13 +162,15 @@ def _placed_columns(conn, sheet_id: str, view_id: str, first: bool) -> list[tupl
 
 def _column_plan(
     conn, project_id: str, view: View, inputs: dict[str, Any], mode: str = "glyph"
-) -> tuple[ColumnPlanRef | None, str | None, list[str]]:
-    """(column plan, its sheet id, refusal reasons) for a framing view. The run's inputs win
-    (column_plan_view_id, or column_plan_sheet_id = that page's first view); else the view's own
+) -> tuple[ColumnPlanRef | None, str | None, list[str], list[str]]:
+    """(column plan, its sheet id, refusal reasons, warnings) for a framing view. The run's inputs
+    win (column_plan_view_id, or column_plan_sheet_id = that page's first view); else the view's own
     choice (column_plan_view_id, or "none" when a person chose none); else the only built
-    column-plan view of the project."""
+    column-plan view of the project. Phase 14f: a named plan that is not built, a plan with no
+    finished build, and (click-first) no placed columns are warnings: the page builds without
+    column supports (with the plan's grid when there is one)."""
     if inputs.get("no_column_plan"):
-        return None, None, []
+        return None, None, [], []
     wanted = inputs.get("column_plan_view_id")
     if not wanted and inputs.get("column_plan_sheet_id"):
         first = pick_view(load_views(conn, str(inputs["column_plan_sheet_id"])))
@@ -173,7 +179,7 @@ def _column_plan(
         if view.row["column_plan_view_id"]:
             wanted = str(view.row["column_plan_view_id"])
         elif view.row["column_plan_confirmed_by"]:
-            return None, None, []
+            return None, None, [], []
     rows = conn.execute(
         "SELECT v.id, v.sheet_id, v.position, v.scale_ratio FROM build_views v"
         " JOIN sheets s ON s.id = v.sheet_id JOIN role_names r ON r.name = v.role_name"
@@ -184,13 +190,13 @@ def _column_plan(
     if wanted:
         plan = next((r for r in rows if str(r["id"]) == str(wanted)), None)
         if plan is None:
-            return None, None, ["the named column plan page is not built"]
+            return None, None, [], [WARN_PLAN_NOT_BUILT]
     elif len(rows) == 1:
         plan = rows[0]
     elif not rows:
-        return None, None, ["build the column plan page first, or say the job has none"]
+        return None, None, ["build the column plan page first, or say the job has none"], []
     else:
-        return None, None, ["several column plan pages are built: name one"]
+        return None, None, ["several column plan pages are built: name one"], []
     plan_sheet = str(plan["sheet_id"])
     run = conn.execute(
         "SELECT id FROM build_runs WHERE sheet_id = %s AND status = 'done'"
@@ -198,7 +204,7 @@ def _column_plan(
         (plan_sheet, plan["id"], plan["position"] == 1),
     ).fetchone()
     if run is None:
-        return None, None, ["the column plan page has no finished build"]
+        return None, None, [], [WARN_PLAN_NO_RUN]
     grid = [
         GridLine(
             r["label"],
@@ -217,9 +223,8 @@ def _column_plan(
         # Phase 14d: the columns placed on the column plan page, plus those placed on this page
         cols = _placed_columns(conn, plan_sheet, str(plan["id"]), plan["position"] == 1)
         here = _placed_columns(conn, str(view.row["sheet_id"]), str(view.id), view.first)
-        if not cols and not here:
-            return None, None, [NO_PLACED_COLUMNS]
-        return ColumnPlanRef(grid, float(plan["scale_ratio"]), cols, here), plan_sheet, []
+        warn = [] if cols or here else [WARN_NO_PLACED_COLUMNS]
+        return ColumnPlanRef(grid, float(plan["scale_ratio"]), cols, here), plan_sheet, [], warn
     cols = [
         (
             (float(r["x_pt"]), float(r["y_pt"])),
@@ -234,7 +239,7 @@ def _column_plan(
             (run["id"],),
         )
     ]
-    return ColumnPlanRef(grid, float(plan["scale_ratio"]), cols), plan_sheet, []
+    return ColumnPlanRef(grid, float(plan["scale_ratio"]), cols), plan_sheet, [], []
 
 
 def _text_lines(conn, sheet_id: str) -> list[TextLine]:
@@ -288,9 +293,9 @@ def build_sheet(conn: psycopg.Connection, config: WorkerConfig, run_id: str) -> 
     mode = str(inputs.get("column_mode") or column_mode_default())
     if mode not in COLUMN_MODES:
         return _refuse(conn, run_id, [f"unknown column mode {mode!r}"])
-    plan_ref, plan_sheet = None, None
+    plan_ref, plan_sheet, warnings = None, None, []
     if sheet["build_role"] == "framing":
-        plan_ref, plan_sheet, reasons = _column_plan(conn, project_id, view, inputs, mode)
+        plan_ref, plan_sheet, reasons, warnings = _column_plan(conn, project_id, view, inputs, mode)
         if reasons:
             return _refuse(conn, run_id, reasons)
     pdf_path = config.upload_dir / sheet["stored_path"]
@@ -348,6 +353,7 @@ def build_sheet(conn: psycopg.Connection, config: WorkerConfig, run_id: str) -> 
             )
             if setup.role == "column_plan":
                 cache_page_ink(conn, config, sheet_id, run_id, doc[sheet["page_index"]], pb)
+        pb.notes.extend(warnings)
         counts = store(conn, project_id, sheet_id, run_id, sheet, pb, view)
         _finish(conn, run_id, "done", counts=counts, notes=pb.notes)
         reg = Jsonb(pb.registration.to_json()) if pb.registration else None
