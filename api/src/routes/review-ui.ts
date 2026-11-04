@@ -71,7 +71,7 @@ import { findSimilarImage } from '../review/settings.js';
 import { takeTagNumbers } from '../review/tag-counter.js';
 import { projectDuplicateTags, renumberPreview, renumberTags } from '../review/renumber-tags.js';
 import { HttpError } from './http-error.js';
-import { loadMemberViews } from './members.js';
+import { loadMemberViews } from '../review/member-views.js';
 import { ftIn, setupReasons } from './build.js';
 
 export interface ReviewUiRouteOptions {

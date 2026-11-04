@@ -46,7 +46,7 @@ import { fillSize } from '../review/size-fill.js';
 import { snapCandidates, type LineRow } from '../review/snap.js';
 import { IDLE_SECONDS, pilotReport, reportCsv } from '../review/pilot-report.js';
 import type { MemberView } from '../review/members.js';
-import { loadMemberViews } from './members.js';
+import { loadMemberViews } from '../review/member-views.js';
 import { HttpError } from './http-error.js';
 
 export interface CountRouteOptions {

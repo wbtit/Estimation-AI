@@ -13,7 +13,7 @@ import { buildTakeoff } from '../review/takeoff.js';
 import { loadSheetInclusions } from '../review/takeoff-sheets.js';
 import { draftStatus, loadSheetFlags } from '../review/flags.js';
 import { HttpError } from './http-error.js';
-import { loadMemberViews } from './members.js';
+import { loadMemberViews } from '../review/member-views.js';
 
 export interface TakeoffRouteOptions {
   db?: Kysely<Database>;

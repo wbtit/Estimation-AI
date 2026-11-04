@@ -50,7 +50,7 @@ import { parseLengthMm } from '../units/parse.js';
 import { loadKinds } from '../review/kinds.js';
 import { tagPool } from '../review/tag-scope.js';
 import { correctionLines } from '../review/corrections.js';
-import { loadMemberViews } from './members.js';
+import { loadMemberViews } from '../review/member-views.js';
 import { lastViewChange, undoViewChange } from '../review/view-undo.js';
 import { HttpError } from './http-error.js';
 

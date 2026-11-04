@@ -9,7 +9,7 @@ import type { Kysely } from 'kysely';
 import type { Database } from '../db/types.js';
 import { loadSheetInclusions, type SheetInclusion } from './takeoff-sheets.js';
 import { pieceQuantity } from './shared-line.js';
-import { loadMemberViews } from '../routes/members.js';
+import { loadMemberViews } from './member-views.js';
 
 export type FlagCode =
   | 'SHEET_INCLUDED_BY_DEFAULT'

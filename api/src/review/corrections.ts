@@ -4,7 +4,7 @@
 // whatever the reviewers decided.
 import type { Kysely } from 'kysely';
 import type { Database } from '../db/types.js';
-import { loadMemberViews } from '../routes/members.js';
+import { loadMemberViews } from './member-views.js';
 import { sameLine, type Candidate } from './members.js';
 
 export async function correctionLines(db: Kysely<Database>, projectId: string) {

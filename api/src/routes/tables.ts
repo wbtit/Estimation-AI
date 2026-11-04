@@ -17,7 +17,7 @@ import { tagPool } from '../review/tag-scope.js';
 import { loadSheetInclusions } from '../review/takeoff-sheets.js';
 import { buildJobTable, buildPageTables, GRADE_SUGGESTION } from '../review/tables.js';
 import { HttpError } from './http-error.js';
-import { loadMemberViews } from './members.js';
+import { loadMemberViews } from '../review/member-views.js';
 
 export interface TableRouteOptions {
   db?: Kysely<Database>;

@@ -13,7 +13,7 @@
 // build scale (pt x 25.4/72 x ratio). Deterministic.
 import type { Kysely } from 'kysely';
 import type { Database } from '../db/types.js';
-import { loadMemberViews } from '../routes/members.js';
+import { loadMemberViews } from './member-views.js';
 import type { BuiltPiece } from './line-first-bom.js';
 
 export const MM_PER_PT = 25.4 / 72;

@@ -5,7 +5,7 @@
 import type { Kysely } from 'kysely';
 import type { Database } from '../db/types.js';
 import type { MemberView } from './members.js';
-import { loadMemberViews } from '../routes/members.js';
+import { loadMemberViews } from './member-views.js';
 
 export type TagScope = 'job' | 'sheet';
 
