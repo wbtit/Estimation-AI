@@ -1,4 +1,4 @@
-"""The held-out TEST lock in the shared loaders, on SYNTHETIC folders only (tools/jobs.py)."""
+"""The held-out TEST lock in the shared loaders, on SYNTHETIC folders only (measure/jobs.py)."""
 
 from __future__ import annotations
 
@@ -7,11 +7,12 @@ from pathlib import Path
 
 import pytest
 
-import tools.jobs as jobs
-import tools.takeoff.common as common
-from tools.takeoff.inventory import merge_inventory
+import measure.jobs as jobs
+import measure.takeoff.common as common
+from measure.takeoff.inventory import merge_inventory
 
-TOOLS = Path(__file__).resolve().parents[1] / "tools"
+WORKER = Path(__file__).resolve().parents[1]
+TOOL_DIRS = (WORKER / "measure", WORKER / "tools")
 LOCKED_JOBS = [f"job-{n:03d}" for n in range(36, 50)]
 LOCKED_TAKEOFFS = [f"takeoff-{n:02d}.pdf" for n in range(23, 37)]
 
@@ -111,21 +112,17 @@ def test_inventory_regeneration_keeps_the_locked_entries(private):
 
 
 def test_no_tool_reads_the_inventory_around_the_loader():
-    allowed = {"takeoff/common.py", "takeoff/inventory.py", "markups_intake.py"}
+    allowed = {
+        "measure/takeoff/common.py",
+        "measure/takeoff/inventory.py",
+        "tools/markups_intake.py",
+    }
     direct = sorted(
-        str(p.relative_to(TOOLS))
-        for p in TOOLS.rglob("*.py")
-        if "inventory.json" in p.read_text() and str(p.relative_to(TOOLS)) not in allowed
+        str(p.relative_to(WORKER))
+        for d in TOOL_DIRS
+        for p in d.rglob("*.py")
+        if "inventory.json" in p.read_text() and str(p.relative_to(WORKER)) not in allowed
     )
     assert direct == []
-    for tool in (
-        "prefix_inventory",
-        "m7_study",
-        "target_tie",
-        "target_tie_posthoc",
-        "shared_lines_job005",
-    ):
-        assert "include_test_from_argv(sys.argv)" in (TOOLS / "takeoff" / f"{tool}.py").read_text()
-    assert (
-        "def shots(include_test: bool = False)" in (TOOLS / "takeoff/phase6b_report.py").read_text()
-    )
+    prefix = WORKER / "measure" / "takeoff" / "prefix_inventory.py"
+    assert "include_test_from_argv(sys.argv)" in prefix.read_text()

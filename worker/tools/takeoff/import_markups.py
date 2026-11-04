@@ -20,8 +20,8 @@ import pymupdf
 
 from src.config import load_config
 from src.db import connect
-from tools.takeoff.common import TAKEOFFS, takeoff_inventory
-from tools.takeoff.geometry_study import vertices_of
+from measure.takeoff.common import TAKEOFFS, takeoff_inventory
+from measure.takeoff.geometry_study import vertices_of
 from tools.takeoff.phase6c_trace import RUNS
 
 _MARK = re.compile(r"^([A-Za-z]{1,6})[-\s]?\d+[A-Za-z]?$")

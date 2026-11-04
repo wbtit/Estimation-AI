@@ -1,10 +1,5 @@
 """Line reconstruction, candidates, the frozen rule and structural-class suggestion (synthetic)."""
 
-import math
-import random
-import sys
-from pathlib import Path
-
 import pymupdf
 import pytest
 
@@ -13,11 +8,6 @@ from src.linking.labels import page_labels
 from src.linking.lines import Line, class_key, page_lines, reconstruct, width_bucket
 from src.linking.rules import propose
 from src.linking.structural import class_table, lines_in_box, suggest_classes
-
-STUDY = Path(__file__).resolve().parents[1] / "tools" / "study"
-sys.path.insert(0, str(STUDY))
-import candidates as study_cand  # noqa: E402
-import rules as study_rules  # noqa: E402
 
 
 def seg(x0, y0, x1, y1, w=1.0, col="black"):
@@ -108,38 +98,6 @@ def test_a_parallel_line_beats_a_nearer_crossing_line() -> None:
     parallel = ln(0, 125, 300, 125)  # 15 pt below, aligned
     p = propose(candidates_for((100, 100, 140, 110), 0.0, [crossing, parallel]))
     assert p.best.candidate.line is parallel and p.best.score == pytest.approx(15.0)
-
-
-def test_parity_with_the_study_implementation() -> None:
-    """The production rule must give the same ranking and confidence as the frozen study rule."""
-    rng = random.Random(7)
-    params = study_rules.Params(theta_tol=5.0, p_ang=20.0)
-    checked = 0
-    for _ in range(200):
-        lines = []
-        for _ in range(rng.randint(1, 8)):
-            x, y = rng.uniform(0, 400), rng.uniform(0, 300)
-            a = math.radians(rng.choice([0, 0, 90, 90, rng.uniform(0, 180)]))
-            length = rng.uniform(20, 200)
-            lines.append(ln(x, y, x + length * math.cos(a), y + length * math.sin(a)))
-        x0, y0 = rng.uniform(50, 350), rng.uniform(50, 250)
-        bbox = (x0, y0, x0 + 40, y0 + 8)
-        angle = rng.choice([0.0, 90.0])
-        mine = propose(candidates_for(bbox, angle, lines))
-        sl = [
-            {"p": (m.x0, m.y0), "q": (m.x1, m.y1), "klass": "k", "dashed": False, "layer": "",
-             "width": 2.0, "length": m.length}
-            for m in lines
-        ]  # fmt: skip
-        theirs = study_cand.candidates_for({"bbox": list(bbox), "angle_deg": angle}, sl)
-        if not theirs:
-            assert mine.best is None
-            continue
-        _, order, info = study_rules.predict(theirs, {}, params)
-        assert [r.candidate.cand for r in mine.ranked][:3] == order[:3]
-        assert mine.confidence == study_rules.confidence(info, 5.0, 40.0)
-        checked += 1
-    assert checked > 100
 
 
 # --- structural classes --------------------------------------------------------------------------

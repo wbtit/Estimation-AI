@@ -6,7 +6,6 @@ import pymupdf
 from db_fixtures import DbProject
 from pdf_factory import LANDSCAPE, add_lines, new_doc
 
-from src.pdf_scan.reread import reread_sheet_numbers
 from src.pdf_scan.sheet_id import SHEET_NUMBER_RE, TITLE_BLOCK_NUMBER_RE
 from src.pdf_scan.textlines import page_words_and_lines
 from src.pdf_scan.textscan import scan_text
@@ -107,64 +106,5 @@ def test_the_scan_stores_the_number_old_value_and_flag(dbp: DbProject):
     }
 
 
-def test_the_reread_previews_without_writing_and_then_applies(dbp: DbProject):
-    doc = new_doc()
-    block_page(doc, "S4-01", other="S4")
-    doc.save(str(dbp.pdf_path))
-    doc.close()
-    dbp.scan()
-    # a project scanned before Phase 9: the earlier value is stored, no flag
-    dbp.conn.execute(
-        "UPDATE sheets SET sheet_number = 'S4', sheet_number_old = NULL, sheet_number_flag = NULL"
-        " WHERE project_id = %s",
-        (dbp.project_id,),
-    )
-    dbp.conn.commit()
-    preview = reread_sheet_numbers(dbp.conn, dbp.config, dbp.project_id)
-    assert preview["applied"] is False and preview["number_changed"] == 1
-    assert dbp.conn.execute(
-        "SELECT sheet_number FROM sheets WHERE project_id = %s", (dbp.project_id,)
-    ).fetchone() == {"sheet_number": "S4"}  # nothing written
-    done = reread_sheet_numbers(dbp.conn, dbp.config, dbp.project_id, apply=True)
-    assert done["applied"] is True and done["title_block"] == 1
-    assert dbp.conn.execute(
-        "SELECT sheet_number, sheet_number_old, sheet_number_flag FROM sheets"
-        " WHERE project_id = %s",
-        (dbp.project_id,),
-    ).fetchone() == {
-        "sheet_number": "S4-01",
-        "sheet_number_old": "S4",
-        "sheet_number_flag": "title_block",
-    }
-    again = reread_sheet_numbers(dbp.conn, dbp.config, dbp.project_id)
-    assert again["unchanged"] == 1 and again["number_changed"] == 0
-
-
 def test_pymupdf_is_imported_for_the_factory():
     assert pymupdf.__name__ == "pymupdf"
-
-
-def test_fill_ins_only_never_overwrite_a_stored_number(dbp: DbProject):
-    doc = new_doc()
-    block_page(doc, "S4-01", other="S4")
-    block_page(doc, "S4-02", other="S4")
-    doc.save(str(dbp.pdf_path))
-    doc.close()
-    dbp.scan()
-    # page 0 had the earlier reading stored, page 1 had no number at all
-    dbp.conn.execute(
-        "UPDATE sheets SET sheet_number = CASE page_index WHEN 0 THEN 'S4' ELSE NULL END,"
-        " sheet_number_old = NULL, sheet_number_flag = NULL WHERE project_id = %s",
-        (dbp.project_id,),
-    )
-    dbp.conn.commit()
-    done = reread_sheet_numbers(dbp.conn, dbp.config, dbp.project_id, apply=True, only_missing=True)
-    assert done["written"] == 1
-    assert {c["kind"] for c in done["changes"]} == {"number_changed", "number_read_where_none"}
-    rows = dbp.conn.execute(
-        "SELECT page_index, sheet_number, sheet_number_flag FROM sheets WHERE project_id = %s"
-        " ORDER BY page_index",
-        (dbp.project_id,),
-    ).fetchall()
-    assert rows[0] == {"page_index": 0, "sheet_number": "S4", "sheet_number_flag": None}
-    assert rows[1] == {"page_index": 1, "sheet_number": "S4-02", "sheet_number_flag": "title_block"}

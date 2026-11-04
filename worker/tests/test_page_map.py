@@ -5,13 +5,13 @@ from __future__ import annotations
 
 import pymupdf
 
-from tools.markups_intake import _page_map
-from tools.takeoff.common import (
+from measure.takeoff.common import (
     PAGE_MAP_INDEX,
     PAGE_MAP_TEXT_HASH,
     effective_page_map,
     with_page_map,
 )
+from tools.markups_intake import _page_map
 
 SHEET = "GENERAL NOTES STEEL BEAMS W12X26 TYP GRID A B C 1 2 3 FRAMING PLAN LEVEL 2 SCALE 1/8"
 

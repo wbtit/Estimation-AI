@@ -26,7 +26,7 @@ from src.linking.lines import page_lines
 from src.linking.rules import propose
 from src.linking.structural import class_table, lines_in_box, suggest_classes
 from src.review.auto_run import whole_sheet_box
-from tools.takeoff.common import TAKEOFFS, takeoff_inventory
+from measure.takeoff.common import TAKEOFFS, takeoff_inventory
 
 RUNS = TAKEOFFS / "phase6b_projects.json"
 

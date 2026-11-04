@@ -41,10 +41,8 @@ from pathlib import Path
 
 import pymupdf
 
-from src.pdf_scan.analyze import analyze_page
-from tools.bbmeasure import measure_ratio
-from tools.takeoff.colour_study import colour_key
-from tools.takeoff.common import (
+from measure.takeoff.colour_study import colour_key
+from measure.takeoff.common import (
     PRIVATE,
     ROOT,
     TAKEOFFS,
@@ -52,8 +50,10 @@ from tools.takeoff.common import (
     effective_page_map,
     fingerprint,
 )
+from measure.takeoff.prefix_inventory import prefix_of
+from src.pdf_scan.analyze import analyze_page
+from tools.bbmeasure import measure_ratio
 from tools.takeoff.import_markups import page_symbols
-from tools.takeoff.prefix_inventory import prefix_of
 
 SOURCE = ROOT / "fixtures" / "MARKUPS"
 DEST = PRIVATE / "markups"
@@ -290,7 +290,7 @@ def existing_docs() -> dict[str, Doc]:
 
 
 def _page_map(markup: Path, drawing: Path) -> dict[str, int]:
-    """The takeoff loader's page map (tools/takeoff/inventory.py rule: word-set Jaccard >= 0.9)."""
+    """The takeoff loader's page map (measure/takeoff/inventory.py: word-set Jaccard >= 0.9)."""
     fm, fd = fingerprint(markup), fingerprint(drawing)
     out: dict[str, int] = {}
     for k, sig in enumerate(fm["sigs"]):
@@ -671,9 +671,9 @@ NOTES = """\
   only: not usable as a column / beam answer key.
 - Page maps: a markup page without a text layer has no page-map entry (the existing loader
   rule); 19 such pages in 3 jobs.
-- Lock in code (tools/jobs.py): the shared loaders (`drawing_documents()`,
+- Lock in code (measure/jobs.py): the shared loaders (`drawing_documents()`,
   `takeoff_files()`, `takeoff_inventory()`) return DEV jobs only; the locked jobs only with
-  `--include-test --prereg <document>`, which prints a warning. tools/takeoff/inventory.py
+  `--include-test --prereg <document>`, which prints a warning. measure/takeoff/inventory.py
   keeps the locked entries of inventory.json unchanged when it regenerates the file.
 """
 

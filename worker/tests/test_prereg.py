@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from tools.prereg import verify, write
+from measure.prereg import verify, write
 
 
 def test_the_committed_hash_must_match(tmp_path):
