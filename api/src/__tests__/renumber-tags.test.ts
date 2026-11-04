@@ -171,12 +171,15 @@ describe('Renumber tags (test database)', () => {
     });
     expect(del.statusCode).toBe(200);
     // a person types a tag on a5 (C7 -> C40); it must never be renumbered
-    const typed = await app.inject({
-      method: 'PATCH',
-      url: `/api/projects/${projectId}/members/${ids.a5}`,
-      payload: { who: WHO, tag_text: 'C40' },
-    });
-    expect(typed.statusCode).toBe(200);
+    // (the edit row the old member PATCH route wrote for a typed tag)
+    await recordAction(db, WHO, [
+      {
+        memberId: ids.a5!,
+        field: 'tag',
+        before: { prefix: 'C', number: 7 },
+        after: { prefix: 'C', number: 40 },
+      },
+    ]);
     const preview = (await get('/tags/renumber')).json();
     // a1 C1 stays; a3 C3 -> C2; b1 C6 -> C3; b2 C7 -> C4
     expect(preview).toMatchObject({ changes: 3, by_prefix: { C: 3 }, duplicates: 0 });

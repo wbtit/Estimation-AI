@@ -883,13 +883,6 @@ describe('review UI routes (test database)', () => {
     expect(res.json().sections.map((s: { name: string }) => s.name)).toEqual(['W16X26', 'W16X31']);
   });
 
-  it('starts auto mode once', async () => {
-    const res = await post('/auto-build', {});
-    expect(res.statusCode).toBe(409); // a finished auto run exists
-    const proc = (await get('/processing')).json();
-    expect(proc.auto_build.status).toBe('done');
-  });
-
   it('creates a project with a status, changes it, and lists a thumbnail field', async () => {
     const res = await app.inject({
       method: 'POST',
@@ -925,12 +918,6 @@ describe('review UI routes (test database)', () => {
       thumbnail_url: null,
       archived: true,
     });
-    const auto = await app.inject({
-      method: 'POST',
-      url: `/api/projects/${id}/auto-build`,
-      payload: {},
-    });
-    expect(auto.statusCode).toBe(409); // no PDF scanned
     await deleteProject(db, id);
   });
 

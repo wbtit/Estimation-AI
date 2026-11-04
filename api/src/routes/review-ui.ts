@@ -264,65 +264,6 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
   }
 
   // ---- auto mode and processing -------------------------------------------------------------------
-  app.post<{ Params: { projectId: string }; Body: { crossing_rule?: 'family' | 'direction' } }>(
-    '/api/projects/:projectId/auto-build',
-    {
-      schema: {
-        params: projectParams,
-        body: {
-          type: ['object', 'null'],
-          additionalProperties: false,
-          properties: { crossing_rule: { enum: ['family', 'direction'] } },
-        },
-      },
-    },
-    async (request, reply) => {
-      const { projectId } = request.params;
-      await loadProject(projectId);
-      const file = await db()
-        .selectFrom('project_files')
-        .select('scan_status')
-        .where('project_id', '=', projectId)
-        .executeTakeFirst();
-      if (!file || file.scan_status !== 'done')
-        throw new HttpError(409, { error: 'the PDF scan is not finished' });
-      const done = await db()
-        .selectFrom('auto_builds')
-        .select('id')
-        .where('project_id', '=', projectId)
-        .where('status', 'in', ['pending', 'running', 'done'])
-        .executeTakeFirst();
-      if (done) throw new HttpError(409, { error: 'auto mode already ran or is running' });
-      const out = await db()
-        .transaction()
-        .execute(async (trx) => {
-          const auto = await trx
-            .insertInto('auto_builds')
-            .values({ project_id: projectId })
-            .returning('id')
-            .executeTakeFirstOrThrow();
-          const job = await trx
-            .insertInto('jobs')
-            .values({
-              type: 'auto_build',
-              payload: JSON.stringify({
-                project_id: projectId,
-                auto_build_id: auto.id,
-                crossing_rule: request.body?.crossing_rule ?? 'family',
-              }),
-            })
-            .returning('id')
-            .executeTakeFirstOrThrow();
-          await trx
-            .updateTable('auto_builds')
-            .set({ job_id: job.id })
-            .where('id', '=', auto.id)
-            .execute();
-          return { auto_build_id: auto.id, job_id: job.id };
-        });
-      return reply.status(202).send({ ...out, status: 'pending' });
-    },
-  );
 
   app.get<{ Params: { projectId: string } }>(
     '/api/projects/:projectId/processing',

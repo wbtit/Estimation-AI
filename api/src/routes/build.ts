@@ -18,7 +18,7 @@
 // (worker/src/build/job.py, setup_reasons); with allow_system_values (the review UI's build) a value
 // only has to be there, as in auto mode.
 import type { FastifyPluginAsync } from 'fastify';
-import { sql, type Kysely, type Selectable } from 'kysely';
+import { type Kysely, type Selectable } from 'kysely';
 import ExcelJS from 'exceljs';
 import { defaultCatalogLookup } from '../catalog/lookup.js';
 import { getDb } from '../db/client.js';
@@ -29,7 +29,6 @@ import {
   NAME_OF_ROLE,
   pickView,
   SKIP_NAME,
-  viewJson,
   viewsOf,
   type Box,
   type LoadedView,
@@ -455,52 +454,6 @@ export const buildRoutes: FastifyPluginAsync<BuildRouteOptions> = async (app, op
 
   app.post<{
     Params: { projectId: string; sheetId: string };
-    Body: { pen_class: string; source: 'suggested' | 'person'; view_id?: string; who: string };
-  }>(
-    '/api/projects/:projectId/sheets/:sheetId/build-setup/pen-class',
-    {
-      schema: {
-        params: sheetParams,
-        body: {
-          type: 'object',
-          required: ['pen_class', 'source', 'who'],
-          additionalProperties: false,
-          properties: {
-            pen_class: { type: 'string', maxLength: 40 },
-            source: { enum: ['suggested', 'person'] },
-            view_id: uuid,
-            who,
-          },
-        },
-      },
-    },
-    async (request) => {
-      const { s, v } = await target(
-        request.params.projectId,
-        request.params.sheetId,
-        request.body.view_id,
-      );
-      const editor = who_(request.body.who);
-      const { pen_class, source } = request.body;
-      if (!PEN_CLASS_RE.test(pen_class))
-        throw new HttpError(400, { error: "a pen class is 'width bucket|colour|solid or dash'" });
-      await confirm(
-        s,
-        v,
-        'pen_class',
-        v.pens.map((p) => p.pen_class),
-        [pen_class],
-        { no_beams_by: null, no_beams_at: null },
-        editor,
-        'setup',
-        replacePens(v, { pen_class, source }, editor),
-      );
-      return { ok: true, pen_class, source };
-    },
-  );
-
-  app.post<{
-    Params: { projectId: string; sheetId: string };
     Body: { x: number; y: number; mode?: 'replace' | 'add'; view_id?: string; who: string };
   }>(
     '/api/projects/:projectId/sheets/:sheetId/build-setup/pick-pen',
@@ -736,88 +689,6 @@ export const buildRoutes: FastifyPluginAsync<BuildRouteOptions> = async (app, op
         editor,
       );
       return { ok: true, column_plan_sheet_id: planSheet, column_plan_view_id: planView };
-    },
-  );
-
-  app.get<{ Params: { projectId: string; sheetId: string } }>(
-    '/api/projects/:projectId/sheets/:sheetId/build',
-    { schema: { params: sheetParams } },
-    async (request) => {
-      const { s: page, v, views } = await target(request.params.projectId, request.params.sheetId);
-      const s = asSheet(page, v);
-      const runs = await db()
-        .selectFrom('build_runs')
-        .selectAll()
-        .where('sheet_id', '=', s.id)
-        .orderBy('started_at', 'desc')
-        .orderBy('id', 'desc')
-        .execute();
-      const runOf = (x: LoadedView) =>
-        runs.find((r) => (r.view_id ?? firstId(views)) === x.row.id) ?? null;
-      const last = runs[0];
-      const states = await db()
-        .selectFrom('members')
-        .select(['build_state', sql<number>`count(*)::int`.as('n')])
-        .where('sheet_id', '=', s.id)
-        .where('build_run_id', 'is not', null)
-        .groupBy('build_state')
-        .execute();
-      const runJson = (r: (typeof runs)[number]) => ({
-        id: r.id,
-        view_id: r.view_id ?? firstId(views),
-        status: r.status,
-        requested_by: r.requested_by,
-        started_at: r.started_at,
-        finished_at: r.finished_at,
-        counts: r.counts,
-        notes: r.notes,
-        error: r.error,
-        rules_version: r.rules_version,
-      });
-      return {
-        sheet_id: s.id,
-        setup: {
-          role: s.build_role,
-          crop: s.crop_region,
-          crop_confirmed: s.crop_confirmed_by
-            ? { by: s.crop_confirmed_by, at: s.crop_confirmed_at }
-            : null,
-          scale: {
-            ratio: s.build_scale_ratio === null ? null : Number(s.build_scale_ratio),
-            text: s.build_scale_text,
-          },
-          scale_confirmed: s.scale_confirmed_by
-            ? { by: s.scale_confirmed_by, at: s.scale_confirmed_at }
-            : null,
-          tos: {
-            mm: s.tos_mm === null ? null : Number(s.tos_mm),
-            raw: s.tos_raw,
-            source: s.tos_source,
-          },
-          tos_confirmed: s.tos_confirmed_by
-            ? { by: s.tos_confirmed_by, at: s.tos_confirmed_at }
-            : null,
-          pen_class: s.pen_class,
-          pen_class_source: s.pen_class_source,
-          pen_class_confirmed: s.pen_class_confirmed_by
-            ? { by: s.pen_class_confirmed_by, at: s.pen_class_confirmed_at }
-            : null,
-        },
-        missing: setupReasons(s),
-        build_status: page.build_status,
-        built_at: s.built_at,
-        registration: s.registration,
-        last_run: last ? runJson(last) : null,
-        views: views.map((x) => {
-          const r = runOf(x);
-          return {
-            ...viewJson(x),
-            missing: setupReasons(asSheet(page, x)),
-            last_run: r ? runJson(r) : null,
-          };
-        }),
-        pieces: Object.fromEntries(states.map((r) => [r.build_state ?? 'none', Number(r.n)])),
-      };
     },
   );
 

@@ -13,8 +13,6 @@ export interface GradeRule {
   set_at: string;
 }
 
-export const GRADE_NOT_SET = 'not set';
-
 /** The shape family of a member ("joist" for joists), or null when the profile is not parsed. */
 export function familyOf(m: Pick<MemberView, 'type' | 'profile'>): ShapeFamily | null {
   if (m.type === 'joist') return 'joist';
@@ -48,22 +46,4 @@ export async function loadGrades(
       });
   }
   return out;
-}
-
-export async function setGrade(
-  db: Kysely<Database>,
-  projectId: string,
-  family: ShapeFamily,
-  grade: string | null,
-  who: string,
-): Promise<void> {
-  await db
-    .insertInto('project_grade_rules')
-    .values({
-      project_id: projectId,
-      shape_family: family,
-      grade: grade === null || grade.trim() === '' ? null : grade.trim(),
-      set_by: who.trim(),
-    })
-    .execute();
 }

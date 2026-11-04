@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { kgToLb, lbPerFtToKgPerM, mmToFeetInches } from '../units/index.js';
+import { lbPerFtToKgPerM, mmToFeetInches } from '../units/index.js';
 
 describe('mmToFeetInches', () => {
   it.each([
@@ -39,10 +39,5 @@ describe('weight conversions', () => {
   it('converts lb/ft to kg/m with the exact definitional factor', () => {
     expect(lbPerFtToKgPerM(1)).toBeCloseTo(1.488163944, 8);
     expect(lbPerFtToKgPerM(100)).toBeCloseTo(148.8163944, 6);
-  });
-
-  it('converts kg to lb', () => {
-    expect(kgToLb(0.45359237)).toBeCloseTo(1, 12);
-    expect(kgToLb(125)).toBeCloseTo(275.578, 3);
   });
 });

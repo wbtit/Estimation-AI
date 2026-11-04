@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { findJoists, parseJoist } from '../review/joist.js';
+import { parseJoist } from '../review/joist.js';
 import { parseProfile } from '../review/profile.js';
 
 const fixture = JSON.parse(
@@ -28,13 +28,6 @@ describe('joist parser parity with the Python parser', () => {
         c.canonical,
         c.series,
       ]);
-    }
-  });
-
-  it('finds the same designations inside a line', () => {
-    expect(fixture.find.length).toBeGreaterThan(5);
-    for (const c of fixture.find) {
-      expect([c.text, findJoists(c.text).map((j) => j.canonical)]).toEqual([c.text, c.canonicals]);
     }
   });
 

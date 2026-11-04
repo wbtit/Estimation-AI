@@ -217,9 +217,14 @@ describe('view routes (test database)', () => {
       view_id: v2,
       who: WHO,
     });
-    const views = (await get(`/sheets/${sheetId}/build`)).json().views;
-    expect(views.map((v: { scale_ratio: number }) => v.scale_ratio)).toEqual([96, 48]);
-    expect(views.map((v: { tos_mm: number }) => v.tos_mm)).toEqual([0, 3000]);
+    const views = await db
+      .selectFrom('build_views')
+      .select(['scale_ratio', 'tos_mm'])
+      .where('sheet_id', '=', sheetId)
+      .orderBy('position')
+      .execute();
+    expect(views.map((v) => Number(v.scale_ratio))).toEqual([96, 48]);
+    expect(views.map((v) => Number(v.tos_mm))).toEqual([0, 3000]);
     const edits = await db
       .selectFrom('sheet_edits')
       .select('field_name')

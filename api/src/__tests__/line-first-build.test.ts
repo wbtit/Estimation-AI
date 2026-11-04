@@ -209,21 +209,19 @@ describe('build routes (test database)', () => {
       who: WHO,
     });
     expect(tos.statusCode).toBe(200);
-    expect(
-      (
-        await post(`/sheets/${sheetId}/build-setup/pen-class`, {
-          pen_class: 'heavy',
-          source: 'person',
-          who: WHO,
-        })
-      ).statusCode,
-    ).toBe(400);
-    const pen = await post(`/sheets/${sheetId}/build-setup/pen-class`, {
-      pen_class: '1.5-2.5|black|solid',
-      source: 'suggested',
-      who: WHO,
-    });
-    expect(pen.statusCode).toBe(200);
+    // a suggested beam pen, the row auto mode / Pick beam store (the pen-class route is gone)
+    const v0 = await firstView(db, sheetId);
+    await db
+      .insertInto('view_pens')
+      .values({
+        view_id: v0.id,
+        position: 1,
+        pen_class: '1.5-2.5|black|solid',
+        source: 'suggested',
+        confirmed_by: WHO,
+        confirmed_at: new Date(),
+      })
+      .execute();
     const v = await firstView(db, sheetId);
     expect(v.box_confirmed_by).toBe(WHO);
     expect(Number(v.scale_ratio)).toBe(96);
@@ -243,11 +241,8 @@ describe('build routes (test database)', () => {
       .where('sheet_id', '=', sheetId)
       .execute();
     expect(edits.map((e) => e.field_name).sort()).toEqual(
-      ['build_role', 'build_scale', 'crop_region', 'pen_class', 'tos'].sort(),
+      ['build_role', 'build_scale', 'crop_region', 'tos'].sort(),
     );
-    const state = (await get(`/sheets/${sheetId}/build`)).json();
-    expect(state.missing).toEqual([]);
-    expect(state.setup.tos.mm).toBe(0);
   });
 
   it('a framing page waits for its column plan unless told there is none', async () => {
@@ -269,11 +264,15 @@ describe('build routes (test database)', () => {
     const again = await post(`/sheets/${sheetId}/build`, { who: WHO, no_column_plan: true });
     expect(again.statusCode).toBe(409);
     expect(again.json().error).toMatch(/already being built/);
-    const state = (await get(`/sheets/${sheetId}/build`)).json();
-    expect(state.last_run.status).toBe('pending');
+    const lastRun = await db
+      .selectFrom('build_runs')
+      .select('status')
+      .where('id', '=', ok.json().build_run_id)
+      .executeTakeFirstOrThrow();
+    expect(lastRun.status).toBe('pending');
   });
 
-  it('serves the BOM of built pieces only, and the label-first lists leave them out', async () => {
+  it('serves the BOM of built pieces only (a label-first member is left out)', async () => {
     const run = await db
       .insertInto('build_runs')
       .values({ project_id: projectId, sheet_id: planId, requested_by: WHO, status: 'done' })
@@ -332,8 +331,6 @@ describe('build routes (test database)', () => {
     expect(bom.totals.pieces).toBe(1);
     expect(bom.attention.pieces).toBe(1);
     expect(bom.rows.map((r: { piecemark: string }) => r.piecemark).sort()).toEqual(['BE1', 'BE2']);
-    const listed = (await get('/members')).json().members as { member_id: string }[];
-    expect(listed.map((m) => m.member_id)).toEqual(['M-label']);
     const xlsx = await app.inject({
       method: 'GET',
       url: `/api/projects/${projectId}/line-first/bom.xlsx`,

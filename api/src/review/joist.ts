@@ -13,7 +13,6 @@ export interface Joist {
 
 const BODY = '(?<depth>\\d{1,3})[\\s-]*(?<series>DLH|LH|K)[\\s-]*(?<number>\\d{1,2})';
 const WHOLE = new RegExp(`^\\s*${BODY}\\s*$`, 'i');
-const FIND = new RegExp(`(?<![A-Za-z0-9./-])${BODY}(?![A-Za-z0-9])`, 'gi');
 
 function make(m: RegExpMatchArray): Joist {
   const g = m.groups as { depth: string; series: string; number: string };
@@ -30,8 +29,4 @@ function make(m: RegExpMatchArray): Joist {
 export function parseJoist(text: string): Joist | null {
   const m = WHOLE.exec(text);
   return m ? make(m) : null;
-}
-
-export function findJoists(text: string): Joist[] {
-  return [...text.matchAll(FIND)].map(make);
 }

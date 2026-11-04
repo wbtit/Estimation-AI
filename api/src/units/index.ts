@@ -12,10 +12,6 @@ export function lbPerFtToKgPerM(lbPerFt: number): number {
   return lbPerFt * KG_PER_M_PER_LB_PER_FT;
 }
 
-export function kgToLb(kg: number): number {
-  return kg / KG_PER_LB;
-}
-
 function gcd(a: number, b: number): number {
   return b === 0 ? a : gcd(b, a % b);
 }

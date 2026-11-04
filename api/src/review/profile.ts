@@ -156,14 +156,6 @@ function findInternal(input: string): { text: string; found: Found[] } {
   return { text, found: kept };
 }
 
-export function findProfiles(input: string): ParsedProfile[] {
-  return findInternal(input).found.map(({ raw, family, canonical }) => ({
-    raw,
-    family,
-    canonical,
-  }));
-}
-
 /** The profile if the whole text is exactly one profile expression, else null. */
 export function parseProfile(input: string): ParsedProfile | null {
   const { text, found } = findInternal(input);

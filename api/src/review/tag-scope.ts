@@ -4,8 +4,6 @@
 // any tag, and the clash check uses the same pool.
 import type { Kysely } from 'kysely';
 import type { Database } from '../db/types.js';
-import type { MemberView } from './members.js';
-import { loadMemberViews } from './member-views.js';
 
 export type TagScope = 'job' | 'sheet';
 
@@ -16,18 +14,4 @@ export async function tagScopeOf(db: Kysely<Database>, projectId: string): Promi
     .where('id', '=', projectId)
     .executeTakeFirst();
   return p?.tag_scope ?? 'job';
-}
-
-/**
- * The members whose tags a new tag must not collide with: every member of the project (job scope) or
- * the members of the sheet (sheet scope).
- */
-export async function tagPool(
-  db: Kysely<Database>,
-  projectId: string,
-  sheetMembers: MemberView[],
-  scope?: TagScope,
-): Promise<MemberView[]> {
-  const s = scope ?? (await tagScopeOf(db, projectId));
-  return s === 'job' ? loadMemberViews(db, projectId) : sheetMembers;
 }

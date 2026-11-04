@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { canonicalNumber, findProfiles, numberValue, parseProfile } from '../review/profile.js';
+import { canonicalNumber, numberValue, parseProfile } from '../review/profile.js';
 
 const fixture = JSON.parse(
   fs.readFileSync(
@@ -38,15 +38,5 @@ describe('profile parser parity with the Python parser', () => {
     expect(numberValue('1/0')).toBeNull();
     expect(canonicalNumber('3 1/2')).toBe('3-1/2');
     expect(canonicalNumber('.25')).toBe('0.25');
-  });
-
-  it('finds several profiles in a line but only a whole-text match parses', () => {
-    expect(findProfiles('(2) W12x26 AND L3x3x1/4 ANGLE').map((p) => p.canonical)).toEqual([
-      'W12X26',
-      'L3X3X1/4',
-    ]);
-    expect(parseProfile('TYP W12x26')).toBeNull();
-    expect(parseProfile('W12x26')?.canonical).toBe('W12X26');
-    expect(parseProfile('')).toBeNull();
   });
 });
