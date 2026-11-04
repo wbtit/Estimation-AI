@@ -5,11 +5,6 @@
 
 export type LineRow = readonly number[];
 
-export interface NearestLine {
-  index: number;
-  distance: number;
-}
-
 export interface SnappedPoint {
   x: number;
   y: number;
@@ -33,8 +28,6 @@ export function pointSegmentDistance(
   return Math.hypot(px - (x0 + t * dx), py - (y0 + t * dy));
 }
 
-const lengthOf = (l: LineRow): number => Math.hypot(l[2] - l[0], l[3] - l[1]);
-
 function outside(l: LineRow, x: number, y: number, r: number): boolean {
   return (
     x < Math.min(l[0], l[2]) - r ||
@@ -42,97 +35,6 @@ function outside(l: LineRow, x: number, y: number, r: number): boolean {
     y < Math.min(l[1], l[3]) - r ||
     y > Math.max(l[1], l[3]) + r
   );
-}
-
-/** The line nearest to the point within `radius`; a tie goes to the longer line, then the lower index. */
-export function nearestLine(
-  lines: readonly LineRow[],
-  x: number,
-  y: number,
-  radius: number,
-): NearestLine | null {
-  let best: NearestLine | null = null;
-  for (let i = 0; i < lines.length; i += 1) {
-    const l = lines[i] as LineRow;
-    if (outside(l, x, y, radius)) continue;
-    const d = pointSegmentDistance(x, y, l);
-    if (d > radius) continue;
-    if (
-      best === null ||
-      d < best.distance - 1e-9 ||
-      (Math.abs(d - best.distance) <= 1e-9 &&
-        lengthOf(l) > lengthOf(lines[best.index] as LineRow) + 1e-9)
-    ) {
-      best = { index: i, distance: d };
-    }
-  }
-  return best;
-}
-
-export interface SnapCandidate extends NearestLine {
-  /** 0 solid medium or heavy, 1 solid thin, 2 dashed. */
-  tier: 0 | 1 | 2;
-}
-
-export const MAX_SNAP_CANDIDATES = 8;
-
-const roleOf = (l: LineRow): number | null =>
-  l.length > 6 ? (l[6] as number) : null;
-const isDimension = (l: LineRow): boolean => l.length > 7 && l[7] === 1;
-
-/** Hatch and detected dimension lines are never a snap target. */
-export function snappable(l: LineRow): boolean {
-  return roleOf(l) !== 0 && !isDimension(l);
-}
-
-/** Solid medium or heavy 0, solid thin 1, dashed 2 (a row with no role: medium from 0.5 pt wide). */
-export function snapTier(l: LineRow, classes: readonly string[]): 0 | 1 | 2 {
-  const cls = classes[l[4] as number] ?? "";
-  if (cls.endsWith("|dash")) return 2;
-  const role = roleOf(l);
-  const medium = role !== null ? role >= 2 : (l[5] as number) >= 0.5;
-  return medium ? 0 : 1;
-}
-
-/**
- * The candidates for a pointer, best first: lines within `radius` that can be snapped to, by tier,
- * then distance, then the longer line, then the lower index. The first is the snap; Tab walks down
- * the list before the click is confirmed. At most MAX_SNAP_CANDIDATES.
- */
-export function snapCandidates(
-  lines: readonly LineRow[],
-  classes: readonly string[],
-  x: number,
-  y: number,
-  radius: number,
-): SnapCandidate[] {
-  const found: SnapCandidate[] = [];
-  for (let i = 0; i < lines.length; i += 1) {
-    const l = lines[i] as LineRow;
-    if (outside(l, x, y, radius) || !snappable(l)) continue;
-    const d = pointSegmentDistance(x, y, l);
-    if (d > radius) continue;
-    found.push({ index: i, distance: d, tier: snapTier(l, classes) });
-  }
-  found.sort(
-    (a, b) =>
-      a.tier - b.tier ||
-      (Math.abs(a.distance - b.distance) > 1e-9
-        ? a.distance - b.distance
-        : 0) ||
-      lengthOf(lines[b.index] as LineRow) -
-        lengthOf(lines[a.index] as LineRow) ||
-      a.index - b.index,
-  );
-  return found.slice(0, MAX_SNAP_CANDIDATES);
-}
-
-/** The same lines, in the same order (Tab keeps its place while the pointer stays among them). */
-export function sameCandidates(
-  a: readonly SnapCandidate[],
-  b: readonly SnapCandidate[],
-): boolean {
-  return a.length === b.length && a.every((c, i) => c.index === b[i]?.index);
 }
 
 export function segmentIntersection(

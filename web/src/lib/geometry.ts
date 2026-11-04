@@ -21,27 +21,6 @@ export function realMm(drawnPt: number, scaleRatio: number): number {
   return drawnPt * MM_PER_PT * scaleRatio;
 }
 
-export function lengthMm(p: Pt, q: Pt, scaleRatio: number): number {
-  return realMm(Math.hypot(q.x - p.x, q.y - p.y), scaleRatio);
-}
-
-export function normaliseBox(a: Pt, b: Pt): Box {
-  return {
-    x0: Math.min(a.x, b.x),
-    y0: Math.min(a.y, b.y),
-    x1: Math.max(a.x, b.x),
-    y1: Math.max(a.y, b.y),
-  };
-}
-
-export function boxWidth(b: Box): number {
-  return b.x1 - b.x0;
-}
-
-export function boxHeight(b: Box): number {
-  return b.y1 - b.y0;
-}
-
 /**
  * Page point under a pointer. `rect` is the on-screen rectangle of the page (CSS pixels) and
  * `pageW` x `pageH` the displayed page size in points; the page fills the rectangle exactly.
@@ -80,9 +59,4 @@ export function mmToFeetInches(mm: number, denominator = 16): string {
     inchText = inches === 0 ? fraction : `${inches} ${fraction}`;
   }
   return `${negative && units !== 0 ? "-" : ""}${feet}'-${inchText}"`;
-}
-
-/** Zoom that makes a page of the given width fit a container width (with a little margin). */
-export function fitZoom(pageW: number, containerW: number): number {
-  return Math.max(0.05, (containerW - 16) / pageW);
 }

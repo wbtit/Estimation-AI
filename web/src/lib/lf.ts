@@ -351,10 +351,6 @@ export function isColumn(p: Pick<Piece, "type">): boolean {
   return p.type === "column";
 }
 
-export function isBrace(p: Pick<Piece, "type">): boolean {
-  return p.type === "brace";
-}
-
 /** A beam without a size: the "Undefined Beams" layer. */
 export function isUndefinedBeam(p: Piece): boolean {
   return !isColumn(p) && !p.profile;
@@ -479,16 +475,6 @@ export function piecesInBox(
   return pieces.filter(
     (p) => p.a && visible(p, layers) && inside(p.a) && (!p.b || inside(p.b)),
   );
-}
-
-/** The lines of one pen class (for the "Pick beam" highlight). */
-export function linesOfClass(
-  lines: SheetLines | null,
-  pen: string | null,
-): number[][] {
-  if (!lines || !pen) return [];
-  const k = lines.classes.indexOf(pen);
-  return k < 0 ? [] : lines.lines.filter((r) => r[4] === k);
 }
 
 // ---- pen preview (Pick beam) ---------------------------------------------------------------------
@@ -1066,12 +1052,6 @@ export const PAGE_TYPE_SHORT: Record<string, string> = {
   schedule_legend: "Schedule",
   general_notes: "Notes",
   other: "Other",
-};
-
-export const ROLE_LABEL: Record<string, string> = {
-  column_plan: "Column plan",
-  framing: "Framing",
-  skip: "Skip",
 };
 
 /** Why a piece is amber or red, in short words (the tooltip). */

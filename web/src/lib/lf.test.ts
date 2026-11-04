@@ -5,7 +5,6 @@ import {
   bomOrder,
   common,
   flagOf,
-  linesOfClass,
   MIXED,
   nameFromFile,
   parseRoute,
@@ -139,20 +138,6 @@ describe("hit tests", () => {
         (p) => p.id,
       ),
     ).toEqual(["a"]);
-  });
-
-  it("keeps the lines of the picked pen class", () => {
-    const lines = {
-      version: "v",
-      classes: ["thin", "heavy"],
-      lines: [
-        [0, 0, 1, 1, 0, 0.5],
-        [0, 0, 2, 2, 1, 2],
-      ],
-    };
-    expect(linesOfClass(lines, "heavy")).toEqual([[0, 0, 2, 2, 1, 2]]);
-    expect(linesOfClass(lines, "none")).toEqual([]);
-    expect(linesOfClass(null, "heavy")).toEqual([]);
   });
 });
 
