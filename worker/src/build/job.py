@@ -462,12 +462,10 @@ def cache_page_ink(conn, config, sheet_id: str, run_id: str, page, pb: PageBuild
 
 def store_symbols(conn, sheet_id: str, run_id: str, view_id: str, pb: PageBuild) -> None:
     """The page's candidate column symbols (real-size filter and the Build's column rules, v3 by
-    default, whatever the flags)."""
-    syms = (
-        pb.col_result.symbols
-        if pb.col_result is not None
-        else find_symbols(pb.segments, pb.cleaned.keep, pb.setup.crop,
-                          pb.text, pb.bubbles, pb.setup.ratio, True, rules=pb.setup.col_rules)
+    default)."""
+    syms = find_symbols(
+        pb.segments, pb.cleaned.keep, pb.setup.crop, pb.text, pb.bubbles, pb.setup.ratio, True,
+        rules=pb.setup.col_rules,
     )  # fmt: skip
     conn.execute(
         "INSERT INTO page_symbols (build_run_id, sheet_id, view_id, ratio, rules, symbols)"

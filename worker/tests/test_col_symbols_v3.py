@@ -11,15 +11,12 @@ import pytest
 from src.build.col_symbols import (
     V2_RULES,
     V3_RULES,
-    cross_check,
-    find_callouts,
     find_symbols,
     grid_pieces,
-    label_columns,
 )
 from src.build.grids import Bubble
 from src.build.page import Setup
-from src.build.segments import TextLine, parse_page
+from src.build.segments import parse_page
 from tests.test_col_symbols import CROP, IN, RATIO, c_shape, cross_shape, i_shape, rect, seg
 
 FLAGS = frozenset({"col_labels", "col_similar", "col_real_size"})
@@ -164,70 +161,8 @@ def test_a_column_on_a_dashed_grid_crossing_is_kept_only_with_grid_strip(page):
     assert gone and all(not shapes[int(ps.shape_id[i])].closed for i in gone)
 
 
-def test_a_solid_shape_is_an_example_only_when_clicked(page):
-    for x in (200, 400, 600):
-        rect(page, x, 200, 12 * IN, 12 * IN, fill=(0, 0, 0))  # solid squares
-    rect(page, 200, 400, 12 * IN, 12 * IN)  # a hollow square: another family
-    rect(page, 400, 400, 8 * IN, 8 * IN, fill=(0, 0, 0))  # solid, another size
-    circle(page, (609, 409), 6 * IN, fill=(0, 0, 0))  # solid round
-    text = [TextLine("HSS12X12X3/8 (TYP.)", (300, 90, 400, 98))]
-    seg(page, (300, 98), (209, 199))  # a label pointing at a solid square
-    ps = parse_page(page)
-    keep = np.ones(len(ps), dtype=bool)
-    auto = label_columns(ps, keep, CROP, text, [], RATIO, FLAGS, rules=V3_RULES)
-    assert auto.hits == [] and auto.callouts_with_leader == 1  # never a label example
-    click = label_columns(ps, keep, CROP, [], [], RATIO, FLAGS, [(412, 206)], V3_RULES)
-    assert sorted((round(h.symbol.centre[0]), h.source) for h in click.hits) == [
-        (209, "similar"), (409, "click"), (609, "similar")
-    ]  # fmt: skip
-    assert all(h.symbol.solid == "square" and h.flag is None for h in click.hits)
-    off = label_columns(
-        ps, keep, CROP, [], [], RATIO, FLAGS, [(412, 206)], V3_RULES - {"click_solid"}
-    )
-    assert off.hits == [] and off.note == "click one column to find similar"
-
-
-def test_profile_to_symbol_and_the_cross_check():
-    cs = find_callouts(
-        [
-            TextLine("W14X90 W/ PL 3/4X16", (0, 0, 80, 8)),
-            TextLine("W12X40", (200, 0, 240, 8)),
-            TextLine("COVER PLATES", (200, 10, 260, 18)),
-            TextLine("W10X33", (400, 0, 440, 8)),
-        ],
-        five=True,
-    )
-    assert [c.profile_family for c in cs] == ["W-cover", "W-cover", "W"]
-    assert cross_check("W-cover", "w_shape", True) is None
-    assert cross_check("W", "w_cover_plates", True) is None
-    assert cross_check("HSS-square", "hss_rect", True) == "label HSS-square, drawn hss_rect"
-    assert cross_check("PIPE", "hss_round", True) is None
-    assert cross_check("HSS-round", "hss_square", True) == "label HSS-round, drawn hss_square"
-    assert cross_check("2C", "w_shape", True) is None  # not one of the five: no flag
-    assert cross_check("PL", "hss_square", True) is None
-
-
 def test_the_engine_defaults_to_v3_and_v2_stays_reproducible(page):
     assert Setup(CROP, RATIO, None, None, "column_plan").col_rules == V3_RULES
     rect(page, 200, 200, 12 * IN, 12 * IN, fill=(0, 0, 0))
     assert [s.family for s in syms(page, V2_RULES)] == ["hss_filled"]
     assert [(s.family, s.solid) for s in syms(page)] == [("unknown", "square")]
-
-
-def test_find_similar_shared_solid_click_cases():
-    """The same solid-click cases the API's Find similar is tested with (fixtures/synthetic)."""
-    import json
-    from pathlib import Path
-
-    from src.build.col_symbols import Symbol, same_kind
-
-    path = Path(__file__).resolve().parents[2] / "fixtures/synthetic/find-similar-cases.json"
-
-    def sym(d):
-        a, b = d["real_in"]
-        return Symbol(
-            [], [], (0, 0, 1, 1), d["family"], ((4,), True), 0.0, a, b, True, False, d["solid"]
-        )
-
-    for c in json.loads(path.read_text())["solid_click_cases"]:
-        assert same_kind(sym(c["symbol"]), sym(c["example"]), solid=True) == c["match"], c

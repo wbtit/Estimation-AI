@@ -1,29 +1,25 @@
-"""Phase 14b: columns from labels, find similar, symbol families (docs/PHASE14B_PREREGISTRATION.md).
+"""Phase 14b/14c: the candidate column symbols of a column-plan page and their families
+(docs/PHASE14B_PREREGISTRATION.md, docs/PHASE14C_PREREGISTRATION.md).
 
-Flags (src/build/page.py, all off by default, column-plan pages only):
-  col_real_size  symbols are small element groups 4 to 36 real inches long (2c);
-  col_labels     a column / stud callout's leader ends at a symbol: a confirmed example (2a);
-  col_similar    symbols of an example's family and real size become members of its kind (2b).
-A family (2d) only names a symbol; a symbol becomes a column or stud only by matching an example.
-Rules (`col_rules`): V3_RULES by default (Phase 14c, docs/PHASE14C_PREREGISTRATION.md: the five
-families, grid pieces not symbol elements, a solid shape only as a clicked example); V2_RULES = 14b
-v2; empty = 14b v1.
+A Build stores these symbols (page_symbols) so Find similar can answer from the stored page
+(src/build/col_image.py). A family (2d) only names a symbol. Rules (`col_rules`): V3_RULES by
+default (Phase 14c: the five families, grid pieces not symbol elements, a solid shape only as a
+clicked example); V2_RULES = 14b v2; empty = 14b v1. The 14b label / find-similar flags and their
+callout and leader code were removed in the cleanup (the app never passed them).
 Pure functions over the page's segments and text; deterministic.
 """
 
 from __future__ import annotations
 
 import math
-import re
 from collections.abc import Iterable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import numpy as np
 
 from src.build.geom import Box, Pt, in_box
 from src.build.grids import Bubble, find_grid_lines
 from src.build.segments import PageSegments, TextLine
-from src.text_layer.parsers.profile import find_profiles
 
 # 2c
 MAX_ELEMENT_IN = 36.0
@@ -53,24 +49,14 @@ SQUARE_ASPECT = 1.15
 LACE_MIN_DEG, LACE_MAX_DEG = 20.0, 70.0
 BACK_TO_BACK_IN = 1.0
 # 2a
-BLOCK_GAP = 1.5
-BLOCK_MAX_LINES = 6
 LEADER_LABEL_PT = 6.0
 LEADER_JOIN_PT = 1.0
 LEADER_MAX_SEGS = 3
 LEADER_MIN_PT = 6.0
-ARROW_SYMBOL_PT = 6.0
 # 2b
 SIZE_TOL_IN, SIZE_TOL_SHARE = 1.0, 0.15
 # 3 (simulated click)
 CLICK_PT = 12.0
-
-STUD_RE = re.compile(r"\b(?:STUDS?|POSTS?)\b", re.IGNORECASE)
-TYP_RE = re.compile(r"\bTYP(?:ICAL)?\b", re.IGNORECASE)
-TWO_C_RE = re.compile(r"\b2\s*M?C\s*\d", re.IGNORECASE)
-PL_RE = re.compile(r"\bPL\s*\d", re.IGNORECASE)
-COVER_RE = re.compile(r"\bCOVER\b", re.IGNORECASE)
-CALLOUT_FAMILIES = {"W", "HP", "S", "M", "HSS", "PIPE", "PL"}
 
 STUD_KIND = "Stud/Post"
 COLUMN_KIND = "Column"
@@ -820,376 +806,3 @@ def symbol_json(s: Symbol) -> dict:
         "real_in": [round(v, 2) for v in s.real_sides],
         "solid": s.solid,
     }
-
-
-# ---- callouts and leaders (2a) ----------
-@dataclass
-class Callout:
-    line: TextLine
-    block: Box
-    profile: str  # canonical when known, else as written
-    profile_family: str  # W, HSS-square, HSS-rect, HSS-round, PIPE, PL, 2C
-    kind: str
-    typical: bool
-
-
-def _profile_of(text: str) -> tuple[str, str] | None:
-    for p in find_profiles(text):
-        if p.family not in CALLOUT_FAMILIES:
-            continue
-        fam = p.family
-        if fam == "HSS":
-            fam = {"square": "HSS-square", "rectangular": "HSS-rect"}.get(
-                p.variant or "", "HSS-round"
-            )
-        if fam in ("HP", "S", "M"):
-            fam = "W"
-        return (p.canonical or p.raw, fam)
-    m = TWO_C_RE.search(text)
-    if m:
-        return (re.sub(r"\s+", "", text[m.start() :].split()[0]).upper(), "2C")
-    m = PL_RE.search(text)
-    if m:
-        return (re.sub(r"\s+", "", text[m.start() :].split()[0]).upper(), "PL")
-    return None
-
-
-def find_callouts(text: list[TextLine], five: bool = False) -> list[Callout]:
-    """Callouts with their blocks (prereg 2a); `five` (14c 2.4): a W profile whose block also has
-    PL or COVER is family 'W-cover'."""
-    out: list[Callout] = []
-    for t in text:
-        got = _profile_of(t.text)
-        if got is None:
-            continue
-        block = [t]
-        bbox = t.box
-        h = max(t.box[3] - t.box[1], 0.1)
-        grown = True
-        while grown and len(block) < BLOCK_MAX_LINES:
-            grown = False
-            for o in sorted(text, key=lambda o: (o.box[1], o.box[0])):
-                if o in block or len(block) >= BLOCK_MAX_LINES:
-                    continue
-                overlap = min(o.box[2], bbox[2]) - max(o.box[0], bbox[0])
-                gap = max(o.box[1] - bbox[3], bbox[1] - o.box[3])
-                if overlap > 0 and gap <= BLOCK_GAP * h:
-                    block.append(o)
-                    bbox = (
-                        min(bbox[0], o.box[0]),
-                        min(bbox[1], o.box[1]),
-                        max(bbox[2], o.box[2]),
-                        max(bbox[3], o.box[3]),
-                    )
-                    grown = True
-        words = " ".join(b.text for b in block)
-        fam = got[1]
-        if five and fam == "W" and (PL_RE.search(words) or COVER_RE.search(words)):
-            fam = "W-cover"
-        out.append(
-            Callout(
-                t,
-                bbox,
-                got[0],
-                fam,
-                STUD_KIND if STUD_RE.search(words) else COLUMN_KIND,
-                bool(TYP_RE.search(words)),
-            )
-        )
-    return out
-
-
-def _box_point_dist(p: Pt, b: Box) -> float:
-    dx = max(b[0] - p[0], 0.0, p[0] - b[2])
-    dy = max(b[1] - p[1], 0.0, p[1] - b[3])
-    return math.hypot(dx, dy)
-
-
-@dataclass
-class Leader:
-    segs: list[int]
-    end: Pt
-
-
-def leaders(ps: PageSegments, block: Box) -> list[Leader]:
-    """Chains of up to LEADER_MAX_SEGS segments leaving the block (prereg 2a), in a fixed order."""
-    n = len(ps)
-    if n == 0:
-        return []
-    seg = [tuple(map(float, ps.seg[i])) for i in range(n)]
-    cell = 8.0
-    ends: dict[tuple[int, int], list[tuple[int, int]]] = {}
-    for i, (x0, y0, x1, y1) in enumerate(seg):
-        for k, (x, y) in enumerate(((x0, y0), (x1, y1))):
-            ends.setdefault((int(x // cell), int(y // cell)), []).append((i, k))
-
-    def end_pt(i: int, k: int) -> Pt:
-        s = seg[i]
-        return (s[0], s[1]) if k == 0 else (s[2], s[3])
-
-    def at(p: Pt, r: float) -> list[tuple[int, int]]:
-        out = []
-        for gx in range(int((p[0] - r) // cell), int((p[0] + r) // cell) + 1):
-            for gy in range(int((p[1] - r) // cell), int((p[1] + r) // cell) + 1):
-                for i, k in ends.get((gx, gy), ()):
-                    if math.dist(end_pt(i, k), p) <= r:
-                        out.append((i, k))
-        return sorted(out)
-
-    starts: set[tuple[int, int]] = set()
-    for gx in range(
-        int((block[0] - LEADER_LABEL_PT) // cell), int((block[2] + LEADER_LABEL_PT) // cell) + 1
-    ):
-        for gy in range(
-            int((block[1] - LEADER_LABEL_PT) // cell), int((block[3] + LEADER_LABEL_PT) // cell) + 1
-        ):
-            for i, k in ends.get((gx, gy), ()):
-                if _box_point_dist(end_pt(i, k), block) <= LEADER_LABEL_PT:
-                    starts.add((i, k))  # fmt: skip
-    out: list[Leader] = []
-
-    def walk(chain: list[int], far: Pt, total: float) -> None:
-        if total >= LEADER_MIN_PT and _box_point_dist(far, block) >= LEADER_MIN_PT:
-            out.append(Leader(list(chain), far))
-        if len(chain) >= LEADER_MAX_SEGS:
-            return
-        for i, k in at(far, LEADER_JOIN_PT):
-            if i in chain:
-                continue
-            nxt = end_pt(i, 1 - k)
-            walk([*chain, i], nxt, total + math.dist(end_pt(i, k), nxt))
-
-    for i, k in sorted(starts):
-        s = seg[i]
-        if math.dist((s[0], s[1]), (s[2], s[3])) <= 0:
-            continue
-        far = end_pt(i, 1 - k)
-        if _box_point_dist(far, block) <= _box_point_dist(end_pt(i, k), block):
-            continue  # the segment must leave the block
-        walk([i], far, math.dist(end_pt(i, k), far))
-    return out
-
-
-@dataclass
-class Example:
-    symbol: Symbol
-    profile: str | None
-    profile_family: str | None
-    kind: str
-    typical: bool
-    source: str  # label | click
-    callout_box: Box | None = None
-
-
-def label_examples(
-    callouts: list[Callout],
-    chains: list[list[Leader]],
-    symbols: list[Symbol],
-    known_only: bool = True,
-) -> list[Example]:
-    """One example per callout: the symbol nearest a leader's arrow end, within ARROW_SYMBOL_PT
-    (v2 'known_only': of one of the 14 families)."""
-    idx = _BoxIndex([s.box for s in symbols])
-    out: list[Example] = []
-    taken: set[int] = set()
-    for co, ls in zip(callouts, chains, strict=True):
-        best = None
-        for li, ld in enumerate(ls):
-            for k in idx.near((ld.end[0], ld.end[1], ld.end[0], ld.end[1]), ARROW_SYMBOL_PT):
-                if known_only and symbols[k].family == "unknown":
-                    continue
-                d = _box_point_dist(ld.end, symbols[k].box)
-                if d <= ARROW_SYMBOL_PT and (best is None or (d, li, k) < best):
-                    best = (d, li, k)
-        if best is None or best[2] in taken:
-            continue
-        taken.add(best[2])
-        out.append(
-            Example(symbols[best[2]], co.profile, co.profile_family, co.kind, co.typical, "label",
-                    co.block)
-        )  # fmt: skip
-    return out
-
-
-# ---- find similar (2b) and cross-check (2e) ------------------------------------------------------
-def same_size(a: tuple[float, float], b: tuple[float, float]) -> bool:
-    return all(
-        abs(x - y) <= max(SIZE_TOL_IN, SIZE_TOL_SHARE * y) for x, y in zip(a, b, strict=True)
-    )
-
-
-def same_kind(s: Symbol, e: Symbol, known_only: bool = True, solid: bool = False) -> bool:
-    """`solid` (14c 2.3, a clicked solid example only): the same solid shape and real size."""
-    if solid and e.solid is not None:
-        return s.solid == e.solid and same_size(s.real_sides, e.real_sides)
-    if s.family != e.family:
-        return False
-    if s.family == "unknown" and (known_only or s.signature != e.signature):
-        return False
-    return same_size(s.real_sides, e.real_sides)
-
-
-@dataclass
-class ColumnHit:
-    symbol: Symbol
-    example: int  # index into the examples
-    kind: str
-    profile: str | None
-    source: str  # label | similar | click
-    flag: str | None = None
-    profile_on_row: bool = False  # sensitivity: TYP on the example's row / column only
-
-
-def find_similar(
-    examples: list[Example],
-    symbols: list[Symbol],
-    known_only: bool = True,
-    five: bool = False,
-) -> list[ColumnHit]:
-    """Every example and every symbol matching one (prereg 2b), in (y, x) order; a solid example
-    (only ever a click, 14c 2.3) matches the same solid shape and size."""
-    by_sym = {id(e.symbol): k for k, e in enumerate(examples)}
-    out: list[ColumnHit] = []
-    for s in symbols:
-        if id(s) in by_sym:
-            k = by_sym[id(s)]
-            e = examples[k]
-            out.append(ColumnHit(s, k, e.kind, e.profile, e.source, profile_on_row=True))
-            continue
-        cands = [
-            (math.dist(s.centre, e.symbol.centre), k)
-            for k, e in enumerate(examples)
-            if same_kind(s, e.symbol, known_only, e.source == "click")
-        ]
-        if not cands:
-            continue
-        _, k = min(cands)
-        e = examples[k]
-        long_pt = max(e.symbol.box[2] - e.symbol.box[0], e.symbol.box[3] - e.symbol.box[1])
-        on_row = (
-            abs(s.centre[1] - e.symbol.centre[1]) <= long_pt
-            or abs(s.centre[0] - e.symbol.centre[0]) <= long_pt
-        )
-        out.append(
-            ColumnHit(s, k, e.kind, e.profile if e.typical else None, "similar",
-                      profile_on_row=e.typical and on_row)
-        )  # fmt: skip
-    for h in out:
-        h.flag = cross_check(examples[h.example].profile_family, h.symbol.family, five)
-    return out
-
-
-# 14c 2.4: the label's profile family -> the drawn families it agrees with (five families)
-CROSS_V3 = {
-    "W": {"w_shape", "w_cover_plates"},
-    "W-cover": {"w_shape", "w_cover_plates"},
-    "HSS-square": {"hss_square"},
-    "HSS-rect": {"hss_rect"},
-    "HSS-round": {"hss_round"},
-    "PIPE": {"hss_round"},
-}
-
-
-def cross_check(profile_family: str | None, family: str, five: bool = False) -> str | None:
-    """A red flag when the label's profile family and the drawn family disagree (prereg 2e; 14c
-    2.4 under `five`)."""
-    if profile_family is None or family == "unknown":
-        return None
-    if five:
-        ok5 = CROSS_V3.get(profile_family)
-        return None if ok5 is None or family in ok5 else f"label {profile_family}, drawn {family}"
-    ok = {
-        "W": {"cruciform", "w_shape", "w_cover_plates", "built_up_3w"},
-        "HSS-square": {"hss_square", "hss_filled"},
-        "HSS-rect": {"hss_rect", "hss_filled"},
-        "HSS-round": {"hss_round", "hss_filled"},
-        "PIPE": {"hss_round", "hss_filled"},
-        "PL": {"built_up_3plates", "welded_box", "box_with_web"},
-        "2C": {"2c_back_to_back", "2c_toe_laced", "double_laced"},
-    }.get(profile_family)
-    if ok is None or family in ok:
-        return None
-    return f"label {profile_family}, drawn {family}"
-
-
-def click_example(
-    mark: Pt, symbols: list[Symbol], known_only: bool = True, solid: bool = False
-) -> Example | None:
-    """A simulated (or real) user-drawn column at `mark`: the symbol whose centre is within
-    CLICK_PT (nearest; ties: first in order; v2: of a known family; 14c 2.3 `solid`: when no
-    known-family symbol is that near, the nearest solid shape)."""
-
-    def nearest(ok) -> tuple[float, int] | None:
-        best = None
-        for k, s in enumerate(symbols):
-            if not ok(s):
-                continue
-            d = math.dist(mark, s.centre)
-            if d <= CLICK_PT and (best is None or (d, k) < best):
-                best = (d, k)
-        return best
-
-    best = nearest(lambda s: not (known_only and s.family == "unknown"))
-    if best is None and solid:
-        best = nearest(lambda s: s.solid is not None)
-    if best is None:
-        return None
-    return Example(symbols[best[1]], None, None, COLUMN_KIND, False, "click")
-
-
-@dataclass
-class ColumnResult:
-    hits: list[ColumnHit] = field(default_factory=list)
-    examples: list[Example] = field(default_factory=list)
-    callouts: int = 0
-    callouts_with_leader: int = 0
-    symbols: list[Symbol] = field(default_factory=list)
-    note: str | None = None
-
-
-def label_columns(
-    ps: PageSegments,
-    keep,
-    crop: Box,
-    text: list[TextLine],
-    bubbles: list[Bubble],
-    ratio: float,
-    flags: frozenset[str],
-    clicks: list[Pt] | None = None,
-    rules: frozenset[str] = V3_RULES,
-) -> ColumnResult:
-    """Prereg 2a-2e on one column-plan page (text and segments already cropped); `rules` = the v2 /
-    v3 changes in force (empty = v1, V2_RULES = v2)."""
-    known = "known_only" in rules
-    five = "five_families" in rules
-    callouts = find_callouts(text, five) if "col_labels" in flags else []
-    chains = [leaders(ps, c.block) for c in callouts]
-    used = frozenset(i for ls in chains for ld in ls for i in ld.segs)
-    symbols = find_symbols(
-        ps, keep, crop, text, bubbles, ratio, "col_real_size" in flags, used, rules
-    )
-    examples = label_examples(callouts, chains, symbols, known)
-    if not examples and clicks:
-        for m in clicks:
-            ex = click_example(m, symbols, known, "click_solid" in rules)
-            if ex is not None:
-                examples = [ex]
-                break
-    res = ColumnResult(
-        examples=examples,
-        callouts=len(callouts),
-        callouts_with_leader=sum(1 for ls in chains if ls),
-        symbols=symbols,
-    )
-    if not examples:
-        res.note = "click one column to find similar"
-        return res
-    if "col_similar" in flags:
-        res.hits = find_similar(examples, symbols, known, five)
-    else:
-        res.hits = [
-            ColumnHit(e.symbol, k, e.kind, e.profile, e.source,
-                      cross_check(e.profile_family, e.symbol.family, five))
-            for k, e in enumerate(examples)
-        ]  # fmt: skip
-    return res

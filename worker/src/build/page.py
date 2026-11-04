@@ -12,7 +12,6 @@ with no column plan, or whose grids do not register, is built from its own glyph
 
 from __future__ import annotations
 
-import math
 import os
 from dataclasses import dataclass, field, replace
 
@@ -22,14 +21,11 @@ from src.build import RULES_VERSION
 from src.build.base_plates import BasePlate, find_base_plates, in_plate, is_grid_marker, plate_glyph
 from src.build.beam_lines import BeamLine, beam_lines, pen_segments
 from src.build.clean import Cleaned, clean
-from src.build.col_symbols import V3_RULES, ColumnResult, Symbol, label_columns
+from src.build.col_symbols import V3_RULES
 from src.build.columns import (
-    AT_GRID_PT,
-    STROKE_GAP_PT,
     Glyph,
     column_plan_columns,
     find_glyphs,
-    stroke_glyphs,
 )
 from src.build.geom import Box, Pt, in_box
 from src.build.grids import Bubble, Crossing, GridLine, crossings, find_bubbles, find_grid_lines
@@ -41,12 +37,6 @@ from src.build.segments import PageSegments, TextLine, crop, page_text_lines, pa
 from src.build.supports import SupportResult, build
 
 MIN_CROSSINGS = 4  # a page "has a grid" with at least this many crossings
-# Phase 13c build flags (all off by default): F2 "wall_same_pen" (src/build/not_beams.py), F4a
-# "column_strokes" and F4b "column_off_grid" (src/build/columns.py)
-# Phase 14b build flags (all off by default; column-plan pages only): "col_labels", "col_similar",
-# "col_real_size" (src/build/col_symbols.py)
-COL_FLAGS = ("col_labels", "col_similar", "col_real_size")
-FLAGS = ("wall_same_pen", "column_strokes", "column_off_grid", *COL_FLAGS)
 # Phase 14d column modes: "click_first" = a column-plan Build makes no automatic columns (a person
 # clicks one column, then Find similar); "glyph" = the old glyph / grid / base-plate rules
 COLUMN_MODES = ("click_first", "glyph")
@@ -72,10 +62,6 @@ class Setup:
     pens: tuple[str, ...] = ()  # all beam pens in order; empty = (pen_class,) if set
     excludes: tuple[Box, ...] = ()
     deselected: tuple[tuple[float, float, float, float], ...] = ()
-    flags: frozenset[str] = frozenset()  # Phase 13c build flags (FLAGS); empty = as before
-    stroke_gap_pt: float = STROKE_GAP_PT  # F4a end gap
-    # Phase 14b: page points of user-drawn columns used as examples when no label gives one
-    clicks: tuple[Pt, ...] = ()
     # column rules in force: V3_RULES (Phase 14c, default), V2_RULES = 14b v2, empty = 14b v1
     col_rules: frozenset[str] = V3_RULES
     # Phase 14d: "glyph" here keeps a bare Setup as before; the app's Builds pass the setting
@@ -120,8 +106,6 @@ class PageBuild:
     # beam lines)
     removed: dict[str, int] = field(default_factory=dict)
     plates: list[BasePlate] = field(default_factory=list)
-    # Phase 14b: the column examples, matches and symbols (None when the flags are off)
-    col_result: ColumnResult | None = None
     text: list[TextLine] = field(default_factory=list)  # the page's text lines in the crop
 
     def column_info(self, k: int) -> dict:
@@ -133,17 +117,6 @@ class PageBuild:
             if not g.shape_ids
             else None
         )
-        if self.col_result is not None and k < len(self.col_result.hits):
-            h = self.col_result.hits[k]
-            return {
-                "rule": f"col_{h.source}",
-                "family": h.symbol.family,
-                "kind": h.kind,
-                "profile": h.profile,
-                "rotation_deg": h.symbol.rotation_deg,
-                "real_in": list(h.symbol.real_sides),
-                "flag": h.flag,
-            }
         if p is None:
             return {"rule": self.column_rule}
         return {"rule": "base_plate", "section_type": p.section_type, "off_grid": p.off_grid}
@@ -214,15 +187,7 @@ def build_page(
     has_grid = len(cross) >= MIN_CROSSINGS
     if not grid:
         notes.append("no_grid")
-    unknown = set(setup.flags) - set(FLAGS)
-    if unknown:
-        raise ValueError(f"unknown build flags {sorted(unknown)}")
     glyphs = find_glyphs(ps, setup.crop, bubbles, text, cross)
-    if "column_strokes" in setup.flags:
-        glyphs += stroke_glyphs(
-            ps, cleaned.keep, setup.crop, bubbles, text, cross, glyphs, setup.stroke_gap_pt
-        )
-        glyphs.sort(key=lambda g: (round(g.centre[1], 1), round(g.centre[0], 1)))
     # Phase 12a rule "grid_marker": bow-tie end / break markers on grid lines are not glyphs
     removed: dict[str, int] = {}
     markers = [g for g in glyphs if is_grid_marker(g, ps, grid)]
@@ -252,32 +217,13 @@ def build_page(
     projected: list[tuple[Pt, dict]] = []
     columns: list[Glyph] = []
     column_rule: str | None = None
-    col_result: ColumnResult | None = None
-    if setup.role == "column_plan" and set(setup.flags) & set(COL_FLAGS):
-        # Phase 14b: columns only from confirmed examples (labels or a drawn column) and their
-        # matches; the grid, repeated-glyph and base-plate rules make no columns
-        col_result = label_columns(
-            ps, cleaned.keep, setup.crop, text, bubbles, setup.ratio, setup.flags,
-            list(setup.clicks), setup.col_rules,
-        )  # fmt: skip
-        columns = [_hit_glyph(h.symbol, cross) for h in col_result.hits]
-        column_rule = "col_examples"
-        plates = []
-        notes.append("columns_by_col_examples")
-        if col_result.note:
-            notes.append(col_result.note.replace(" ", "_"))
-    elif setup.role == "column_plan" and setup.column_mode == "click_first":
+    if setup.role == "column_plan" and setup.column_mode == "click_first":
         # Phase 14d: no automatic columns; the person clicks one, then Find similar (base plates
         # are still found: they keep their lines out of the beams)
         columns, column_rule = [], "click_first"
         notes.append("columns_click_first")
     elif setup.role == "column_plan":
-        columns, column_rule = column_plan_columns(
-            glyphs,
-            has_grid,
-            setup.ratio,
-            {sh.id: sh for sh in ps.shapes} if "column_off_grid" in setup.flags else None,
-        )
+        columns, column_rule = column_plan_columns(glyphs, has_grid, setup.ratio)
         if plates:
             # one column per base plate at its centre; a glyph column inside a plate is that column
             columns = [g for g in columns if not in_plate(plates, g.centre)] + [
@@ -316,7 +262,6 @@ def build_page(
         setup.ratio,
         [g.centre for g in glyphs] + [p for p, _ in projected] + [p.centre for p in plates],
         plates,
-        wall_same_pen="wall_same_pen" in setup.flags,
     )
     removed["wall_lines"] = len(nb.wall)
     removed["base_plate_lines"] = len(nb.base_plate)
@@ -370,16 +315,8 @@ def build_page(
         deselections_unmatched=unmatched,
         removed=removed,
         plates=plates,
-        col_result=col_result,
         text=text,
     )
-
-
-def _hit_glyph(sym: Symbol, cross: list[Crossing]) -> Glyph:
-    near = min(cross, key=lambda g: math.dist(g.point, sym.centre), default=None)
-    at = near is not None and math.dist(near.point, sym.centre) <= AT_GRID_PT
-    paint = "fs" if sym.filled else "s"
-    return Glyph(sym.shape_ids, sym.box, paint, 4, at, near if at else None, sym.curved)
 
 
 __all__ = ["ColumnPlanRef", "PageBuild", "Setup", "build_page"]
