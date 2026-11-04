@@ -17,7 +17,7 @@ venv/
 .ruff_cache/
 
 # Client data: drawings and uploads are never committed
-uploads/
+/uploads/
 fixtures/private/
 fixtures/MARKUPS/
 fixtures/**/*.pdf
