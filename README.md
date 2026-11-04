@@ -29,6 +29,7 @@ template matching. No LLM counts, measures or prices anything.
 16. [Operations](#16-operations)
 17. [Known limits and roadmap](#17-known-limits-and-roadmap)
 18. [Decision log and contributing](#18-decision-log-and-contributing)
+19. [Tools appendix](#19-tools-appendix)
 
 ---
 
@@ -131,10 +132,9 @@ and in the shared upload folder. The web app learns that work is done by **polli
 | Tests | Vitest (api, web), pytest (worker) | `Makefile` |
 | Lint | ESLint + tsc + Prettier, Ruff | `Makefile` |
 
-**Is Redis used? No.** `docker-compose.yml` starts a `redis` service (host port 6380), and
-`.env.example` has `REDIS_URL` with the comment "Node-side use later". No code reads
-`REDIS_URL`, and no package depends on Redis (`api/package.json`, `web/package.json`,
-`worker/requirements.txt`). The queue is the Postgres `jobs` table.
+**Is Redis used? No.** No code or package ever used it, and the cleanup of 2026-11-04 removed
+the `redis` service from `docker-compose.yml` and `REDIS_*` from `.env.example`. The queue is
+the Postgres `jobs` table.
 
 ---
 
@@ -149,11 +149,14 @@ and in the shared upload folder. The web app learns that work is done by **polli
 │       ├── routes/           one file per area (projects, build, review-ui, count, sessions ...)
 │       ├── review/           business logic used by routes (actions, member-ops, tag-counter,
 │       │                     image-similar, renumber-tags, line-first-bom, session-timing ...)
-│       ├── bom/  excel/      BOM totals and the Excel writer
 │       ├── catalog/          AISC shape lookup and import
-│       ├── contract/         the member data contract (Zod) -> schema/
+│       ├── contract/ validator/ synthetic/ members/
+│       │                     the member data contract (Zod -> schema/), its validator and a
+│       │                     synthetic factory: kept for the later Tekla stage, not on the live path
 │       ├── db/               Kysely client, types, test-database guard
-│       ├── scripts/          one-off CLIs (catalog import, seed, test-db, session export, lines backfill)
+│       ├── uploads/          streaming PDF upload (filename, sha256, size limit)
+│       ├── scripts/          CLIs (catalog import, kind abbreviations, test-db, session export /
+│       │                     report, lines backfill, schema generation)
 │       └── __tests__/        Vitest tests (run against the *_test database)
 ├── worker/                   Python worker
 │   ├── src/
@@ -162,11 +165,14 @@ and in the shared upload folder. The web app learns that work is done by **polli
 │   │   ├── config.py         settings from .env
 │   │   ├── pdf_scan/         scan_pdf: pages, sizes, scale text, thumbnails
 │   │   ├── text_layer/  text_reader/   reading text (PDF text layer; outlined CAD-font glyphs)
-│   │   ├── review/           auto_run, sheet_lines, copy_project, label-first link jobs
-│   │   ├── linking/          label-first linking (older path)
+│   │   ├── review/           auto_run, sheet_lines, copy_project, legend rows, line roles
+│   │   ├── linking/          page lines and pen classes (lines, structural, candidates); the
+│   │   │                     label linker (labels, rules) is used only by the measure / intake tools
 │   │   └── build/            the Build engine (page.py) and its stages, auto mode, Find similar
 │   ├── tests/                pytest
-│   ├── tools/                measurement and evaluation tools (read-only on the database)
+│   ├── measure/              the measurement core: held-out lock, prereg hashes, beam and
+│   │                         column harnesses (section 19)
+│   ├── tools/                ops and TEST-set intake tools (section 19)
 │   └── prereg/               SHA-256 of each pre-registration document
 ├── web/                      React app
 │   └── src/
@@ -179,8 +185,8 @@ and in the shared upload folder. The web app learns that work is done by **polli
 ├── fixtures/
 │   ├── synthetic/            made-up test data (committed)
 │   └── private/              real material, git-ignored, never committed
-├── scripts/                  gitleaks install and scan, calibration helpers
-├── docker-compose.yml        Postgres 16 (+ an unused Redis)
+├── scripts/                  gitleaks install and scan
+├── docker-compose.yml        Postgres 16
 ├── Makefile                  every common command
 └── .env.example              settings template (copy to .env)
 ```
@@ -202,7 +208,7 @@ make, and gitleaks (`./scripts/install-gitleaks.sh`).
 ```bash
 cp .env.example .env      # replace every change_me value; set PORT=3100
 make setup                # npm ci (root, api, web), Python 3.12 venv via uv, git hooks
-make up                   # Postgres (and the unused Redis), waits until healthy
+make up                   # Postgres, waits until healthy
 make migrate              # applies db/migrations/*.sql
 ```
 
@@ -242,9 +248,8 @@ Open http://127.0.0.1:5180.
 | `WORKER_LOCK_TIMEOUT_SECONDS` | worker | `600` | When a "processing" job of a dead worker may be taken again |
 | `WORKER_ID` | worker | `worker-<host>-<pid>` | Name written to `jobs.locked_by` |
 | `GLYPH_FONT_ID` | worker | `default` | Glyph set for outlined text |
-| `OCR_CROSSCHECK_ENABLED` | worker | `false` | Optional local OCR cross-check (needs `make setup-ocr`) |
+| `OCR_CROSSCHECK_ENABLED` | worker | `false` | Read into the config only: the app's text reading (`auto_run`) never runs OCR. The glyph CLI's `vote` uses OCR on its own (needs `make setup-ocr`) |
 | `TEST_DATABASE_URL` | tests | `<DATABASE_URL db>_test` | Tests refuse any database whose name does not end in `_test` |
-| `REDIS_PORT` / `REDIS_URL` | nothing | `6380` | Unused (see [section 3](#3-architecture)) |
 
 ### Migrations
 
@@ -353,7 +358,7 @@ sequenceDiagram
     K->>K: PyMuPDF: page kind, size, sheet number, scale text, thumbnails
     K->>D: upsert sheets (trigger adds View 1 per page), queue auto_run
     K->>D: claim auto_run
-    K->>K: read text, whole-sheet view, scale guess
+    K->>K: read the text of every vector page
     K->>D: queue auto_build
     K->>D: claim auto_build
     K->>K: propose crop, pen, scale, role, column plan per page
@@ -520,6 +525,14 @@ and walls are removed after the beam lines are made (8).
 **Rebuild rule:** a piece a person has touched (any edit, approval or count decision) is never
 changed by a rebuild. A new piece that overlaps it is not added (`store` in `job.py`).
 
+**Build flags and column modes.** The engine has no build flags any more. The Phase 13c flags
+(F1 structural pen, F2 `wall_same_pen`, F3 main-grid crop, F4 stroke and off-grid columns) and the
+Phase 14b column flags (`col_labels`, `col_similar`, `col_real_size`) were never passed by the app
+and were removed on 2026-11-04 (they stay in the tag `archive/pre-cleanup-20261104`). The column
+mode is `COLUMN_MODE` (`click_first`, the app's default, or `glyph`). Note: `Setup()` still
+defaults to `glyph` for tests and harnesses; switching the default to `click_first` is a separate
+later step with re-baselined tests.
+
 ---
 
 ## 9. Job system
@@ -565,14 +578,12 @@ Build and upload, is found by the 2 s poll.
 
 | Job type | Queued by | Handler |
 |---|---|---|
-| `scan_pdf` | upload, rescan | `worker/src/pdf_scan/job.py` |
-| `auto_run` | end of scan, `POST /auto-run` | `worker/src/review/auto_run.py` |
-| `auto_build` | end of auto_run, `POST /auto-build` | `worker/src/build/auto.py` |
+| `scan_pdf` | upload | `worker/src/pdf_scan/job.py` |
+| `auto_run` | end of scan | `worker/src/review/auto_run.py` (reads the text, then queues auto mode) |
+| `auto_build` | end of auto_run | `worker/src/build/auto.py` |
 | `build_sheet` | `POST .../build` | `worker/src/build/job.py` |
 | `sheet_lines` | lines/prepare, backfill (auto mode runs it in-process) | `worker/src/review/sheet_lines_job.py` |
 | `find_similar` | find-similar preview (`max_attempts 1`) | `worker/src/build/similar_job.py` |
-| `read_text` | `POST /read-text` | `worker/src/text_reader/job.py` |
-| `link_view`, `classes_view` | label-first view routes (older path) | `worker/src/review/link_job.py`, `classes_job.py` |
 | `copy_project` | `POST /duplicate` | `worker/src/review/copy_job.py` |
 
 The handler registry is in `worker/src/main.py`.
@@ -970,7 +981,7 @@ All routes are under `/api/projects/:projectId` unless shown otherwise. Files ar
 | Route | Purpose |
 |---|---|
 | `POST .../sheets/:sheetId/build-setup/role` · `crop` · `scale` · `tos` | Set a setup value (`build.ts`) |
-| `POST .../build-setup/pick-pen` · `pen-class` · `remove-pen` | Beam pens |
+| `POST .../build-setup/pick-pen` · `remove-pen` | Beam pens |
 | `POST .../build-setup/no-beams` | No beams |
 | `POST .../build-setup/column-plan` | Column plan link |
 | `POST`, `PATCH`, `DELETE .../sheets/:sheetId/build-views[/:viewId]` | Add, change or delete a view (`build-views.ts`) |
@@ -982,8 +993,6 @@ All routes are under `/api/projects/:projectId` unless shown otherwise. Files ar
 | Route | Purpose |
 |---|---|
 | `POST .../sheets/:sheetId/build` | Press Build; queues `build_sheet` |
-| `GET .../sheets/:sheetId/build` | Latest run and its geometry |
-| `POST .../auto-build` | Run auto mode again |
 
 **Pieces and review**
 
@@ -994,9 +1003,8 @@ All routes are under `/api/projects/:projectId` unless shown otherwise. Files ar
 | `POST .../line-first/pieces/edit` | Edit or approve one or many pieces |
 | `POST .../line-first/pieces/delete` | Delete pieces |
 | `POST .../line-first/pieces/:memberId/ends` | Move piece ends |
-| `POST .../undo`, `POST .../redo` | Undo / redo the person's last action (`member-actions.ts`) |
+| `POST .../undo`, `POST .../redo` | Undo / redo the person's last action (`member-actions.ts`; the web has no Redo button yet) |
 | `POST .../sheets/:sheetId/save-page` | Mark the page reviewed |
-| `GET .../members/:memberId/history` | Edit history of one piece |
 
 **Find similar**
 
@@ -1026,11 +1034,12 @@ All routes are under `/api/projects/:projectId` unless shown otherwise. Files ar
 |---|---|
 | `GET .../line-first/bom`, `GET .../line-first/bom.xlsx` | BOM and its Excel file (`build.ts`) |
 | `GET .../report`, `GET .../report.xlsx` | System-vs-final report (`review-ui.ts`) |
-| `GET .../count-actions` | The action log |
 | `GET /health` | Health check |
 
-The label-first routes (`/members`, `/views/...`, `/tables`, `/takeoff`, `/bom`) are an older
-path, kept for older projects.
+These are all the routes: every one is called by the web, except `POST .../redo` and
+`GET /api/sessions/:sessionId/timing` (JSON). The label-first, counting-copilot, tables,
+takeoff, old BOM, flags and text-items routes were removed on 2026-11-04 (tag
+`archive/pre-cleanup-20261104`). Their tables stay in the database (no migration drops them).
 
 ---
 
@@ -1039,7 +1048,7 @@ path, kept for older projects.
 - **Never commit client drawings or real data.** Only `fixtures/synthetic/` is committed. Real material lives in `fixtures/private/` and `uploads/`, both git-ignored (as are `fixtures/MARKUPS/` and every `*.pdf` under `fixtures/`).
 - **Ids only.** Tool output, logs, commits and reports use ids (project, job, sheet ids), never client, project, firm or file names.
 - **No drawing content to third-party APIs.** The pipeline is local. The optional OCR cross-check is local and makes no network calls (`docs/SPEC.md` section 10, `docs/SECURITY.md`; both local only).
-- **Held-out test lock.** `fixtures/private/markups/heldout_test.lock` lists the locked TEST jobs. `worker/tools/jobs.py` gives `dev_jobs()` and `test_jobs()`, and every shared loader returns DEV jobs only. A locked job is read only with `--include-test --prereg <existing pre-registration>`, which prints a warning. Without `--prereg`, the run stops.
+- **Held-out test lock.** `fixtures/private/markups/heldout_test.lock` lists the locked TEST jobs. `worker/measure/jobs.py` gives `dev_jobs()` and `test_jobs()`, and every shared loader returns DEV jobs only. A locked job is read only with `--include-test --prereg <existing pre-registration>`, which prints a warning. Without `--prereg`, the run stops.
 - **Tests never touch the real database.** The test harnesses refuse any database whose name does not end in `_test` (`api/src/db/test-database.ts`, `worker/src/db.py`).
 - **gitleaks** runs in the pre-commit hook (`.githooks/`) and with `make gitleaks`.
 
@@ -1047,9 +1056,9 @@ path, kept for older projects.
 
 ## 14. How we measure
 
-- **Pre-registration hash.** Before a study, its plan is written in `docs/PHASE*_PREREGISTRATION.md` (local only). The plan's SHA-256 is committed in `worker/prereg/<NAME>.sha256`. `worker/tools/prereg.py verify` stops a run if the document changed. Git history shows the hash was committed before the tool.
+- **Pre-registration hash.** Before a study, its plan is written in `docs/PHASE*_PREREGISTRATION.md` (local only). The plan's SHA-256 is committed in `worker/prereg/<NAME>.sha256`. `worker/measure/prereg.py verify` stops a run if the document changed. Git history shows the hash was committed before the tool.
 - **Held-out lock.** Tuning uses DEV jobs only. TEST jobs are used only for pre-registered measures (see [section 13](#13-data-and-privacy-rules)).
-- **Evaluation tools** live in `worker/tools/` (for example `p14d_columns.py`). They are read-only on the database. They call the app's own functions (`build_page`, `col_image.find_similar`), write versioned output under `fixtures/private/eval/`, and print counts only.
+- **Measurement tools** live in `worker/measure/` (section 19). They are read-only on the database. They call the app's own functions (`build_page`, `col_image.find_similar`), write versioned output under `fixtures/private/eval/`, and print counts only.
 - **Frozen session exports.** `npm --prefix api run session:export -- --session <id>` copies one work session to `fixtures/private/sessions/<id>/` and makes the copy read-only. `session:report` reads only that copy. The export is the source for training and measurement from then on.
 
 ---
@@ -1123,3 +1132,43 @@ no `pgrep -f`). Never stop the owner's API (3100), web (5180), worker or Postgre
   - report only what was actually run;
   - follow the process-safety rule.
 - **Migrations:** additive only. Back up first, and run on `_test` first.
+
+---
+
+## 19. Tools appendix
+
+Run from `worker/` as `PYTHONPATH=. .venv/bin/python -m <module>`. All are read-only on the
+database unless noted, and print ids and counts only.
+
+**Measurement core (`worker/measure/`)**
+
+| Module | What it is |
+|---|---|
+| `measure.jobs` | The held-out TEST lock: `dev_jobs()`, `test_jobs()`, `include_test_from_argv` (`--include-test --prereg <doc>`) |
+| `measure.prereg` | `write` / `verify` the SHA-256 of a pre-registration document (`worker/prereg/*.sha256`) |
+| `measure.p12c_lib`, `measure.p12c_eval` | The beam harness: the estimators' markups in page coordinates, one-to-one matching, failure table, gallery |
+| `measure.p13a_pen` | The page loader the harnesses share (setup, text, plan of a DEV page) |
+| `measure.p14b_columns` | The column measure library: `load` (DEV pages), `measure`, `pooled`, the gallery panel |
+| `measure.p14d_columns` | The column harness: image + vector Find similar from one click, through the app's own `col_image.find_similar` |
+| `measure.takeoff.*` | Loaders and geometry of the takeoff markups (`common`, `inventory`, `geometry_study`, `colour_study`, `prefix_inventory`, `tag_study`) |
+
+None of the harnesses takes `--include-test` yet: running the locked TEST set needs a new,
+pre-registered entry point built on `measure.jobs`.
+
+**Ops and intake tools (`worker/tools/`)**
+
+| Module | What it is |
+|---|---|
+| `tools.session_project` | A fresh project for an estimator session: a dry run by default; `--apply` creates it (refuses a PDF in the TEST lock) |
+| `tools.audit_actions` | Who did what in which project |
+| `tools.project_preview` | Row counts per table of one project |
+| `tools.markups_intake` (+ `bbmeasure`, `takeoff.import_markups`, `takeoff.phase6c_trace`) | Intake of new estimator markups as a locked TEST set |
+
+**API scripts (`npm --prefix api run ...`)**: `catalog:import`, `kinds:load-abbreviations`,
+`test-db`, `session:export`, `session:report`, `lines:backfill`, `schema:generate`.
+
+**Glyph library CLI**: `make glyph-sheets`, `glyph-export`, `glyph-import`, `glyph-summary`
+(`worker/src/text_reader/cli.py`).
+
+The phase study tools (Phases 4e to 14e) were archived on 2026-11-04: they are in the tag
+`archive/pre-cleanup-20261104`, not in the tree.
