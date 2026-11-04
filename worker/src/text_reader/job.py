@@ -18,18 +18,16 @@ import pymupdf
 from psycopg.types.json import Jsonb
 
 from src.config import WorkerConfig
-from src.queue import Job
 from src.review.legend import WordBox, legend_rows
 from src.text_layer.catalog import load_catalog
 from src.text_layer.items import PageText, extract_page_text, pdf_item_key
 from src.text_layer.quality import GARBLED_BELOW
 from src.text_reader.library import Entry, Matcher, load_entries
-from src.text_reader.ocr import OcrEngine, RapidOcrEngine
+from src.text_reader.ocr import OcrEngine
 from src.text_reader.reader import item_key, read_page
 
 log = logging.getLogger("worker.text")
 
-JOB_TYPE = "read_text"
 
 _DELETE_ITEMS = (
     "DELETE FROM text_items WHERE sheet_id IN (SELECT id FROM sheets WHERE project_id = %s)"
@@ -64,17 +62,6 @@ DO UPDATE SET seen_count = glyph_library.seen_count + EXCLUDED.seen_count
 
 class ReadError(Exception):
     """A read failure with a message that is safe to store (no page text)."""
-
-
-def run_read_text(conn: psycopg.Connection, job: Job, config: WorkerConfig) -> dict[str, Any]:
-    project_id = str(job.payload.get("project_id", ""))
-    document_id = str(job.payload.get("document_id", ""))
-    font_id = str(job.payload.get("font_id") or config.glyph_font_id)
-    edition = job.payload.get("catalog_edition")
-    ocr: OcrEngine | None = RapidOcrEngine() if config.ocr_crosscheck_enabled else None
-    return read_project(
-        conn, config, project_id, document_id, font_id, ocr, str(edition) if edition else None
-    )
 
 
 def read_project(

@@ -10,7 +10,7 @@ from pdf_factory import scanned_page
 from stroke_font import draw_text
 
 from src.text_reader import rules
-from src.text_reader.job import ReadError, read_project, run_read_text
+from src.text_reader.job import ReadError, read_project
 
 
 def write_pdf(dbp: DbProject) -> None:
@@ -139,14 +139,6 @@ def test_fonts_are_separate_libraries(dbp: DbProject) -> None:
     finally:
         dbp.conn.execute("DELETE FROM glyph_library WHERE font_id = %s", (other,))
         dbp.conn.commit()
-
-
-def test_the_job_entry_point_uses_the_payload_font_and_the_config(dbp: DbProject) -> None:
-    write_pdf(dbp)
-    dbp.scan()
-    result = run_read_text(dbp.conn, dbp.job(), dbp.config)  # OCR is off by default
-    assert result["pages_read"] == 2
-    assert dbp.config.ocr_crosscheck_enabled is False
 
 
 def test_errors_are_clear_and_leave_existing_items_alone(dbp: DbProject) -> None:

@@ -21,16 +21,10 @@ from src.pdf_scan.job import run_scan_pdf
 from src.queue import Job, claim_next_job, complete_job, fail_expired_jobs, fail_job
 from src.review.auto_run import JOB_TYPE as AUTO_RUN
 from src.review.auto_run import run_auto_run
-from src.review.classes_job import JOB_TYPE as CLASSES_VIEW
-from src.review.classes_job import run_classes_view
 from src.review.copy_job import JOB_TYPE as COPY_PROJECT
 from src.review.copy_job import run_copy_project
-from src.review.link_job import JOB_TYPE as LINK_VIEW
-from src.review.link_job import run_link_view
 from src.review.sheet_lines_job import JOB_TYPE as SHEET_LINES
 from src.review.sheet_lines_job import run_sheet_lines
-from src.text_reader.job import JOB_TYPE as READ_TEXT
-from src.text_reader.job import run_read_text
 
 log = logging.getLogger("worker")
 
@@ -38,9 +32,6 @@ log = logging.getLogger("worker")
 Handler = Callable[[psycopg.Connection, Job, WorkerConfig], dict[str, Any]]
 HANDLERS: dict[str, Handler] = {
     SCAN_PDF: run_scan_pdf,
-    READ_TEXT: run_read_text,
-    LINK_VIEW: run_link_view,
-    CLASSES_VIEW: run_classes_view,
     AUTO_RUN: run_auto_run,
     SHEET_LINES: run_sheet_lines,
     BUILD_SHEET: run_build_sheet,
