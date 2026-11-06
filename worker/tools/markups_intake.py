@@ -41,6 +41,7 @@ from pathlib import Path
 
 import pymupdf
 
+from measure.jobs import RELEASED
 from measure.takeoff.colour_study import colour_key
 from measure.takeoff.common import (
     PRIVATE,
@@ -589,7 +590,8 @@ def inventory() -> None:
         print(f"summary {'yes' if r['summary'] else 'no'}, dup {dup}")
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(jobs, indent=1, default=str))
-    locked = [r for r in jobs if r["duplicate_flag"] == ""]
+    # a job the owner released from the TEST set (measure/jobs.py RELEASED) is never locked again
+    locked = [r for r in jobs if r["duplicate_flag"] == "" and r["job"] not in RELEASED]
     LOCK.write_text(
         json.dumps(
             {

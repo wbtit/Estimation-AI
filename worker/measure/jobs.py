@@ -20,6 +20,14 @@ MARKUPS = ROOT / "fixtures" / "private" / "markups"
 LOCK = MARKUPS / "heldout_test.lock"
 MAPPING = MARKUPS / "MAPPING.json"
 
+# Jobs RELEASED from the held-out TEST set by an owner decision: no longer locked, and never again
+# to be reported as unseen or held-out (their drawings have been seen). The intake never writes
+# them back into the lock and test_jobs() ignores them if a lock still lists them.
+RELEASED = {
+    "job-041": "2026-11-06 owner decision: its clean drawing set is used for a live estimator"
+    " trial",
+}
+
 
 @dataclass(frozen=True)
 class Locked:
@@ -33,7 +41,7 @@ def test_jobs() -> Locked:
         if MAPPING.exists():
             raise SystemExit(f"{LOCK} is missing but an intake exists; refusing to guess the set")
         return Locked(frozenset(), frozenset())
-    jobs = json.loads(LOCK.read_text())["jobs"]
+    jobs = {k: v for k, v in json.loads(LOCK.read_text())["jobs"].items() if k not in RELEASED}
     return Locked(
         frozenset(jobs),
         frozenset(Path(v["markup"]).name for v in jobs.values() if v.get("markup")),
