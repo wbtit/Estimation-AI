@@ -104,6 +104,9 @@ export interface Page {
   view_title?: string | null;
   title_block_name?: string | null;
   name?: string | null;
+  /** Migration 030: where the name and the sheet number come from ('person' = a person's value). */
+  name_source?: "person" | "view_title" | "title_block" | null;
+  sheet_number_source?: string | null;
   page_type: string | null;
   page_kind: string;
   width_pt: number | null;

@@ -1490,6 +1490,38 @@ describe("polish round: views on the card", () => {
     );
   });
 
+  it("migration 030: the card corrects the page name and the sheet number", () => {
+    const a = { ...actions(), setNames: vi.fn() };
+    card(a, page({ sheet_number: "S-100", name: "GENERAL SHEET NOTES:" }));
+    fireEvent.click(screen.getByLabelText("edit page name and sheet number"));
+    fireEvent.change(screen.getByLabelText("sheet number"), {
+      target: { value: " S-101 " },
+    });
+    fireEvent.change(screen.getByLabelText("page name"), {
+      target: { value: "Foundation plan" },
+    });
+    fireEvent.click(screen.getByText("Save"));
+    expect(a.setNames).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "s1" }),
+      { sheet_number: "S-101", name: "Foundation plan" },
+    );
+    expect(screen.queryByTestId("names-edit")).toBeNull();
+    // only what changed is sent; a blank name goes back to the name read on the page
+    fireEvent.click(screen.getByLabelText("edit page name and sheet number"));
+    fireEvent.change(screen.getByLabelText("page name"), {
+      target: { value: "  " },
+    });
+    fireEvent.keyDown(screen.getByLabelText("page name"), { key: "Enter" });
+    expect(a.setNames).toHaveBeenLastCalledWith(
+      expect.objectContaining({ id: "s1" }),
+      { name: null },
+    );
+    // Cancel sends nothing
+    fireEvent.click(screen.getByLabelText("edit page name and sheet number"));
+    fireEvent.click(screen.getByText("Cancel"));
+    expect(a.setNames).toHaveBeenCalledTimes(2);
+  });
+
   it("while a view builds: a spinner on the card and ▶ disabled", () => {
     card(actions());
     expect(screen.getByTestId("card-building")).toBeTruthy();

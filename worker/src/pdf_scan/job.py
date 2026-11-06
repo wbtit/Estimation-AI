@@ -48,13 +48,18 @@ INSERT INTO sheets (
     %(sheet_number_old_source)s, %(sheet_number_flag)s, NOW()
 )
 ON CONFLICT (project_id, page_index) DO UPDATE SET
-    sheet_number = EXCLUDED.sheet_number, title = EXCLUDED.title, kind = EXCLUDED.kind,
+    -- migration 030: a person's sheet number stays (with its source 'person')
+    sheet_number = CASE WHEN sheets.sheet_number_source = 'person' THEN sheets.sheet_number
+                        ELSE EXCLUDED.sheet_number END,
+    title = EXCLUDED.title, kind = EXCLUDED.kind,
     kind_confidence = EXCLUDED.kind_confidence, kind_reason = EXCLUDED.kind_reason,
     width_pt = EXCLUDED.width_pt, height_pt = EXCLUDED.height_pt, rotation = EXCLUDED.rotation,
     page_kind = EXCLUDED.page_kind, has_text_layer = EXCLUDED.has_text_layer,
     has_vector_paths = EXCLUDED.has_vector_paths, text_char_count = EXCLUDED.text_char_count,
     vector_path_count = EXCLUDED.vector_path_count, image_count = EXCLUDED.image_count,
-    image_coverage = EXCLUDED.image_coverage, sheet_number_source = EXCLUDED.sheet_number_source,
+    image_coverage = EXCLUDED.image_coverage,
+    sheet_number_source = CASE WHEN sheets.sheet_number_source = 'person' THEN 'person'
+                               ELSE EXCLUDED.sheet_number_source END,
     scales = EXCLUDED.scales, scale_parsed = EXCLUDED.scale_parsed,
     scale_parsed_ratio = EXCLUDED.scale_parsed_ratio,
     -- a manual override stays the effective scale source; scale_override* is never written here

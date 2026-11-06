@@ -5,6 +5,7 @@ import {
   ChevronDown,
   EllipsisVertical,
   LoaderCircle,
+  Pencil,
   Play,
   Plus,
 } from "lucide-react";
@@ -61,6 +62,12 @@ export interface PageActions {
   resetBox?: (p: Page, viewId: string) => void;
   /** "Reset crop to full page": the view's box becomes the whole page (any view). */
   resetFullPage?: (p: Page, viewId: string) => void;
+  /** Migration 030: a person's page name (null = back to the name read on the page) and sheet
+   * number. Only the changed values are sent. */
+  setNames?: (
+    p: Page,
+    change: { name?: string | null; sheet_number?: string },
+  ) => void;
 }
 
 /** A view of the page as the card shows it: the page's views, or one made of the page's setup. */
@@ -153,6 +160,23 @@ export const PageCard: React.FC<{
   const [typing, setTyping] = useState(false);
   const [scaleText, setScaleText] = useState("");
   const [penMenu, setPenMenu] = useState(false);
+  const [editingNames, setEditingNames] = useState(false);
+  const [numberDraft, setNumberDraft] = useState("");
+  const [nameDraft, setNameDraft] = useState("");
+  const startNames = () => {
+    setNumberDraft(page.sheet_number ?? "");
+    setNameDraft(page.name ?? "");
+    setEditingNames(true);
+  };
+  const saveNames = () => {
+    const change: { name?: string | null; sheet_number?: string } = {};
+    const n = numberDraft.trim();
+    if (n && n !== (page.sheet_number ?? "")) change.sheet_number = n;
+    const t = nameDraft.trim();
+    if (t !== (page.name ?? "")) change.name = t || null;
+    if (Object.keys(change).length) actions.setNames?.(page, change);
+    setEditingNames(false);
+  };
   useEffect(() => {
     setTos(view.tos_mm === null ? "" : formatFtIn(view.tos_mm));
     setTosBad(false);
@@ -296,19 +320,66 @@ export const PageCard: React.FC<{
           )}
         </span>
       </div>
-      <div className="sheet-no">Sheet {page.sheet_number ?? "—"}</div>
-      {page.name && (
+      {editingNames ? (
         <div
-          className="sheet-name"
-          data-testid="sheet-name"
-          title={
-            page.view_title
-              ? "View title read on the page"
-              : "Sheet title read in the title block"
-          }
+          className="names-edit"
+          data-testid="names-edit"
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") saveNames();
+            if (e.key === "Escape") setEditingNames(false);
+          }}
         >
-          {page.name}
+          <input
+            autoFocus
+            aria-label="sheet number"
+            placeholder="Sheet number"
+            value={numberDraft}
+            onChange={(e) => setNumberDraft(e.target.value)}
+          />
+          <input
+            aria-label="page name"
+            placeholder="Page name (blank = the name read on the page)"
+            value={nameDraft}
+            onChange={(e) => setNameDraft(e.target.value)}
+          />
+          <button onClick={saveNames}>Save</button>
+          <button onClick={() => setEditingNames(false)}>Cancel</button>
         </div>
+      ) : (
+        <>
+          <div className="sheet-no">
+            Sheet {page.sheet_number ?? "—"}
+            {actions.setNames && (
+              <button
+                className="x"
+                aria-label="edit page name and sheet number"
+                title="Correct the page name or the sheet number"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  startNames();
+                }}
+              >
+                <Pencil size={11} />
+              </button>
+            )}
+          </div>
+          {page.name && (
+            <div
+              className="sheet-name"
+              data-testid="sheet-name"
+              title={
+                page.name_source === "person"
+                  ? "Page name set by a person"
+                  : page.view_title
+                    ? "View title read on the page"
+                    : "Sheet title read in the title block"
+              }
+            >
+              {page.name}
+            </div>
+          )}
+        </>
       )}
       <div className="thumb">
         {page.thumbnail_url ? (

@@ -488,7 +488,16 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
             // Phase 14a: the page card's name: the main view title, else the title-block name
             view_title: s.view_title ?? null,
             title_block_name: s.title_block_name ?? null,
-            name: s.view_title ?? s.title_block_name ?? null,
+            // migration 030: a person's page name wins over the names read on the page
+            name: s.name_override ?? s.view_title ?? s.title_block_name ?? null,
+            name_source: s.name_override
+              ? 'person'
+              : s.view_title
+                ? 'view_title'
+                : s.title_block_name
+                  ? 'title_block'
+                  : null,
+            sheet_number_source: s.sheet_number_source ?? null,
             page_type: s.page_type_guess,
             page_kind: s.page_kind,
             lines_ready: withLines.has(s.id),

@@ -127,6 +127,13 @@ export interface SheetsTable {
   title_block_rule: 'label' | 'largest' | null;
   names_rules_version: string | null;
   names_read_at: Timestamp | null;
+  /** Migration 030: a person's page name (shown instead of the names read) and who/when; a
+   * person's sheet number is written in place (sheet_number_source 'person'). */
+  name_override: Generated<string | null>;
+  name_confirmed_by: Generated<string | null>;
+  name_confirmed_at: Generated<Timestamp | null>;
+  sheet_number_confirmed_by: Generated<string | null>;
+  sheet_number_confirmed_at: Generated<Timestamp | null>;
 }
 
 export type BuildRole = 'column_plan' | 'framing';

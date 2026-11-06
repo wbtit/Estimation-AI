@@ -731,6 +731,29 @@ h4 {
   margin-top: -5px;
 }
 
+/* migration 030: correct the page name / sheet number on the card */
+.page-card .sheet-no button.x {
+  padding: 0 0 0 4px;
+  background: transparent;
+  border: 0;
+  color: var(--shell-muted);
+  vertical-align: middle;
+  cursor: pointer;
+}
+
+.page-card .names-edit {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0 0 6px;
+}
+
+.page-card .names-edit input {
+  flex: 1 1 100%;
+  min-width: 0;
+  font-size: 11px;
+}
+
 .sheet-name {
   font-size: 11px;
   font-weight: 600;

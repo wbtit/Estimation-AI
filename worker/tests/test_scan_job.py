@@ -245,3 +245,26 @@ def test_unknown_document_is_an_error(setup: Setup) -> None:
     )
     with pytest.raises(ScanError, match="document not found"):
         run_scan_pdf(setup.conn, job, setup.config)
+
+
+def test_rescan_keeps_a_persons_sheet_number(setup: Setup) -> None:
+    # migration 030: a sheet number a person typed (source 'person') survives a rescan; the
+    # others are read again
+    write_sample_pdf(setup.pdf_path)
+    run_scan_pdf(setup.conn, setup.job(), setup.config)
+    first, second = setup.sheets()[0], setup.sheets()[1]
+    setup.conn.execute(
+        "UPDATE sheets SET sheet_number = 'S-999', sheet_number_source = 'person' WHERE id = %s",
+        (first["id"],),
+    )
+    setup.conn.execute(
+        "UPDATE sheets SET sheet_number = 'X-1', sheet_number_source = 'title_block_region'"
+        " WHERE id = %s",
+        (second["id"],),
+    )
+    setup.conn.commit()
+    run_scan_pdf(setup.conn, setup.job(), setup.config)
+    rows = setup.sheets()
+    assert (rows[0]["sheet_number"], rows[0]["sheet_number_source"]) == ("S-999", "person")
+    assert rows[1]["sheet_number"] == second["sheet_number"]  # read again, not kept
+    assert rows[1]["sheet_number_source"] == second["sheet_number_source"]

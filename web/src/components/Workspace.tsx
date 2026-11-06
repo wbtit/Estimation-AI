@@ -421,6 +421,8 @@ export const Workspace: React.FC<{
         ),
       ),
     resetFullPage: (p, viewId) => resetFullPage(p, viewId),
+    setNames: (p, change) =>
+      act(send("PATCH", sheetUrl(p, "names"), { ...change, who }), "Saved"),
     editBox: (_p, viewId) => {
       setViewId(viewId);
       askTool("editBox");
