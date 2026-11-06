@@ -10,6 +10,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Download, House, PanelLeft, Save } from "lucide-react";
 import { api, ApiError, send } from "../lib/api";
 import { formatFtIn } from "../lib/ftin";
+import { fullPageBox } from "../lib/tools";
 import {
   activeView,
   ALL_LAYERS,
@@ -326,6 +327,17 @@ export const Workspace: React.FC<{
 
   const withView = (viewId: string | null) =>
     viewId ? { view_id: viewId } : {};
+  /** "Reset crop to full page": the view's crop becomes the whole displayed page. The system's
+   * suggested crop is only a starting point; Undo puts the old box back. */
+  const resetFullPage = (p: Page, viewId: string | null) =>
+    void act(
+      send("POST", sheetUrl(p, "build-setup/crop"), {
+        box: fullPageBox({ w: p.width_pt ?? 0, h: p.height_pt ?? 0 }),
+        ...withView(viewId),
+        who,
+      }),
+      "Crop reset to the full page (Undo puts it back)",
+    );
   const actions: PageActions = {
     build: (p) =>
       act(
@@ -408,6 +420,7 @@ export const Workspace: React.FC<{
           { name, who },
         ),
       ),
+    resetFullPage: (p, viewId) => resetFullPage(p, viewId),
     editBox: (_p, viewId) => {
       setViewId(viewId);
       askTool("editBox");
@@ -938,6 +951,9 @@ export const Workspace: React.FC<{
             onEdit={(e) => void editSelected(e)}
             onDelete={deleteSelected}
             onCropTool={() => askTool("crop")}
+            onResetCrop={
+              page ? () => resetFullPage(page, view?.id ?? null) : undefined
+            }
             viewPieces={pieces.filter(
               (p) =>
                 (p.build_view_id ?? data?.views?.[0]?.id ?? null) ===

@@ -3,6 +3,7 @@ import {
   cursorFor,
   dragHandle,
   effectiveTool,
+  fullPageBox,
   handleAt,
   pressPans,
   tipOf,
@@ -82,5 +83,32 @@ describe("Edit box handles", () => {
       x0: 0,
       y0: 0,
     });
+  });
+});
+
+describe("fix/crop-anywhere: the crop can be anywhere on the page", () => {
+  // a rotated page as stored: 3024 x 2160 displayed; the old suggested box reached past the bottom
+  const page = { w: 3024, h: 2160 };
+  const offPage = { x0: 60, y0: 65, x1: 1845, y1: 2938 };
+
+  it("a handle drags to the page edge, never past it, and the whole box stays on the page", () => {
+    // the right edge goes all the way to the page edge (beyond the old suggested crop)
+    expect(dragHandle(offPage, "e", 5000, 0, page)).toEqual({
+      x0: 60,
+      y0: 65,
+      x1: 3024,
+      y1: 2160,
+    });
+    // the edges that did not move are clipped to the page too
+    expect(dragHandle(offPage, "nw", -100, -100, page)).toEqual({
+      x0: 0,
+      y0: 0,
+      x1: 1845,
+      y1: 2160,
+    });
+  });
+
+  it("Reset crop to full page is the whole displayed page", () => {
+    expect(fullPageBox(page)).toEqual({ x0: 0, y0: 0, x1: 3024, y1: 2160 });
   });
 });

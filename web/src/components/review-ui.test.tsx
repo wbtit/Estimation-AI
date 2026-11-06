@@ -761,6 +761,25 @@ describe("properties", () => {
     expect(screen.getByTestId("summary").textContent).toContain("Column:0");
   });
 
+  it("fix/crop-anywhere: the Crop section offers Reset crop to full page", () => {
+    const onResetCrop = vi.fn();
+    render(
+      <PropertiesPanel
+        bomRows={[]}
+        sheetId="s1"
+        selected={[]}
+        kinds={kinds}
+        crop={{ x0: 60, y0: 65, x1: 1845, y1: 2938 }}
+        onEdit={() => undefined}
+        onDelete={() => undefined}
+        onCropTool={() => undefined}
+        onResetCrop={onResetCrop}
+      />,
+    );
+    fireEvent.click(screen.getByText("Reset crop to full page"));
+    expect(onResetCrop).toHaveBeenCalledTimes(1);
+  });
+
   it("edits studs and Ignore for the selection", () => {
     const onEdit = vi.fn();
     render(
@@ -1450,6 +1469,24 @@ describe("polish round: views on the card", () => {
       expect.objectContaining({ id: "s1" }),
       "v2",
       "Partial plan",
+    );
+  });
+
+  it("fix/crop-anywhere: every view's menu offers Reset crop to full page", () => {
+    const a = { ...actions(), resetFullPage: vi.fn() };
+    card(a);
+    for (const v of ["View 1", "View 2"]) {
+      fireEvent.click(screen.getByLabelText(`${v} menu`));
+      fireEvent.click(
+        within(screen.getByTestId("view-menu")).getByText(
+          "Reset crop to full page",
+        ),
+      );
+    }
+    expect(a.resetFullPage.mock.calls.map((c) => c[1])).toEqual(["v1", "v2"]);
+    expect(a.resetFullPage).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "s1" }),
+      "v1",
     );
   });
 

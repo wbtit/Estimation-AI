@@ -10,14 +10,17 @@ from build_factory import XS, YS, column, framing_plan, grids, line
 from db_fixtures import DbProject
 from psycopg.types.json import Jsonb
 
+from measure.legacy_size import displayed_size as legacy_displayed_size
 from src.build.auto import auto_build, person_actions
 from src.build.job import build_sheet, setup_reasons, take_tag_numbers
 from src.build.propose import (
     choose_column_plan,
+    displayed_size,
     propose_crop,
     propose_role,
     propose_scale,
     propose_tos,
+    whole_sheet_box,
 )
 from src.build.segments import TextLine, page_text_lines
 from src.build.sheet_names import RULES_VERSION
@@ -90,6 +93,27 @@ def test_crop_is_the_bubble_box_plus_margin_else_the_whole_sheet() -> None:
     cp = propose_crop(empty, [])
     assert cp.rule == "fallback_whole_sheet"
     assert cp.box == pytest.approx((25.0, 20.0, 860.0, 780.0))
+
+
+@pytest.mark.parametrize("rotation", [90, 270])
+def test_a_rotated_page_is_sized_as_displayed_and_its_crop_stays_on_it(rotation: int) -> None:
+    # fix/crop-anywhere: PyMuPDF's page.rect already has the rotation applied; the old swap put the
+    # suggested crop off the page and cut the grid search to the unrotated frame
+    doc = pymupdf.open()
+    page = framing_plan(doc)
+    page.set_rotation(rotation)
+    assert displayed_size(page) == (800.0, 1000.0) == (page.rect.width, page.rect.height)
+    cp = propose_crop(page, page_text_lines(page))
+    assert cp.rule == "grid_bubbles" and len(cp.grid) == 6
+    x0, y0, x1, y1 = cp.box
+    assert 0 <= x0 < x1 <= 800 and 0 <= y0 < y1 <= 1000
+    # the measurement harnesses keep the old (swapped) size, frozen
+    assert legacy_displayed_size(page) == (1000.0, 800.0)
+    empty = doc.new_page(width=1000, height=800)
+    empty.set_rotation(rotation)
+    cp = propose_crop(empty, [])
+    assert cp.rule == "fallback_whole_sheet"
+    assert cp.box == pytest.approx(whole_sheet_box(800.0, 1000.0))
 
 
 def test_setup_reasons_with_system_values_need_values_not_confirmations() -> None:

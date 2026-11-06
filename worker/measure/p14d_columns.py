@@ -29,13 +29,13 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 from measure import p14b_columns as b
+from measure.legacy_size import displayed_size
 from measure.p12c_eval import _font
 from measure.prereg import verify
 from measure.takeoff.common import PRIVATE, ROOT
 from src.build.col_image import Settings, find_similar
 from src.build.col_symbols import V3_RULES, find_symbols, symbol_json
 from src.build.page import Setup, build_page
-from src.build.propose import displayed_size
 
 PREREG = ROOT / "docs" / "PHASE14D_PREREGISTRATION.md"
 PREREG_HASH = ROOT / "worker" / "prereg" / "PHASE14D.sha256"

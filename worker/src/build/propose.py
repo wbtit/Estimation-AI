@@ -56,8 +56,10 @@ class TosProposal:
 
 
 def displayed_size(page: pymupdf.Page) -> tuple[float, float]:
-    w, h = page.rect.width, page.rect.height
-    return (h, w) if page.rotation in (90, 270) else (w, h)
+    """The displayed page size: PyMuPDF's page.rect already has the rotation applied, so it is
+    never swapped (before fix/crop-anywhere it was swapped on rotated pages, which put the
+    suggested crop off the page and cut the grid search; measure/legacy_size.py keeps that)."""
+    return page.rect.width, page.rect.height
 
 
 def whole_sheet_box(w: float, h: float) -> Box:

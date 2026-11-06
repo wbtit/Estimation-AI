@@ -111,6 +111,8 @@ export const PropertiesPanel: React.FC<{
   onEdit: (e: PieceEdit) => void;
   onDelete: () => void;
   onCropTool: () => void;
+  /** "Reset crop to full page": the active view's crop becomes the whole page. */
+  onResetCrop?: () => void;
   /** The pieces of the active view (for "Set size for all …"), and its name when the page has
    * several views. */
   viewPieces?: Piece[];
@@ -129,6 +131,7 @@ export const PropertiesPanel: React.FC<{
   onEdit,
   onDelete,
   onCropTool,
+  onResetCrop,
   viewPieces = [],
   viewName = null,
   onSetSizeAll,
@@ -191,7 +194,19 @@ export const PropertiesPanel: React.FC<{
             </Section>
             <Section
               title={viewName ? `Crop · ${viewName}` : "Crop"}
-              extra={<button onClick={onCropTool}>Redraw</button>}
+              extra={
+                <>
+                  <button onClick={onCropTool}>Redraw</button>
+                  {onResetCrop && (
+                    <button
+                      onClick={onResetCrop}
+                      title="The crop becomes the whole page (Undo puts it back)"
+                    >
+                      Reset crop to full page
+                    </button>
+                  )}
+                </>
+              }
             >
               {crop ? (
                 <div className="sum-list">

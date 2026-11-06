@@ -19,9 +19,9 @@ from typing import Any
 import pymupdf
 from PIL import Image, ImageDraw, ImageFont
 
+from measure.legacy_size import displayed_size
 from measure.p12c_lib import BEAM, COLUMN, JOBS, TheirPage, group, project_name, their_pages
 from measure.takeoff.common import PRIVATE, TAKEOFFS
-from src.build.propose import displayed_size
 from src.config import load_config
 from src.db import connect
 from src.linking.lines import page_lines

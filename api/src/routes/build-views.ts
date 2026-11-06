@@ -490,10 +490,11 @@ export const buildViewRoutes: FastifyPluginAsync<BuildViewRouteOptions> = async 
         .where('sheet_id', '=', s.id)
         .executeTakeFirst();
       if (!lines) throw new HttpError(409, { error: 'the lines of this page are not ready yet' });
-      const w = s.width_pt === null ? 0 : Number(s.width_pt);
-      const h = s.height_pt === null ? 0 : Number(s.height_pt);
-      const rotated = s.rotation === 90 || s.rotation === 270;
-      const page: [number, number] = rotated ? [h, w] : [w, h];
+      // the stored size is already the displayed size (rotation applied): never swapped
+      const page: [number, number] = [
+        s.width_pt === null ? 0 : Number(s.width_pt),
+        s.height_pt === null ? 0 : Number(s.height_pt),
+      ];
       const box = (v.row.box as Box | null) ?? null;
       // grid evidence: grid lines (with their bubbles) of the view's latest finished build
       const first = firstId(views);

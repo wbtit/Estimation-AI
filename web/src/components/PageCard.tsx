@@ -59,6 +59,8 @@ export interface PageActions {
   editBox?: (p: Page, viewId: string) => void;
   /** View 1 cannot be deleted: its box goes back to the page crop. */
   resetBox?: (p: Page, viewId: string) => void;
+  /** "Reset crop to full page": the view's box becomes the whole page (any view). */
+  resetFullPage?: (p: Page, viewId: string) => void;
 }
 
 /** A view of the page as the card shows it: the page's views, or one made of the page's setup. */
@@ -417,6 +419,17 @@ export const PageCard: React.FC<{
                     >
                       Edit box
                     </button>
+                    {actions.resetFullPage && (
+                      <button
+                        title="The box becomes the whole page (Undo puts it back)"
+                        onClick={() => {
+                          setViewMenu(null);
+                          actions.resetFullPage?.(page, v.id);
+                        }}
+                      >
+                        Reset crop to full page
+                      </button>
+                    )}
                     <hr />
                     {v.position > 1 ? (
                       <button

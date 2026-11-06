@@ -157,7 +157,18 @@ export function dragHandle(
     b.y0 = Math.max(0, Math.min(start.y0 + dy, start.y1 - min));
   if (h.includes("s"))
     b.y1 = Math.min(page.h, Math.max(start.y1 + dy, start.y0 + min));
+  // the whole box stays on the page, also the edges that did not move (a stored box can reach
+  // past the page: the suggested crops of rotated pages before fix/crop-anywhere)
+  b.x0 = Math.max(0, Math.min(b.x0, page.w));
+  b.x1 = Math.max(0, Math.min(b.x1, page.w));
+  b.y0 = Math.max(0, Math.min(b.y0, page.h));
+  b.y1 = Math.max(0, Math.min(b.y1, page.h));
   return b;
+}
+
+/** The whole page as a crop box ("Reset crop to full page"), in displayed page points. */
+export function fullPageBox(page: { w: number; h: number }): Box4 {
+  return { x0: 0, y0: 0, x1: page.w, y1: page.h };
 }
 
 /** The cursor over a handle. */

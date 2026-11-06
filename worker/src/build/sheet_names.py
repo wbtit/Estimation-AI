@@ -292,9 +292,8 @@ def read_project(conn, sheets: list[dict]) -> dict[str, SheetNames]:
 
 
 def _displayed_size(sheet: dict) -> tuple[float, float]:
-    w = float(sheet["width_pt"] or 0)
-    h = float(sheet["height_pt"] or 0)
-    return (h, w) if (sheet.get("rotation") or 0) in (90, 270) else (w, h)
+    """The stored width_pt / height_pt are already the displayed size (rotation applied)."""
+    return float(sheet["width_pt"] or 0), float(sheet["height_pt"] or 0)
 
 
 def store(conn, sheet_id: str, names: SheetNames) -> None:

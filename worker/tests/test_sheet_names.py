@@ -1,6 +1,6 @@
 """Phase 14a: the page name from its text (synthetic lines only)."""
 
-from src.build.sheet_names import Line, read_names
+from src.build.sheet_names import Line, _displayed_size, read_names
 
 W, H = 2000.0, 1000.0
 
@@ -70,3 +70,10 @@ def test_title_block_name_without_a_label_is_the_largest_line():
     names = read_names(lines, [], W, H)
     assert (names.title_block_name, names.title_block_rule) == ("ROOF FRAMING PLAN", "largest")
     assert names.view_title is None
+
+
+def test_the_stored_size_is_the_displayed_size_on_every_rotation():
+    # fix/crop-anywhere: width_pt / height_pt are stored from page.rect (rotation applied)
+    for rotation in (0, 90, 180, 270, None):
+        sheet = {"width_pt": 3024, "height_pt": 2160, "rotation": rotation}
+        assert _displayed_size(sheet) == (3024.0, 2160.0)

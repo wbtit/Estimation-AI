@@ -23,6 +23,7 @@ from typing import Any
 
 import pymupdf
 
+from measure.legacy_size import displayed_size
 from measure.p12c_eval import PEN_MIN_IN, RADII, ROWS, page_eval, seg_dist
 from measure.p12c_lib import BEAM, JOBS, TheirPage, group, project_name, their_pages
 from measure.prereg import verify
@@ -31,7 +32,6 @@ from src.build.job import BEAM_KIND, COLUMN_KIND, JOIST_KIND, _column_plan, _leg
 from src.build.job import _text_lines as stored_text_lines
 from src.build.page import Setup, build_page
 from src.build.pieces import length_mm
-from src.build.propose import displayed_size
 from src.build.views import load_views, pick_view
 from src.config import load_config
 from src.db import connect

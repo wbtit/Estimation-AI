@@ -81,14 +81,14 @@ export const boxSchema = {
   },
 } as const;
 
-/** A box on the page: x1 > x0, y1 > y0, inside the displayed page (1 pt slack). */
+/** A box on the page: x1 > x0, y1 > y0, inside the displayed page (1 pt slack). The stored
+ * width_pt / height_pt are already the DISPLAYED size (the scan stores PyMuPDF's page.rect, which
+ * has the rotation applied), so they are never swapped for a rotated page. */
 export function checkBox(s: Sheet, b: Box, what: string): void {
   if (!(b.x1 > b.x0 && b.y1 > b.y0))
     throw new HttpError(400, { error: `the ${what} needs x1 > x0 and y1 > y0` });
-  const w = s.width_pt === null ? null : Number(s.width_pt);
-  const h = s.height_pt === null ? null : Number(s.height_pt);
-  const rotated = s.rotation === 90 || s.rotation === 270;
-  const [dw, dh] = rotated ? [h, w] : [w, h];
+  const dw = s.width_pt === null ? null : Number(s.width_pt);
+  const dh = s.height_pt === null ? null : Number(s.height_pt);
   if (dw !== null && dh !== null && (b.x0 < 0 || b.y0 < 0 || b.x1 > dw + 1 || b.y1 > dh + 1))
     throw new HttpError(400, { error: `the ${what} is outside the page` });
 }
