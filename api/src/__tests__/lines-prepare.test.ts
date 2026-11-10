@@ -100,6 +100,18 @@ describe('page lines (test database)', () => {
     }
   });
 
+  // Count only the jobs of the sheets of the two projects this test made, so a job another test
+  // inserts in parallel cannot change the number.
+  const jobsOfTestProjects = async (): Promise<number> => {
+    const r = await sql<{ n: string }>`
+      SELECT count(*) AS n FROM jobs j
+      WHERE j.payload->>'sheet_id' IN (
+        SELECT s.id::text FROM sheets s WHERE s.project_id IN (${real}, ${evaluation}))`.execute(
+      db,
+    );
+    return Number(r.rows[0]!.n);
+  };
+
   it('the backfill plans only real projects, skips pages with lines or an open job, then queues', async () => {
     await db.deleteFrom('sheet_lines').where('sheet_id', '=', sheets.missing!).execute();
     await db
@@ -107,15 +119,14 @@ describe('page lines (test database)', () => {
       .where('type', '=', 'sheet_lines')
       .where(sql<boolean>`payload->>'sheet_id' = ${sheets.missing}`)
       .execute();
-    const before = await db.selectFrom('jobs').select(db.fn.countAll().as('n')).executeTakeFirst();
+    const before = await jobsOfTestProjects();
     const plan = await planBackfill(db, [real, evaluation]);
     expect(plan.refused).toEqual([{ id: evaluation, reason: 'purpose is evaluation, not real' }]);
     expect(plan.projects).toEqual([
       { id: real, vector_pages: 3, with_lines: 1, open_jobs: 1, to_queue: [sheets.missing] },
     ]);
     // planning writes nothing
-    const after = await db.selectFrom('jobs').select(db.fn.countAll().as('n')).executeTakeFirst();
-    expect(after?.n).toBe(before?.n);
+    expect(await jobsOfTestProjects()).toBe(before);
     const jobs = await applyBackfill(db, plan);
     expect(jobs).toHaveLength(1);
     const again = await planBackfill(db, [real]);
