@@ -105,7 +105,9 @@ def test_the_search_is_deterministic_and_nothing_under_the_click_is_no_example(p
     b = find_similar(page, CROP, RATIO, (100, 200 - 6 * IN), syms, [])
     assert [(h.centre, h.score) for h in a.image] == [(h.centre, h.score) for h in b.image]
     none = find_similar(page, CROP, RATIO, (550, 370), syms, [])
-    assert none.example is None and none.note == "no symbol under the click"
+    # Phase 0-14g: nothing within the snap radius is a refusal that says where to click
+    assert none.example is None and none.refused == "click_closer"
+    assert none.note and none.note.startswith("click closer to the column symbol")
 
 
 def test_thresholds_and_the_edge_variant_run(page):

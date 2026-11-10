@@ -10,8 +10,31 @@ import {
   type SimilarMatch,
 } from "../lib/similar";
 
+/** Phase 0-14g: shown when the example is the ink under the click, not a stored symbol. */
+export const EXAMPLE_FROM_DRAWING =
+  "Example taken from the drawing — check the orange box.";
+
 export interface SimilarPreview {
-  example: { family: string; real_in: [number, number] };
+  example: {
+    family: string;
+    real_in: [number, number];
+    /** Phase 0-14g: where the example came from, its box corners (page points), its own turn */
+    source?: "vector" | "ink";
+    box?: [number, number, number, number] | null;
+    centre?: [number, number] | null;
+    angle?: number;
+    rect?: [number, number][] | null;
+  };
+  /** Phase 0-14g: how the example was found; `moved` = the column went onto the ink's centre */
+  snap?: {
+    source: "symbol" | "ink";
+    distance: number;
+    moved: boolean;
+    centre: [number, number];
+  } | null;
+  angles?: number[];
+  /** Phase 0-14g: 'unchecked_ink' = no symbol was found; the example is the ink under the click */
+  warning?: string | null;
   count: number;
   points: [number, number][];
   accepted: boolean;
@@ -44,6 +67,10 @@ export const FindSimilarBar: React.FC<{
   memberId: string;
   who: string;
   preview: SimilarPreview | null;
+  /** Phase 0-14g: false = leave the column where it is (placed with Shift, or nudged) */
+  snap?: boolean;
+  /** awaited before a search starts (pending nudges are sent first) */
+  beforeSearch?: () => Promise<void>;
   onPreview: (p: SimilarPreview) => void;
   strictness: number;
   onStrictness: (v: number) => void;
@@ -56,6 +83,8 @@ export const FindSimilarBar: React.FC<{
   memberId,
   who,
   preview,
+  snap = true,
+  beforeSearch,
   onPreview,
   strictness,
   onStrictness,
@@ -73,12 +102,14 @@ export const FindSimilarBar: React.FC<{
   const run = (accept: boolean) => {
     setBusy(true);
     const body: Record<string, unknown> = { who, accept };
+    if (!snap) body.snap = false;
     if (accept) {
       if (preview?.run_id) body.run_id = preview.run_id;
       body.strictness = strictness;
       body.unticked = untickedShown(all, strictness, unticked);
     }
-    send<SimilarPreview>("POST", url, body)
+    (beforeSearch ? beforeSearch() : Promise.resolve())
+      .then(() => send<SimilarPreview>("POST", url, body))
       .then((r) => {
         if (accept) onDone(r.accepted ? r.count : 0);
         else onPreview(r);
@@ -122,6 +153,11 @@ export const FindSimilarBar: React.FC<{
         </>
       ) : (
         <>
+          {preview.warning === "unchecked_ink" && (
+            <span className="similar-warning" data-testid="similar-warning">
+              {EXAMPLE_FROM_DRAWING}
+            </span>
+          )}
           <span data-testid="similar-count">
             {all.length === 0
               ? "No similar symbols found"

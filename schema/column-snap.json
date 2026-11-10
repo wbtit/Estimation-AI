@@ -1,0 +1,4 @@
+{
+  "snap_radius_pt": 14,
+  "comment": "Phase 0-14g: ONE value for the Draw column snap and the Find similar example lookup. Read by the web (through GET .../column-symbols), the API (api/src/review/column-snap.ts) and the worker (worker/src/build/col_image.py)."
+}

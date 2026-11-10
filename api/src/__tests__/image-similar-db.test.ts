@@ -1,5 +1,6 @@
 // Phase 14d: Find similar through the worker's image search (FIND_SIMILAR_IMAGE on) and the
 // global settings (SYNTHETIC rows only; a stand-in worker completes the queued jobs).
+import { sql } from 'kysely';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from '../app.js';
 import { closeDatabaseConnection, getDb } from '../db/client.js';
@@ -41,6 +42,8 @@ describe('find similar with the image search (test database)', () => {
           .select(['id', 'payload'])
           .where('type', '=', 'find_similar')
           .where('status', '=', 'pending')
+          // only this file's sheet: another test file's stand-in worker must not take the job
+          .where(sql<boolean>`payload->>'sheet_id' = ${sheetId}`)
           .execute();
         for (const j of jobs) {
           const [x, y] = (j.payload as { click: [number, number] }).click;
@@ -126,7 +129,11 @@ describe('find similar with the image search (test database)', () => {
 
   afterAll(async () => {
     delete process.env.FIND_SIMILAR_IMAGE;
-    await db.deleteFrom('jobs').where('type', '=', 'find_similar').execute();
+    await db
+      .deleteFrom('jobs')
+      .where('type', '=', 'find_similar')
+      .where(sql<boolean>`payload->>'sheet_id' = ${sheetId}`) // not another file's in-flight job
+      .execute();
     await deleteProject(db, projectId);
     await app.close();
     await closeDatabaseConnection();

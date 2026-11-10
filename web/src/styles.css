@@ -2281,3 +2281,9 @@ table.grid tr.total td {
   align-self: center;
   margin-right: 8px;
 }
+
+/* Phase 0-14g: the example is the ink under the click, not a stored symbol */
+.find-similar .similar-warning {
+  color: var(--amber, #b45309);
+  font-weight: 600;
+}

@@ -5,8 +5,15 @@ import {
   type SimilarPreview,
 } from "./FindSimilarBar";
 import { shownAt, STRICTNESS_DEFAULT, toggle } from "../lib/similar";
+import type { ColumnSymbols } from "../lib/column-snap";
 import { COLUMN_HINT, showColumnHint } from "../lib/columns";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Download, House, PanelLeft, Save } from "lucide-react";
 import { api, ApiError, send } from "../lib/api";
 import { formatFtIn } from "../lib/ftin";
@@ -107,15 +114,29 @@ export const Workspace: React.FC<{
   const [viewId, setViewId] = useState<string | null>(null);
   // Phase 14b: the column just placed (the Find similar bar)
   const [lastColumn, setLastColumnRaw] = useState<string | null>(null);
+  const lastColumnRef = useRef<string | null>(null);
+  lastColumnRef.current = lastColumn;
   // Phase 14e: the Find similar preview the person corrects (strictness, unticked matches)
   const [simPreview, setSimPreview] = useState<SimilarPreview | null>(null);
   const [strictness, setStrictness] = useState(STRICTNESS_DEFAULT);
   const [unticked, setUnticked] = useState<Set<string>>(new Set());
+  // Phase 0-14g: how the last column was placed (Shift = no snap) and its pending arrow-key nudges
+  const [placedNoSnap, setPlacedNoSnap] = useState(false);
+  const [nudged, setNudged] = useState(0);
+  const [nudgeOffset, setNudgeOffset] = useState<{
+    dx: number;
+    dy: number;
+  } | null>(null);
+  const nudgeAcc = useRef<{ dx: number; dy: number; n: number } | null>(null);
+  const nudgeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const setLastColumn = (id: string | null) => {
     setLastColumnRaw(id);
     setSimPreview(null);
     setStrictness(STRICTNESS_DEFAULT);
     setUnticked(new Set());
+    nudgeAcc.current = null;
+    setNudgeOffset(null);
+    setNudged(0);
   };
 
   const sheetId =
@@ -132,6 +153,24 @@ export const Workspace: React.FC<{
   } = useSheetLines(projectId, sheetId ?? null, {
     vector: (page?.page_kind ?? "vector") === "vector",
   });
+  // Phase 0-14g: the page's column symbols (the Draw column snap targets) and THE snap radius
+  const [colSymbols, setColSymbols] = useState<ColumnSymbols | null>(null);
+  const [symbolsTick, setSymbolsTick] = useState(0);
+  const refreshSymbols = useCallback(() => setSymbolsTick((t) => t + 1), []);
+  useEffect(() => {
+    setColSymbols(null);
+    if (!sheetId || (page?.page_kind ?? "vector") !== "vector") return;
+    let live = true;
+    api<ColumnSymbols>(
+      `/api/projects/${projectId}/sheets/${sheetId}/column-symbols`,
+    ).then(
+      (r) => live && setColSymbols(r),
+      () => undefined, // no symbols: the line snap stays
+    );
+    return () => {
+      live = false;
+    };
+  }, [projectId, sheetId, symbolsTick, page?.page_kind]);
   // a pick that found no lines waits for them, then is sent again
   const pendingPickPt = React.useRef<{ p: Pt2; mode: PickMode } | null>(null);
   // Phase 14a: the drawing visibility is remembered per person and page
@@ -309,6 +348,75 @@ export const Workspace: React.FC<{
       if (done) say(done);
       return refresh();
     }, fail);
+
+  // Phase 0-14g: arrow keys nudge the column just placed (1 pt, Shift 5 pt) before Find similar.
+  // The marker moves at once; the moves are summed and sent as ONE edit (with the count of
+  // nudges, logged) after a short pause or when Find similar starts.
+  const dataRef = useRef(data);
+  dataRef.current = data;
+  const flushNudges = useCallback(async (): Promise<void> => {
+    if (nudgeTimer.current) clearTimeout(nudgeTimer.current);
+    nudgeTimer.current = null;
+    const acc = nudgeAcc.current;
+    const id = lastColumnRef.current;
+    nudgeAcc.current = null;
+    if (!acc || !id) return;
+    const base = dataRef.current?.pieces.find((p) => p.id === id)?.a;
+    if (!base) {
+      setNudgeOffset(null);
+      return;
+    }
+    try {
+      await send(
+        "POST",
+        `/api/projects/${projectId}/line-first/pieces/${id}/ends`,
+        {
+          who,
+          a: [base[0] + acc.dx, base[1] + acc.dy],
+          b: null,
+          nudges: acc.n,
+        },
+      );
+      setNudged((n) => n + acc.n);
+      await refresh();
+    } catch (e) {
+      fail(e);
+    } finally {
+      setNudgeOffset(null);
+    }
+  }, [projectId, who, refresh]); // eslint-disable-line react-hooks/exhaustive-deps
+  const nudgeColumn = (id: string, dx: number, dy: number) => {
+    if (id !== lastColumnRef.current) return;
+    const a = nudgeAcc.current ?? { dx: 0, dy: 0, n: 0 };
+    a.dx += dx;
+    a.dy += dy;
+    a.n += 1;
+    nudgeAcc.current = a;
+    setNudgeOffset({ dx: a.dx, dy: a.dy });
+    if (nudgeTimer.current) clearTimeout(nudgeTimer.current);
+    nudgeTimer.current = setTimeout(() => void flushNudges(), 400);
+  };
+  // the marker shown with the pending nudge applied
+  const shownData = useMemo(
+    () =>
+      data && nudgeOffset && lastColumn
+        ? {
+            ...data,
+            pieces: data.pieces.map((p) =>
+              p.id === lastColumn && p.a
+                ? {
+                    ...p,
+                    a: [p.a[0] + nudgeOffset.dx, p.a[1] + nudgeOffset.dy] as [
+                      number,
+                      number,
+                    ],
+                  }
+                : p,
+            ),
+          }
+        : data,
+    [data, nudgeOffset, lastColumn],
+  );
 
   // Phase 14f: Renumber tags (one recorded action) and the check before an Excel export
   const bomXlsx = `/api/projects/${projectId}/line-first/bom.xlsx?who=${encodeURIComponent(who)}`;
@@ -762,7 +870,11 @@ export const Workspace: React.FC<{
               memberId={lastColumn}
               who={who}
               preview={simPreview}
+              snap={!(placedNoSnap || nudged > 0 || nudgeOffset !== null)}
+              beforeSearch={flushNudges}
               onPreview={(p) => {
+                // the column may have moved onto the ink's centre
+                if (p.snap?.moved) void refresh();
                 setSimPreview(p);
                 setStrictness(p.strictness_default ?? STRICTNESS_DEFAULT);
               }}
@@ -785,18 +897,28 @@ export const Workspace: React.FC<{
           {page ? (
             <Canvas
               who={who}
+              symbols={colSymbols}
+              nudgeId={lastColumn}
+              onNudge={nudgeColumn}
+              onColumnTool={refreshSymbols}
               similar={
                 simPreview
                   ? {
                       matches: shownAt(previewMatches(simPreview), strictness),
                       unticked,
                       onToggle: (k) => setUnticked((u) => toggle(u, k)),
+                      example: simPreview.example.rect
+                        ? {
+                            rect: simPreview.example.rect,
+                            source: simPreview.example.source ?? "vector",
+                          }
+                        : null,
                     }
                   : null
               }
               pdf={pdf}
               page={page}
-              data={data}
+              data={shownData}
               lines={lines}
               layers={layers}
               onLayers={setLayers}
@@ -910,6 +1032,8 @@ export const Workspace: React.FC<{
                   }).then((pc) => {
                     // Phase 14b: a placed column offers Find similar
                     setLastColumn(pc.type === "column" ? pc.id : null);
+                    // Phase 0-14g: a Shift placement stays where it was put
+                    setPlacedNoSnap(opts?.snap?.source === "shift_off");
                   }),
                 )
               }

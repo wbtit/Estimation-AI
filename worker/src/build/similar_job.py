@@ -20,6 +20,7 @@ from src.build.col_image import (
     Settings,
     cache_path,
     load_raster,
+    long_line_angles,
     render,
     save_raster,
     search,
@@ -70,7 +71,13 @@ def run_find_similar(conn, job: Job, config: WorkerConfig) -> dict[str, Any]:
             r = render(doc[int(page["page_index"])], box, ratio, grid, settings)
         save_raster(path, r)
     t1 = time.perf_counter()
-    res = search(r, ratio, click, list(sym["symbols"]), settings)
+
+    def long_lines() -> list[float]:
+        # Phase 0-14g: a page with no grid lines searches the directions of its long lines
+        with pymupdf.open(config.upload_dir / page["stored_path"]) as doc:
+            return long_line_angles(doc[int(page["page_index"])], box, ratio)
+
+    res = search(r, ratio, click, list(sym["symbols"]), settings, grid=grid, fallback=long_lines)
     t2 = time.perf_counter()
     combined = [
         {"centre": [round(v, 2) for v in c["centre"]], "source": c["source"],
@@ -80,6 +87,10 @@ def run_find_similar(conn, job: Job, config: WorkerConfig) -> dict[str, Any]:
     return {
         "example": res.example,
         "note": res.note,
+        "refused": res.refused,
+        "warning": res.warning,
+        "snap": res.snap,
+        "angles": res.angles,
         "vector": len(res.vector),
         "image": len(res.image),
         "combined": combined,
