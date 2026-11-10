@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from "react";
-import { send } from "../lib/api";
+import React, { useEffect, useRef, useState } from "react";
+import { ApiError, send } from "../lib/api";
 import {
   shownAt,
   STRICTNESS_MAX,
@@ -35,6 +35,8 @@ export interface SimilarPreview {
   angles?: number[];
   /** Phase 0-14g: 'unchecked_ink' = no symbol was found; the example is the ink under the click */
   warning?: string | null;
+  /** Phase 0: false = no column symbols are stored for this page; the example is read from the ink */
+  symbols_stored?: boolean;
   count: number;
   points: [number, number][];
   accepted: boolean;
@@ -71,6 +73,9 @@ export const FindSimilarBar: React.FC<{
   snap?: boolean;
   /** awaited before a search starts (pending nudges are sent first) */
   beforeSearch?: () => Promise<void>;
+  /** Phase 0-column-capture: the capture box a person changed [x0, y0, x1, y1]; Find similar searches
+   * exactly it. Undefined: the default tight box (as main). */
+  box?: [number, number, number, number] | null;
   onPreview: (p: SimilarPreview) => void;
   strictness: number;
   onStrictness: (v: number) => void;
@@ -85,6 +90,7 @@ export const FindSimilarBar: React.FC<{
   preview,
   snap = true,
   beforeSearch,
+  box,
   onPreview,
   strictness,
   onStrictness,
@@ -94,35 +100,70 @@ export const FindSimilarBar: React.FC<{
   onError,
 }) => {
   const [busy, setBusy] = useState(false);
+  const [above, setAbove] = useState(0.85);
+  // the one-click action offered when the reason is a missing page scale
+  const [needScale, setNeedScale] = useState(false);
+  // the time of the last search, logged with the accept (Phase 0-column-capture)
+  const lastMs = useRef<number | null>(null);
   const url = `/api/projects/${projectId}/line-first/pieces/${memberId}/find-similar`;
   const all = preview ? previewMatches(preview) : [];
   const shown = shownAt(all, strictness);
   const chosen = ticked(all, strictness, unticked);
   const hasScores = all.some((m) => m.score !== null);
-  const run = (accept: boolean) => {
+  // accept = false: a preview; accept = true: the ticked matches at the strictness; `atScore`: every
+  // match scoring at least that (the unticks are not applied: accept all above score X)
+  const run = (accept: boolean, atScore?: number) => {
     setBusy(true);
     const body: Record<string, unknown> = { who, accept };
     if (!snap) body.snap = false;
+    if (box) body.box = box; // the box searched (logged with the accept; the job already has it)
     if (accept) {
       if (preview?.run_id) body.run_id = preview.run_id;
-      body.strictness = strictness;
-      body.unticked = untickedShown(all, strictness, unticked);
+      body.strictness = atScore ?? strictness;
+      body.unticked =
+        atScore === undefined ? untickedShown(all, strictness, unticked) : [];
+      if (lastMs.current !== null)
+        body.timing = { find_similar_ms: lastMs.current };
     }
+    const t0 = performance.now();
     (beforeSearch ? beforeSearch() : Promise.resolve())
       .then(() => send<SimilarPreview>("POST", url, body))
-      .then((r) => {
-        if (accept) onDone(r.accepted ? r.count : 0);
-        else onPreview(r);
-      }, onError)
+      .then(
+        (r) => {
+          if (accept) onDone(r.accepted ? r.count : 0);
+          else {
+            lastMs.current = Math.round(performance.now() - t0);
+            onPreview(r);
+          }
+        },
+        (e) => {
+          setNeedScale(e instanceof ApiError && e.code === "no_scale");
+          onError(e);
+        },
+      )
       .finally(() => setBusy(false));
   };
   useEffect(() => {
-    if (!preview) return;
+    // Phase 0-column-capture keyboard flow: Enter = Find similar (then accept), A = accept, Esc = cancel
     const key = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement | null)?.tagName;
       if (tag === "INPUT" && (e.target as HTMLInputElement).type !== "range")
         return;
-      if (e.key === "Enter" && chosen.length > 0 && !busy) {
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.key === "Enter" && !busy) {
+        if (preview && chosen.length > 0) {
+          e.preventDefault();
+          run(true);
+        } else if (!preview) {
+          e.preventDefault();
+          run(false);
+        }
+      } else if (
+        (e.key === "a" || e.key === "A") &&
+        preview &&
+        chosen.length > 0 &&
+        !busy
+      ) {
         e.preventDefault();
         run(true);
       } else if (e.key === "Escape") onClose();
@@ -144,6 +185,20 @@ export const FindSimilarBar: React.FC<{
       {!preview ? (
         <>
           {!busy && <span>Column placed.</span>}
+          {needScale && (
+            <button
+              data-testid="set-scale"
+              onClick={() => {
+                const el = document.querySelector<HTMLInputElement>(
+                  '[aria-label="scale"]',
+                );
+                el?.scrollIntoView?.({ block: "center" });
+                el?.focus();
+              }}
+            >
+              Set the page scale
+            </button>
+          )}
           <button disabled={busy} onClick={() => run(false)}>
             Find similar
           </button>
@@ -153,6 +208,12 @@ export const FindSimilarBar: React.FC<{
         </>
       ) : (
         <>
+          {preview.symbols_stored === false && (
+            <span className="similar-note" data-testid="similar-no-symbols">
+              No column symbols are stored for this page: the example is read
+              from the drawing.
+            </span>
+          )}
           {preview.warning === "unchecked_ink" && (
             <span className="similar-warning" data-testid="similar-warning">
               {EXAMPLE_FROM_DRAWING}
@@ -188,6 +249,29 @@ export const FindSimilarBar: React.FC<{
             >
               Accept {chosen.length}
             </button>
+          )}
+          {hasScores && (
+            <span className="accept-above">
+              <button
+                disabled={
+                  busy || all.every((m) => m.score === null || m.score < above)
+                }
+                onClick={() => run(true, above)}
+                title="Accept every match scoring at least this, untick or not"
+              >
+                Accept all ≥
+              </button>
+              <input
+                type="number"
+                aria-label="accept above score"
+                min={0.6}
+                max={1}
+                step={0.01}
+                value={above}
+                onChange={(e) => setAbove(Number(e.target.value))}
+                style={{ width: 56 }}
+              />
+            </span>
           )}
           <button className="link" onClick={onClose}>
             Cancel

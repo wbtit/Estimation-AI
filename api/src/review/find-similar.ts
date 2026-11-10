@@ -5,7 +5,7 @@
 // it matches only the same solid shape and size. Pure; the same rule as the worker's `same_kind`
 // (shared cases: fixtures/synthetic).
 
-import { SNAP_RADIUS_PT } from './column-snap.js';
+import { SNAP_RADIUS_PT, UNKNOWN_SQUARE, unknownSquares } from './column-snap.js';
 
 /** The five column symbol families (worker col_symbols.FIVE_FAMILIES), in palette order. */
 export const SYMBOL_FAMILIES = [
@@ -31,6 +31,7 @@ export interface StoredSymbol {
   rotation_deg: number;
   real_in: [number, number]; // [short, long]
   solid?: 'square' | 'rect' | 'round' | null; // 14c: a solid shape (family 'unknown')
+  square45?: boolean; // Phase 0-column-capture: an unknown 45 degree square (set by the example lookup)
 }
 
 type Kind = Pick<StoredSymbol, 'family' | 'real_in' | 'solid'>;
@@ -64,20 +65,35 @@ function nearest(
   return best === null ? null : symbols[(best as { k: number }).k]!;
 }
 
+/** The click is inside the symbol's box plus the shared margin (an unknown square must be under the click). */
+function insideBox(p: readonly number[], b: readonly number[], ratio: number): boolean {
+  const m = (UNKNOWN_SQUARE.click_margin_in * 72) / ratio; // real inches -> page points
+  return p[0]! >= b[0]! - m && p[0]! <= b[2]! + m && p[1]! >= b[1]! - m && p[1]! <= b[3]! + m;
+}
+
 /** The stored symbol under a drawn column: the nearest known-family centre within CLICK_PT, else
  * the nearest solid shape within CLICK_PT. */
 export function symbolAt(
   point: [number, number],
   symbols: readonly StoredSymbol[],
+  ratio: number,
 ): StoredSymbol | null {
+  // Phase 0-column-capture: an unknown 45 degree square (a plate / pier) is the third kind of target
+  const square = unknownSquares(symbols);
   return (
     nearest(point, symbols, (s) => s.family !== 'unknown') ??
-    nearest(point, symbols, (s) => !!s.solid)
+    nearest(point, symbols, (s) => !!s.solid) ??
+    nearest(
+      point,
+      symbols,
+      (s) => square[symbols.indexOf(s)] === true && insideBox(point, s.box, ratio),
+    )
   );
 }
 
 /** What the preview names: the family, or "solid_<shape>" for a solid example. */
 export function exampleName(e: StoredSymbol): string {
+  if (e.family === 'unknown' && e.square45) return 'square_45';
   return e.family === 'unknown' && e.solid ? `solid_${e.solid}` : e.family;
 }
 
@@ -87,11 +103,15 @@ export function findSimilar(
   symbols: readonly StoredSymbol[],
   columns: readonly [number, number][],
 ): StoredSymbol[] {
+  const square = unknownSquares(symbols);
+  const exSquare = example.square45 === true;
   return symbols
     .filter(
-      (s) =>
+      (s, i) =>
         s !== example &&
-        sameKind(s, example, true) &&
+        (exSquare
+          ? square[i] === true && sameSize(s.real_in, example.real_in)
+          : sameKind(s, example, true)) &&
         !columns.some((c) => dist(c, s.centre) <= TAKEN_PT),
     )
     .sort((a, b) => a.centre[1] - b.centre[1] || a.centre[0] - b.centre[0]);

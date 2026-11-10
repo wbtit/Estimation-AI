@@ -54,6 +54,9 @@ export interface Match {
   centre: [number, number];
   symbol: string | null;
   rotation_deg: number;
+  /** Phase 0-column-capture: this match's OWN reading (not the example's angle plus a template turn) */
+  orientation_deg?: number | null;
+  orientation_state?: 'clear' | 'unsure' | 'none';
   real_in: [number, number];
   source: 'vector' | 'image';
   score: number | null; // null: a vector match (no image score)
@@ -96,6 +99,8 @@ export async function imageJob(p: {
   buildRunId: string;
   runId?: string;
   waitMs?: number;
+  /** Phase 0-column-capture: the capture box the person shows (page points); the search uses exactly it */
+  box?: [number, number, number, number] | null;
 }): Promise<{ id: string; result: ImageResult }> {
   const db = getDb();
   let id = p.runId;
@@ -120,6 +125,7 @@ export async function imageJob(p: {
           member_id: p.memberId,
           build_run_id: p.buildRunId,
           click: p.click,
+          ...(p.box ? { box: p.box } : {}),
         }) as never,
       })
       .returning('id')

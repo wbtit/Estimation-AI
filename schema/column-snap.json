@@ -1,4 +1,14 @@
 {
   "snap_radius_pt": 14,
-  "comment": "Phase 0-14g: ONE value for the Draw column snap and the Find similar example lookup. Read by the web (through GET .../column-symbols), the API (api/src/review/column-snap.ts) and the worker (worker/src/build/col_image.py)."
+  "comment": "Phase 0-14g: ONE value for the Draw column snap and the Find similar example lookup. Read by the web (through GET .../column-symbols), the API (api/src/review/column-snap.ts) and the worker (worker/src/build/col_image.py). Phase 0-column-capture: unknown_square is the defined rule for a 45 degree square symbol of family 'unknown' as a capture target (pre-registered in worker/prereg/PHASE0_COLUMN_CAPTURE_PREREGISTRATION.md section 5).",
+  "unknown_square": {
+    "aspect_tol": 0.1,
+    "side_in": [
+      8,
+      36
+    ],
+    "turn_deg": 45,
+    "turn_tol_deg": 5,
+    "click_margin_in": 5
+  }
 }

@@ -76,7 +76,28 @@ import {
 } from "../lib/lf";
 import { snapPoint } from "../lib/snap";
 import {
+  boxAround,
+  captureHit,
+  dragCapture,
+  tightBox,
+  type CaptureBox,
+  type CaptureDrag,
+} from "../lib/capture";
+import {
+  glyphCentre,
+  markerRotation,
+  orientationFromRotation,
+  ownSymbolSize,
+  periodOf,
+  probeBox,
+  readOrientation,
+  refineCentre,
+  snapOrientation,
+} from "../lib/orientation";
+import { crossings, offGrid } from "../lib/grid-cross";
+import {
   nearestSymbol,
+  squareMarginPt,
   nudgeStep,
   placeColumn,
   type ColumnSymbol,
@@ -121,7 +142,18 @@ export interface DrawOptions {
   /** Phase 0-14g: the snapped symbol's real size [short, long] in inches (the marker's size
    * when the column has no section) and how the click was snapped (logged by the API) */
   real_in?: [number, number];
-  snap?: { source: SnapSource; distance?: number; snapped: boolean };
+  snap?: {
+    source: SnapSource;
+    distance?: number;
+    snapped: boolean;
+    /** the centre was refined to the symbol's own centre by this many real inches */
+    refined_in?: number;
+  };
+  /** Phase 0-column-capture: the orientation read at the click (web direction, ccw from +X, displayed
+   * frame; see lib/orientation.ts) with its state, and the click-to-marker time in ms (logged) */
+  orientation_deg?: number | null;
+  orientation_state?: "clear" | "unsure" | "none";
+  timing?: { click_to_marker_ms?: number };
 }
 
 export interface CanvasProps {
@@ -181,6 +213,16 @@ export interface CanvasProps {
   onNudge?: (id: string, dx: number, dy: number) => void;
   /** the Draw column tool was picked: refresh the page's symbols */
   onColumnTool?: () => void;
+  /** Phase 0-column-capture: the column just placed (the capture box and the rotate handle belong to
+   * it), the capture box shown for Find similar (page points) and its changes (true = a person
+   * dragged it), and the rotation of columns: turn clockwise by rotate_deg, or set the web direction */
+  lastColumn?: string | null;
+  capture?: { box: CaptureBox; edited: boolean } | null;
+  onCapture?: (box: CaptureBox, edited: boolean) => void;
+  onRotate?: (
+    ids: string[],
+    by: { rotate_deg?: number; orientation_deg?: number },
+  ) => void;
 }
 
 const TOOLS: { tool: Tool; Icon: LucideIcon; label: string }[] = [
@@ -246,6 +288,25 @@ export const Canvas: React.FC<CanvasProps> = (props) => {
   const [hover, setHover] = useState<Pt2 | null>(null);
   // Phase 0-14g: the stored symbol a Draw column click would land on (highlighted)
   const [hoverSym, setHoverSym] = useState<ColumnSymbol | null>(null);
+  // Phase 0-column-capture: the marker shown at once at the click (before the server answers), the
+  // capture-box drag, and the rotate-handle drag
+  const [ghost, setGhost] = useState<{
+    at: Pt2;
+    rotation: number;
+    state: "clear" | "unsure" | "none";
+    family: SymbolFamily;
+    sizePt: [number, number] | null;
+  } | null>(null);
+  const capDrag = useRef<{
+    how: CaptureDrag;
+    from: Pt2;
+    start: CaptureBox;
+  } | null>(null);
+  const [rotDrag, setRotDrag] = useState<{
+    id: string;
+    deg: number;
+    at: Pt2;
+  } | null>(null);
   const [hoverId, setHoverId] = useState<string | null>(null);
   const [measure, setMeasure] = useState<{ a: Pt2; b: Pt2 } | null>(null);
   const [lastIssue, setLastIssue] = useState<IssueKey | null>(null);
@@ -353,6 +414,10 @@ export const Canvas: React.FC<CanvasProps> = (props) => {
   useEffect(() => {
     if (props.toolAsk) setTool(props.toolAsk.tool);
   }, [props.toolAsk]);
+  // the server's piece replaces the ghost marker
+  useEffect(() => {
+    setGhost(null);
+  }, [data]);
   // Phase 0-14g: the column tool asks for the page's current symbols (a Build may have changed them)
   const { onColumnTool } = props;
   useEffect(() => {
@@ -467,6 +532,8 @@ export const Canvas: React.FC<CanvasProps> = (props) => {
         !e.metaKey &&
         !e.altKey
       ) {
+        // (while a Find similar preview is open, A accepts it: the bar handles the key)
+        if (props.similar) return;
         if (selected.size > 0) props.onApprove?.();
         return;
       }
@@ -492,14 +559,23 @@ export const Canvas: React.FC<CanvasProps> = (props) => {
         return;
       }
       if (
-        tool === "column" &&
         (e.key === "r" || e.key === "R") &&
         !e.ctrlKey &&
         !e.metaKey &&
         !e.altKey
       ) {
-        setColRotation((r) => (r + 90) % 360);
-        return;
+        // Phase 0-column-capture: R turns the selected columns (or the column just placed) 90
+        // degrees, Shift+R 15 degrees; one recorded, undoable action. Nothing selected and no
+        // column just placed: R is the palette's rotation for the next column, as before.
+        const ids = rotateTargets();
+        if (ids.length > 0 && props.onRotate) {
+          props.onRotate(ids, { rotate_deg: e.shiftKey ? 15 : 90 });
+          return;
+        }
+        if (tool === "column" && !e.shiftKey) {
+          setColRotation((r) => (r + 90) % 360);
+          return;
+        }
       }
       const t = toolForKey(e.key, {
         ctrl: e.ctrlKey,
@@ -545,6 +621,47 @@ export const Canvas: React.FC<CanvasProps> = (props) => {
     };
   }, [selected, props, step, exclusionOn, help, cancel, tool]);
 
+  // Phase 0-column-capture: the page's grid directions (degrees ccw), the columns R turns and the
+  // rotate handle of a single column
+  const gridAngles = useMemo(
+    () =>
+      (data?.grid_lines ?? []).map(
+        (g) =>
+          ((((Math.atan2(-(g.b[1] - g.a[1]), g.b[0] - g.a[0]) * 180) /
+            Math.PI) %
+            180) +
+            180) %
+          180,
+      ),
+    [data],
+  );
+  const gridCross = useMemo(() => crossings(data?.grid_lines ?? []), [data]);
+  const rotateTargets = (): string[] => {
+    const cols = pieces
+      .filter((q) => selected.has(q.id) && q.type === "column" && !q.deleted)
+      .map((q) => q.id);
+    if (cols.length > 0) return cols;
+    return props.lastColumn && pieces.some((q) => q.id === props.lastColumn)
+      ? [props.lastColumn]
+      : [];
+  };
+  const rotateHandle = (): { id: string; at: Pt2; deg: number } | null => {
+    const ids = rotateTargets();
+    if (ids.length !== 1) return null;
+    const pc = pieces.find((q) => q.id === ids[0]);
+    if (!pc?.a || periodOf(pc.symbol ?? "w_shape") === null) return null;
+    const deg =
+      pc.orientation_deg ?? orientationFromRotation(pc.rotation_deg ?? 0);
+    const r = 18 * px;
+    return {
+      id: pc.id,
+      deg,
+      at: [
+        pc.a[0] + Math.cos((deg * Math.PI) / 180) * r,
+        pc.a[1] - Math.sin((deg * Math.PI) / 180) * r,
+      ],
+    };
+  };
   const snap = (p: Pt2): Pt2 => {
     if (!lines) return p;
     const hit = snapPoint(lines.lines, p[0], p[1], SNAP_PX * px);
@@ -586,6 +703,21 @@ export const Canvas: React.FC<CanvasProps> = (props) => {
       };
       setPanning(true);
       return true;
+    }
+    // Phase 0-column-capture: the rotate handle and the capture box take the pointer first
+    if (tool === "select" || tool === "column") {
+      const rh = rotateHandle();
+      if (rh && Math.hypot(rh.at[0] - p[0], rh.at[1] - p[1]) <= 7 * px) {
+        setRotDrag({ id: rh.id, deg: rh.deg, at: p });
+        return true;
+      }
+      if (props.capture) {
+        const how = captureHit(props.capture.box, p, 7 * px);
+        if (how) {
+          capDrag.current = { how, from: p, start: props.capture.box };
+          return true;
+        }
+      }
     }
     if (tool === "editBox") {
       const b = view?.box;
@@ -641,10 +773,12 @@ export const Canvas: React.FC<CanvasProps> = (props) => {
     if (tool === "column") {
       // Phase 0-14g: land on the symbol under the cursor (its centre, its own angle and size);
       // no symbol near: the line / grid snap; Shift: the click as it is
+      const t0 = performance.now();
       const pl = placeColumn({
         p,
         symbols: props.symbols?.symbols ?? [],
         radius: props.symbols?.snap_radius_pt ?? null,
+        squareMargin: squareMarginPt(props.symbols?.square_margin_in, ratio),
         shift: e.shiftKey,
         line: (q) => {
           if (!lines) return null;
@@ -652,14 +786,87 @@ export const Canvas: React.FC<CanvasProps> = (props) => {
           return hit ? [hit.x, hit.y] : null;
         },
       });
-      props.onDraw(palette.stud ? STUD_KIND : "Column", pl.at, null, {
+      // Phase 0-column-capture: read the column symbol's orientation from the page's own lines, in a
+      // window of the column family (never from a plate / pier around it), and show the marker at once
+      const known =
+        pl.symbol && pl.symbol.family !== "unknown" ? pl.symbol.family : null;
+      const family = known ?? palette.family;
+      const k = ratio ? 72 / ratio : null;
+      // the reading window: a family-sized square around the snapped centre (never the box of a
+      // neighbouring symbol, never a plate / pier around the column)
+      const probe = ratio ? probeBox(pl.at, ratio) : null;
+      let reading: ReturnType<typeof readOrientation> | null = null;
+      if (!palette.stud && probe && ratio && lines) {
+        reading = readOrientation({
+          lines: lines.lines,
+          box: probe as [number, number, number, number],
+          family,
+          ratio,
+          // the column's OWN stored symbol only (its family, within 5 in): never a neighbour's size
+          sizeIn: ownSymbolSize(
+            props.symbols?.symbols ?? [],
+            pl.at,
+            family,
+            ratio,
+          ),
+          grid: gridAngles,
+        });
+      }
+      // the centre refined to the column symbol's own centre (the middle of its strokes) when it is
+      // 2.5 to 5 in off; never with Shift, never when the reading is not clear; never snapped to a grid
+      const refined =
+        !e.shiftKey && reading?.state === "clear" && ratio
+          ? refineCentre(pl.at, glyphCentre(reading), ratio)
+          : { centre: pl.at, moved: false, offsetIn: 0 };
+      const at = refined.centre;
+      // the tight box: the stored symbol's own box, else the column symbol's own lines
+      const captureBox: CaptureBox = pl.symbol
+        ? tightBox(pl.symbol.box)
+        : reading?.box
+          ? tightBox(reading.box)
+          : boxAround(pl.at, 12 * (k ?? 0.375));
+      let orientation: number | null | undefined = reading?.deg;
+      let ostate: "clear" | "unsure" | "none" = reading?.state ?? "unsure";
+      if (palette.stud) {
+        orientation = undefined;
+      } else if (colRotation !== 0) {
+        // a rotation the person set with R before the click is theirs: it replaces the reading
+        const pr = periodOf(family) ?? 180;
+        orientation = orientationFromRotation(colRotation + pl.turn) % pr;
+        ostate = "unsure";
+      }
+      const rotation =
+        orientation !== undefined && orientation !== null
+          ? markerRotation(orientation)
+          : (((colRotation + pl.turn) % 180) + 180) % 180;
+      const ms = Math.round((performance.now() - t0) * 10) / 10;
+      setGhost({
+        at,
+        rotation,
+        state:
+          orientation === null || orientation === undefined ? "unsure" : ostate,
+        family: family as SymbolFamily,
+        sizePt:
+          pl.symbol && k
+            ? [pl.symbol.real_in[0] * k, pl.symbol.real_in[1] * k]
+            : null,
+      });
+      props.onCapture?.(captureBox, false);
+      props.onDraw(palette.stud ? STUD_KIND : "Column", at, null, {
         symbol: palette.family,
-        rotation_deg: (((colRotation + pl.turn) % 180) + 180) % 180,
+        rotation_deg: rotation,
         profile_text: colSize.trim() || null,
         ...(pl.symbol ? { real_in: pl.symbol.real_in } : {}),
+        ...(orientation !== undefined
+          ? { orientation_deg: orientation, orientation_state: ostate }
+          : {}),
+        timing: { click_to_marker_ms: ms },
         snap: {
           source: pl.source,
           snapped: pl.snapped,
+          ...(refined.moved
+            ? { refined_in: Math.round(refined.offsetIn * 10) / 10 }
+            : {}),
           ...(pl.distance === null
             ? {}
             : { distance: Math.round(pl.distance * 100) / 100 }),
@@ -691,6 +898,33 @@ export const Canvas: React.FC<CanvasProps> = (props) => {
       el.scrollTop = pan.current.st - (e.clientY - pan.current.y);
       return;
     }
+    if (capDrag.current) {
+      const d = capDrag.current;
+      props.onCapture?.(
+        dragCapture(d.start, d.how, p[0] - d.from[0], p[1] - d.from[1], {
+          w,
+          h,
+        }),
+        true,
+      );
+      return;
+    }
+    if (rotDrag) {
+      const pc = pieces.find((q) => q.id === rotDrag.id);
+      if (pc?.a) {
+        let deg =
+          ((Math.atan2(-(p[1] - pc.a[1]), p[0] - pc.a[0]) * 180) / Math.PI +
+            360) %
+          360;
+        deg = deg % (periodOf(pc.symbol ?? "w_shape") ?? 180);
+        // snaps to 0 / 90 / 45 and the grid directions within 3 degrees; Shift = free
+        deg = e.shiftKey
+          ? Math.round(deg)
+          : snapOrientation(deg, pc.symbol ?? "w_shape", gridAngles);
+        setRotDrag({ ...rotDrag, deg, at: p });
+      }
+      return;
+    }
     if (boxEdit) {
       setBoxEdit({
         ...boxEdit,
@@ -713,7 +947,12 @@ export const Canvas: React.FC<CanvasProps> = (props) => {
       const near =
         e.shiftKey || r === undefined
           ? null
-          : nearestSymbol(props.symbols?.symbols ?? [], p, r);
+          : nearestSymbol(
+              props.symbols?.symbols ?? [],
+              p,
+              r,
+              squareMarginPt(props.symbols?.square_margin_in, ratio),
+            );
       setHoverSym((cur) =>
         cur === (near?.symbol ?? null) ? cur : (near?.symbol ?? null),
       );
@@ -731,6 +970,16 @@ export const Canvas: React.FC<CanvasProps> = (props) => {
     if (pan.current) {
       pan.current = null;
       setPanning(false);
+      return;
+    }
+    if (capDrag.current) {
+      capDrag.current = null;
+      return;
+    }
+    if (rotDrag) {
+      const r = rotDrag;
+      setRotDrag(null);
+      props.onRotate?.([r.id], { orientation_deg: r.deg });
       return;
     }
     if (boxEdit) {
@@ -1245,6 +1494,11 @@ export const Canvas: React.FC<CanvasProps> = (props) => {
                   px={px}
                   on={selected.has(p.id)}
                   hover={p.id === hoverId}
+                  offGrid={
+                    p.type === "column" && p.a && ratio
+                      ? offGrid(p.a, gridCross, ratio)
+                      : false
+                  }
                   labels={layers.labels}
                   allSizes={layers.allSizes}
                   flags={layers.flags}
@@ -1322,6 +1576,117 @@ export const Canvas: React.FC<CanvasProps> = (props) => {
                 />
               </g>
             )}
+            {props.capture && (
+              <g data-testid="capture-box" pointerEvents="none">
+                <rect
+                  x={props.capture.box.x0}
+                  y={props.capture.box.y0}
+                  width={props.capture.box.x1 - props.capture.box.x0}
+                  height={props.capture.box.y1 - props.capture.box.y0}
+                  fill="rgba(255,145,0,0.10)"
+                  stroke="var(--amber, #ff9100)"
+                  strokeWidth={2 * px}
+                  strokeDasharray={
+                    props.capture.edited ? undefined : `${4 * px} ${2 * px}`
+                  }
+                />
+                {Object.entries(handlePoints(props.capture.box)).map(
+                  ([hk, [hx, hy]]) => (
+                    <rect
+                      key={hk}
+                      data-handle={hk}
+                      x={hx - 3.5 * px}
+                      y={hy - 3.5 * px}
+                      width={7 * px}
+                      height={7 * px}
+                      fill="#fff"
+                      stroke="var(--amber, #ff9100)"
+                      strokeWidth={1.5 * px}
+                    />
+                  ),
+                )}
+              </g>
+            )}
+            {ghost && (
+              <g
+                data-testid="ghost-marker"
+                data-state={ghost.state}
+                opacity={0.7}
+                pointerEvents="none"
+                transform={`translate(${ghost.at[0]} ${ghost.at[1]}) rotate(${ghost.rotation})`}
+              >
+                <path
+                  d={symbolPath(
+                    ghost.family,
+                    ghost.sizePt ? ghost.sizePt[0] : COLUMN_PX * px,
+                    ghost.sizePt ? ghost.sizePt[1] : COLUMN_PX * px,
+                  )}
+                  fill="none"
+                  stroke="var(--column-id, #2979ff)"
+                  strokeWidth={2 * px}
+                />
+                {ghost.family !== "hss_round" && (
+                  <line
+                    x1={0}
+                    x2={0}
+                    y1={-(COLUMN_PX * 0.9) * px}
+                    y2={COLUMN_PX * 0.9 * px}
+                    stroke={
+                      ghost.state === "clear"
+                        ? "var(--ok, #00c853)"
+                        : "var(--amber, #ff9100)"
+                    }
+                    strokeWidth={2 * px}
+                  />
+                )}
+              </g>
+            )}
+            {(() => {
+              const rh = rotateHandle();
+              if (!rh) return null;
+              const pc = pieces.find((q) => q.id === rh.id)!;
+              const at = rotDrag
+                ? ([
+                    pc.a![0] +
+                      Math.cos((rotDrag.deg * Math.PI) / 180) * 18 * px,
+                    pc.a![1] -
+                      Math.sin((rotDrag.deg * Math.PI) / 180) * 18 * px,
+                  ] as Pt2)
+                : rh.at;
+              return (
+                <g data-testid="rotate-handle" pointerEvents="none">
+                  <line
+                    x1={pc.a![0]}
+                    y1={pc.a![1]}
+                    x2={at[0]}
+                    y2={at[1]}
+                    stroke="var(--select, #2563eb)"
+                    strokeWidth={1.5 * px}
+                  />
+                  <circle
+                    cx={at[0]}
+                    cy={at[1]}
+                    r={4.5 * px}
+                    fill="#fff"
+                    stroke="var(--select, #2563eb)"
+                    strokeWidth={2 * px}
+                  />
+                  {rotDrag && (
+                    <text
+                      x={at[0] + 7 * px}
+                      y={at[1] - 7 * px}
+                      fontSize={11 * px}
+                      fill="var(--select, #2563eb)"
+                      stroke="#fff"
+                      strokeWidth={3 * px}
+                      paintOrder="stroke"
+                    >
+                      {Math.round(rotDrag.deg)}°
+                    </text>
+                  )}
+                </g>
+              );
+            })()}
             {first && hover && (
               <line
                 x1={first[0]}
@@ -1523,6 +1888,8 @@ export const PieceMark: React.FC<{
   labels: boolean;
   allSizes?: boolean;
   flags?: boolean;
+  /** Phase 0: a column more than 2 in from every grid crossing of a page that has a grid (amber). */
+  offGrid?: boolean;
 }> = ({
   p,
   px,
@@ -1531,6 +1898,7 @@ export const PieceMark: React.FC<{
   labels,
   allSizes = false,
   flags = false,
+  offGrid: off = false,
 }) => {
   if (!p.a) return null;
   const tip = [
@@ -1594,8 +1962,19 @@ export const PieceMark: React.FC<{
         data-state={state}
         data-glow={glow ? "1" : undefined}
         data-flag={flag ?? undefined}
+        data-reference={p.reference ? "1" : undefined}
+        opacity={p.reference ? 0.55 : undefined}
       >
-        <title>{p.symbol_flag ? `${tip}\n${p.symbol_flag}` : tip}</title>
+        <title>
+          {[
+            p.symbol_flag ? `${tip}\n${p.symbol_flag}` : tip,
+            p.reference
+              ? "Reference: counted on the column plan (tick Count this column to count it here)"
+              : "",
+          ]
+            .filter(Boolean)
+            .join("\n")}
+        </title>
         {glow && (
           <circle
             data-testid="glow"
@@ -1636,6 +2015,42 @@ export const PieceMark: React.FC<{
           fill="none"
           strokeLinecap="square"
         />
+        {off && (
+          // Phase 0: more than 2 in from every grid crossing of a page that has a grid (never moved)
+          <circle
+            data-testid="off-grid"
+            cx={p.a[0]}
+            cy={p.a[1]}
+            r={t * 1.45}
+            fill="none"
+            stroke="var(--amber, #ff9100)"
+            strokeWidth={1.5 * px}
+            strokeDasharray={`${3 * px} ${2 * px}`}
+          >
+            <title>Off the grid crossing by more than 2 in</title>
+          </circle>
+        )}
+        {fam !== "hss_round" && p.kind !== STUD_KIND && (
+          // Phase 0-column-capture: the web direction, green when read clearly (or set by a person),
+          // amber when unsure or not read yet (a column from before the orientation was stored)
+          <line
+            data-testid="orientation-tick"
+            data-state={p.orientation_state ?? "legacy"}
+            transform={tf}
+            x1={0}
+            x2={0}
+            y1={-t * 1.55}
+            y2={t * 1.55}
+            stroke={
+              p.orientation_state === "clear" ||
+              p.orientation_state === "manual"
+                ? "var(--ok, #00c853)"
+                : "var(--amber, #ff9100)"
+            }
+            strokeWidth={Math.max(1.5, swPx * 0.8) * px}
+            strokeLinecap="round"
+          />
+        )}
         {/* a wide transparent box makes the column easy to hover */}
         <rect
           x={p.a[0] - 1.6 * t}

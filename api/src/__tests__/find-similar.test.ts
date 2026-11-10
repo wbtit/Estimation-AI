@@ -64,12 +64,26 @@ describe('find similar', () => {
       sym(700, 100, 'unknown', [12, 12], 'round'), // another shape
       sym(900, 100), // a hollow square
     ];
-    const ex = symbolAt([101, 100], syms)!;
+    const ex = symbolAt([101, 100], syms, 128)!;
     expect(exampleName(ex)).toBe('solid_square');
     expect(findSimilar(ex, syms, []).map((s) => s.centre)).toEqual([[300, 100]]);
     // a known family under the column wins over a nearer solid shape
     const mixed = [sym(100, 100, 'unknown', [12, 12], 'square'), sym(108, 100)];
-    expect(symbolAt([100, 100], mixed)!.family).toBe('hss_square');
+    expect(symbolAt([100, 100], mixed, 128)!.family).toBe('hss_square');
+  });
+
+  it('an unknown 45 degree square is the symbol only when the click is inside its box', () => {
+    const d = {
+      ...sym(100, 100, 'unknown', [16, 16]),
+      box: [90, 90, 110, 110],
+      rotation_deg: 45,
+    } as StoredSymbol;
+    // the margin is 5 REAL inches: 2.8 pt at 1:128, 5.6 pt at 1:64
+    expect(symbolAt([105, 108], [d], 128)).toBe(d);
+    expect(symbolAt([112, 100], [d], 128)).toBe(d); // 2 pt = 3.6 in outside the box
+    expect(symbolAt([114, 100], [d], 128)).toBeNull(); // 4 pt = 7.1 in outside
+    expect(symbolAt([114, 100], [d], 64)).toBe(d); // the same 4 pt is 3.6 in at 1:64
+    expect(symbolAt([100, 113.5], [d], 128)).toBeNull(); // 13.5 pt away, outside the box
   });
 
   it('takes the known symbol under a drawn column and skips symbols that are already columns', () => {
@@ -81,9 +95,9 @@ describe('find similar', () => {
       sym(700, 100, 'hss_rect', [6, 12]),
       sym(900, 100, 'hss_square', [20, 20]),
     ];
-    const ex = symbolAt([100, 100], syms)!;
+    const ex = symbolAt([100, 100], syms, 128)!;
     expect(ex.centre).toEqual([103, 100]); // the unknown one is nearer but never an example
-    expect(symbolAt([200, 200], syms)).toBeNull();
+    expect(symbolAt([200, 200], syms, 128)).toBeNull();
     const got = findSimilar(ex, syms, [[300, 104]]);
     expect(got.map((s) => s.centre)).toEqual([[500, 50]]);
   });

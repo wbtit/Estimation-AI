@@ -46,6 +46,8 @@ export interface BuiltPiece {
   duplicate_of?: string | null;
   /** Phase 12b: a kind outside the steel totals (Joist). */
   excluded_kind?: boolean;
+  /** Phase 0 count rule: a column shown on a page that does not count columns (Reference). */
+  reference?: boolean;
 }
 
 export interface LineFirstBomRow {
@@ -73,6 +75,8 @@ export interface LineFirstBomRow {
   /** Phase 12b: a duplicate column or a kind outside the steel totals: in neither total. */
   duplicate_of: string | null;
   excluded: boolean;
+  /** Phase 0 count rule: "Reference: counted on the column plan": shown, in no total. */
+  reference: boolean;
 }
 
 export interface LineFirstBomTotal {
@@ -91,6 +95,8 @@ export interface LineFirstBom {
   attention: LineFirstBomTotal;
   /** Phase 12b: duplicate columns and kinds outside the steel totals (Joist), shown apart. */
   excluded: LineFirstBomTotal;
+  /** Phase 0 count rule: columns shown on pages that do not count columns, kept apart. */
+  reference: LineFirstBomTotal;
   by_category: (LineFirstBomTotal & { category: string | null })[];
 }
 
@@ -162,9 +168,11 @@ export function lineFirstBom(
       size_state: p.size_state,
       support_state: p.support_state,
       piece_index: p.piece_index,
-      in_main_total: p.build_state !== 'attention' && !p.duplicate_of && !p.excluded_kind,
+      in_main_total:
+        p.build_state !== 'attention' && !p.duplicate_of && !p.excluded_kind && !p.reference,
       duplicate_of: p.duplicate_of ?? null,
-      excluded: Boolean(p.duplicate_of) || p.excluded_kind === true,
+      excluded: (Boolean(p.duplicate_of) || p.excluded_kind === true) && p.reference !== true,
+      reference: p.reference === true,
     };
   });
   rows.sort(
@@ -177,9 +185,11 @@ export function lineFirstBom(
   const totals = emptyTotal();
   const attention = emptyTotal();
   const excluded = emptyTotal();
+  const reference = emptyTotal();
   const byCat = new Map<string | null, LineFirstBomTotal>();
   for (const r of rows) {
-    if (r.excluded) add(excluded, r);
+    if (r.reference) add(reference, r);
+    else if (r.excluded) add(excluded, r);
     else if (r.in_main_total) {
       add(totals, r);
       const t = byCat.get(r.category) ?? emptyTotal();
@@ -190,5 +200,5 @@ export function lineFirstBom(
   const by_category = [...byCat.entries()]
     .map(([category, t]) => ({ category, ...t }))
     .sort((a, b) => (a.category ?? '').localeCompare(b.category ?? ''));
-  return { rows, totals, attention, excluded, by_category };
+  return { rows, totals, attention, excluded, reference, by_category };
 }

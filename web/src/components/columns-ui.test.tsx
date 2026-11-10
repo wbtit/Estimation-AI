@@ -270,6 +270,8 @@ describe("find similar bar", () => {
       run_id: "11111111-1111-1111-1111-111111111111",
       strictness: 0.8,
       unticked: [[300, 100]],
+      // Phase 0-column-capture: the time of the search that was previewed is logged with the accept
+      timing: { find_similar_ms: expect.any(Number) },
     });
   });
 

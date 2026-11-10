@@ -257,6 +257,17 @@ export interface Piece {
   symbol_source?: string | null;
   symbol_flag?: string | null;
   rotation_deg?: number | null;
+  /** Phase 0: the column's web direction in degrees, COUNTER-CLOCKWISE on screen from the drawing's +X
+   * axis, in the displayed page frame (see lib/orientation.ts); null: not read (amber). */
+  orientation_deg?: number | null;
+  /** clear (green), unsure (amber), manual (a person set it), none (round). */
+  orientation_state?: "clear" | "unsure" | "manual" | "none" | null;
+  orientation_source?: "click" | "match" | "manual" | "backfill" | null;
+  /** Phase 0 count rule: the person's tick (null = the page's default), the default (true on a
+   * column / foundation plan) and the result: a column that is NOT counted (Reference). */
+  count_column?: boolean | null;
+  page_counts_columns?: boolean;
+  reference?: boolean;
   symbol_real_in?: [number, number] | null;
   section_in?: [number, number] | null;
   id: string;
@@ -330,6 +341,8 @@ export interface BomRow {
   approved?: boolean;
   build_state: string | null;
   in_main_total: boolean;
+  /** Phase 0 count rule: "Reference: counted on the column plan" (shown, in no total). */
+  reference?: boolean;
   /** Phase 12b: a duplicate column (counted on the page built first) or a kind outside the
    * steel totals (Joist). */
   excluded?: boolean;
@@ -1011,7 +1024,7 @@ export function summary(
   let lb = 0;
   for (const r of rows) {
     if (sheetId !== undefined && r.sheet_id !== sheetId) continue;
-    if (r.duplicate_of) continue;
+    if (r.duplicate_of || r.reference) continue;
     const cat = (r.category ?? "").toLowerCase();
     if (cat === "column") out.columns += r.qty;
     else if (cat === "piles") out.piles += r.qty;

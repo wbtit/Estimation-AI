@@ -34,6 +34,8 @@ export interface PieceEdit {
   camber?: string | null;
   ignored?: boolean;
   approved?: boolean;
+  /** Phase 0 count rule: count this column (true / false) or the page's default (null) */
+  count_column?: boolean | null;
 }
 
 const show = (v: unknown): string =>
@@ -602,6 +604,37 @@ const MemberSection: React.FC<{
             </span>
           </Field>
         </div>
+      )}
+      {selected.every((p) => p.type === "column") && (
+        <label
+          className="check"
+          title={
+            selected.every((p) => p.page_counts_columns)
+              ? "Columns count on this page (a column plan). Untick to leave this one out."
+              : "Other pages show columns as Reference (counted on the column plan). Tick a column that starts at this level, such as a crane column or a post on a transfer beam."
+          }
+        >
+          <input
+            type="checkbox"
+            aria-label="count this column"
+            checked={selected.every((p) => !p.reference)}
+            onChange={(e) => {
+              // back to the page's default when the choice equals it
+              const dflt = selected.every((p) => p.page_counts_columns);
+              onEdit({
+                count_column:
+                  e.target.checked === dflt ? null : e.target.checked,
+              });
+            }}
+          />
+          Count this column
+          {selected.some((p) => p.reference) && (
+            <span className="ref-tag">
+              {" "}
+              Reference: counted on the column plan
+            </span>
+          )}
+        </label>
       )}
       <label className="check">
         <input

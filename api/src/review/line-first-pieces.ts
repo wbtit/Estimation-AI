@@ -12,6 +12,7 @@
 // T.O.S., so with no T.O.S. it is the plan length), or after a moved end the page distance x the
 // build scale (pt x 25.4/72 x ratio). Deterministic.
 import type { Kysely } from 'kysely';
+import { markerRotation } from './orientation.js';
 import type { Database } from '../db/types.js';
 import { loadMemberViews } from './member-views.js';
 import type { BuiltPiece } from './line-first-bom.js';
@@ -70,6 +71,24 @@ export interface PieceView {
   symbol_source: string | null;
   symbol_flag: string | null;
   rotation_deg: number | null;
+  /** Phase 0: the column's web direction in degrees, COUNTER-CLOCKWISE on screen from the drawing's +X
+   * axis, in the DISPLAYED page frame (after the PDF's /Rotate, y down on screen), normalised to the
+   * symbol's symmetry ([0, 180) W / W with cover plates / rectangular HSS, [0, 90) square HSS, null for
+   * round HSS or unread). The 3D (Tekla) step reads this. rotation_deg (clockwise, web vertical at 0) is
+   * (90 - orientation_deg) mod 180 whenever this is set. */
+  orientation_deg: number | null;
+  /** clear (read from the symbol), unsure (amber), manual (a person set it), none. */
+  orientation_state: 'clear' | 'unsure' | 'manual' | 'none' | null;
+  orientation_source: 'click' | 'match' | 'manual' | 'backfill' | null;
+  /** Phase 0 count rule: a column is COUNTED in the BOM only on a page whose role counts columns
+   * (a role with the behaviour column_plan: Column plan, Foundation plan, Pile plan). On any other
+   * page it is shown but is "Reference: counted on the column plan", unless the person ticked
+   * "Count this column" (a column that starts at that level: a crane column, a post on a transfer
+   * beam). `count_column` is that explicit choice (null = the page's default); `page_counts_columns`
+   * is the default; `reference` is the result (a column that is not counted). */
+  count_column: boolean | null;
+  page_counts_columns: boolean;
+  reference: boolean;
   symbol_real_in: [number, number] | null;
   section_in: [number, number] | null;
 }
@@ -127,7 +146,17 @@ export function lineFirstEdits(
 ): Map<string, unknown> {
   const out = new Map<string, unknown>();
   for (const r of rows)
-    if (['studs', 'camber_raw', 'ignored', 'approved', 'page_ends'].includes(r.field_name))
+    if (
+      [
+        'studs',
+        'camber_raw',
+        'ignored',
+        'approved',
+        'page_ends',
+        'orientation',
+        'column_count',
+      ].includes(r.field_name)
+    )
       out.set(r.field_name, r.corrected_value);
   return out;
 }
@@ -191,6 +220,30 @@ export async function loadPieces(
     const dims = c ? sectionInches(c.family, c.properties as Record<string, unknown>) : null;
     return dims && two ? [dims[0] * 2, dims[1]] : dims;
   };
+  // Phase 0 count rule: the behaviour of the role of each piece's view (null view = the first view)
+  const sheetIds = [...new Set(rows.map((r) => r.sheet_id).filter((x): x is string => !!x))];
+  const viewRows = sheetIds.length
+    ? await db
+        .selectFrom('build_views')
+        .select(['id', 'sheet_id', 'position', 'role_name'])
+        .where('sheet_id', 'in', sheetIds)
+        .execute()
+    : [];
+  const behaviours = new Map(
+    (await db.selectFrom('role_names').select(['name', 'behaviour']).execute()).map((b) => [
+      b.name,
+      b.behaviour,
+    ]),
+  );
+  const pageCounts = (sheetId: string | null, viewId: string | null): boolean => {
+    const mine = viewRows.filter((v) => v.sheet_id === sheetId);
+    const view = viewId
+      ? mine.find((v) => v.id === viewId)
+      : [...mine].sort((a, b) => Number(a.position) - Number(b.position))[0];
+    // no view or role: an old project keeps counting its columns as it always did
+    if (!view || !view.role_name) return true;
+    return behaviours.get(view.role_name) === 'column_plan';
+  };
   const out: PieceView[] = [];
   for (const r of rows) {
     const v = views.get(r.id);
@@ -227,6 +280,29 @@ export async function loadPieces(
       v.type !== 'column' && start && end
         ? Math.hypot(end[0] - start[0], end[1] - start[1], end[2] - start[2])
         : null;
+    // Phase 0 count rule: the page's default, and the person's tick (an undoable edit)
+    const pageCounts0 = pageCounts(r.sheet_id, r.build_view_id);
+    const tick = lf.get('column_count');
+    const countColumn = typeof tick === 'boolean' ? tick : null;
+    // Phase 0: a person's edit (field 'orientation') overrides the stored reading
+    // (an undo restores the earlier value, which carries its own state and source)
+    const oriEdit = lf.get('orientation') as
+      { deg?: number | null; state?: string; source?: string } | null | undefined;
+    const effOri: {
+      deg: number | null;
+      state: PieceView['orientation_state'];
+      source: PieceView['orientation_source'];
+    } = oriEdit
+      ? {
+          deg: typeof oriEdit.deg === 'number' ? oriEdit.deg : null,
+          state: (oriEdit.state ?? 'manual') as PieceView['orientation_state'],
+          source: (oriEdit.source ?? 'manual') as PieceView['orientation_source'],
+        }
+      : {
+          deg: num(r.orientation_deg),
+          state: r.orientation_state ?? null,
+          source: r.orientation_source ?? null,
+        };
     const studs = lf.has('studs') ? (lf.get('studs') as number | null) : r.studs;
     const camber = lf.has('camber_raw') ? (lf.get('camber_raw') as string | null) : r.camber_raw;
     out.push({
@@ -268,7 +344,17 @@ export async function loadPieces(
       symbol: r.symbol ?? null,
       symbol_source: r.symbol_source ?? null,
       symbol_flag: r.symbol_flag ?? null,
-      rotation_deg: num(r.rotation_deg),
+      // the stored rotation stays authoritative; only a person's orientation edit derives it
+      rotation_deg:
+        oriEdit && effOri.deg !== null && v.type === 'column'
+          ? markerRotation(effOri.deg)
+          : num(r.rotation_deg),
+      orientation_deg: effOri.deg,
+      orientation_state: effOri.state,
+      orientation_source: effOri.source,
+      count_column: countColumn,
+      page_counts_columns: pageCounts0,
+      reference: v.type === 'column' && !(countColumn ?? pageCounts0),
       symbol_real_in: (r.symbol_real_in as [number, number] | null) ?? null,
       section_in: v.type === 'column' ? sectionOf(v.profile) : null,
     });
@@ -302,5 +388,6 @@ export function toBuiltPiece(p: PieceView): BuiltPiece {
     approved: p.approved,
     duplicate_of: p.duplicate_of,
     excluded_kind: p.excluded_kind,
+    reference: p.reference,
   };
 }

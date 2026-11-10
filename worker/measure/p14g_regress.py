@@ -130,7 +130,18 @@ def run_items(database_url: str, upload_dir: Path, items: list[Item]) -> list[di
     out: list[dict] = []
     with _connect(database_url) as conn:
         for it in items:
-            if not col_image.cache_path(upload_dir, it["build_run_id"]).exists():
+            # the page-ink cache file THIS code's job reads (and would write on a miss): the run
+            # whose cache it uses (main's job: the click's own run; Phase 0: the view's latest run)
+            cache_run = it["build_run_id"]
+            try:
+                from src.build.similar_job import resolve_inputs
+
+                cache_run = resolve_inputs(conn, it["sheet_id"], it["build_run_id"])["cache_run"]
+            except ImportError:
+                pass
+            except ValueError:
+                pass
+            if not col_image.cache_path(upload_dir, cache_run).exists():
                 out.append({"found": None, "skipped": "no page-ink cache (the job would write it)"})
                 continue
             job = Job("regress", "find_similar", {"sheet_id": it["sheet_id"],
@@ -148,11 +159,11 @@ def _child(src_dir: str, items_file: str, out_file: str, upload_dir: str, databa
 
 def run_ref(ref: str, work: Path, database_url: str, upload_dir: Path, items: list[Item]):
     """The same items through the job function of git ref `ref` (a child process on its own copy
-    of worker/src, so nothing of this branch is imported there)."""
+    of worker/src and schema/, so nothing of this branch is imported there)."""
     tree = work / f"ref-{ref.replace('/', '_')}"
     tree.mkdir(parents=True, exist_ok=True)
-    tar = subprocess.run(["git", "archive", ref, "worker/src"], cwd=ROOT, capture_output=True,
-                         check=True)  # fmt: skip
+    cmd = ["git", "archive", ref, "worker/src", "schema"]
+    tar = subprocess.run(cmd, cwd=ROOT, capture_output=True, check=True)
     subprocess.run(["tar", "-x", "-C", str(tree)], input=tar.stdout, check=True)
     items_file, out_file = work / "items.json", work / f"out-{tree.name}.json"
     items_file.write_text(json.dumps(items))

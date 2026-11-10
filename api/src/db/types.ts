@@ -406,6 +406,18 @@ export interface MembersTable {
   >;
   symbol_flag: ColumnType<string | null, string | null | undefined, string | null>;
   symbol_real_in: ColumnType<[number, number] | null, string | null | undefined, string | null>;
+  /** Phase 0: the column's web direction, counter-clockwise on screen from +X, displayed frame (031). */
+  orientation_deg: Numeric | null;
+  orientation_state: ColumnType<
+    'clear' | 'unsure' | 'manual' | 'none' | null,
+    'clear' | 'unsure' | 'manual' | 'none' | null | undefined,
+    'clear' | 'unsure' | 'manual' | 'none' | null
+  >;
+  orientation_source: ColumnType<
+    'click' | 'match' | 'manual' | 'backfill' | null,
+    'click' | 'match' | 'manual' | 'backfill' | null | undefined,
+    'click' | 'match' | 'manual' | 'backfill' | null
+  >;
   created_at: Timestamp;
   updated_at: Timestamp;
 }
