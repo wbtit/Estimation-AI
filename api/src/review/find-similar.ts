@@ -5,6 +5,8 @@
 // it matches only the same solid shape and size. Pure; the same rule as the worker's `same_kind`
 // (shared cases: fixtures/synthetic).
 
+import { SNAP_RADIUS_PT } from './column-snap.js';
+
 /** The five column symbol families (worker col_symbols.FIVE_FAMILIES), in palette order. */
 export const SYMBOL_FAMILIES = [
   'w_shape',
@@ -16,8 +18,9 @@ export const SYMBOL_FAMILIES = [
 
 export const SIZE_TOL_IN = 1.0;
 export const SIZE_TOL_SHARE = 0.15;
-/** A drawn column's symbol: the stored symbol whose centre is within this of the column. */
-export const CLICK_PT = 12.0;
+/** A drawn column's symbol: the stored symbol whose centre is within this of the column
+ * (Phase 0-14g: the one snap radius, schema/column-snap.json, as the web snap and the worker). */
+export const CLICK_PT = SNAP_RADIUS_PT;
 /** A symbol this close to an existing column is that column (not a new match). */
 export const TAKEN_PT = 12.0;
 

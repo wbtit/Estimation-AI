@@ -76,6 +76,14 @@ import {
 } from "../lib/lf";
 import { snapPoint } from "../lib/snap";
 import {
+  nearestSymbol,
+  nudgeStep,
+  placeColumn,
+  type ColumnSymbol,
+  type ColumnSymbols,
+  type SnapSource,
+} from "../lib/column-snap";
+import {
   anchorIn,
   clampZoom,
   parseZoom,
@@ -110,6 +118,10 @@ export interface DrawOptions {
   symbol?: SymbolFamily;
   rotation_deg?: number;
   profile_text?: string | null;
+  /** Phase 0-14g: the snapped symbol's real size [short, long] in inches (the marker's size
+   * when the column has no section) and how the click was snapped (logged by the API) */
+  real_in?: [number, number];
+  snap?: { source: SnapSource; distance?: number; snapped: boolean };
 }
 
 export interface CanvasProps {
@@ -162,6 +174,13 @@ export interface CanvasProps {
   onApprove?: () => void;
   /** Phase 14e: the Find similar preview's matches (ticked / unticked), drawn over the page. */
   similar?: SimilarOverlay | null;
+  /** Phase 0-14g: the page's column symbols (the Draw column snap targets) and THE snap radius */
+  symbols?: ColumnSymbols | null;
+  /** Phase 0-14g: the column an arrow key nudges (the one just placed, before Find similar) */
+  nudgeId?: string | null;
+  onNudge?: (id: string, dx: number, dy: number) => void;
+  /** the Draw column tool was picked: refresh the page's symbols */
+  onColumnTool?: () => void;
 }
 
 const TOOLS: { tool: Tool; Icon: LucideIcon; label: string }[] = [
@@ -225,6 +244,8 @@ export const Canvas: React.FC<CanvasProps> = (props) => {
   } | null>(null);
   const [first, setFirst] = useState<Pt2 | null>(null);
   const [hover, setHover] = useState<Pt2 | null>(null);
+  // Phase 0-14g: the stored symbol a Draw column click would land on (highlighted)
+  const [hoverSym, setHoverSym] = useState<ColumnSymbol | null>(null);
   const [hoverId, setHoverId] = useState<string | null>(null);
   const [measure, setMeasure] = useState<{ a: Pt2; b: Pt2 } | null>(null);
   const [lastIssue, setLastIssue] = useState<IssueKey | null>(null);
@@ -332,6 +353,11 @@ export const Canvas: React.FC<CanvasProps> = (props) => {
   useEffect(() => {
     if (props.toolAsk) setTool(props.toolAsk.tool);
   }, [props.toolAsk]);
+  // Phase 0-14g: the column tool asks for the page's current symbols (a Build may have changed them)
+  const { onColumnTool } = props;
+  useEffect(() => {
+    if (tool === "column") onColumnTool?.();
+  }, [tool, onColumnTool]);
 
   // the wheel: ctrl + wheel (and a trackpad pinch) zooms around the pointer; plain wheel pans up
   // and down, shift + wheel left and right. Bound to the whole canvas area (the page, the floating
@@ -442,6 +468,27 @@ export const Canvas: React.FC<CanvasProps> = (props) => {
         !e.altKey
       ) {
         if (selected.size > 0) props.onApprove?.();
+        return;
+      }
+      if (
+        props.nudgeId &&
+        props.onNudge &&
+        e.key.startsWith("Arrow") &&
+        !e.ctrlKey &&
+        !e.metaKey &&
+        !e.altKey
+      ) {
+        const k = nudgeStep(e.shiftKey);
+        const [dx, dy] =
+          e.key === "ArrowLeft"
+            ? [-k, 0]
+            : e.key === "ArrowRight"
+              ? [k, 0]
+              : e.key === "ArrowUp"
+                ? [0, -k]
+                : [0, k];
+        e.preventDefault();
+        props.onNudge(props.nudgeId, dx, dy);
         return;
       }
       if (
@@ -592,11 +639,33 @@ export const Canvas: React.FC<CanvasProps> = (props) => {
       return false;
     }
     if (tool === "column") {
-      props.onDraw(palette.stud ? STUD_KIND : "Column", snap(p), null, {
-        symbol: palette.family,
-        rotation_deg: colRotation,
-        profile_text: colSize.trim() || null,
+      // Phase 0-14g: land on the symbol under the cursor (its centre, its own angle and size);
+      // no symbol near: the line / grid snap; Shift: the click as it is
+      const pl = placeColumn({
+        p,
+        symbols: props.symbols?.symbols ?? [],
+        radius: props.symbols?.snap_radius_pt ?? null,
+        shift: e.shiftKey,
+        line: (q) => {
+          if (!lines) return null;
+          const hit = snapPoint(lines.lines, q[0], q[1], SNAP_PX * px);
+          return hit ? [hit.x, hit.y] : null;
+        },
       });
+      props.onDraw(palette.stud ? STUD_KIND : "Column", pl.at, null, {
+        symbol: palette.family,
+        rotation_deg: (((colRotation + pl.turn) % 180) + 180) % 180,
+        profile_text: colSize.trim() || null,
+        ...(pl.symbol ? { real_in: pl.symbol.real_in } : {}),
+        snap: {
+          source: pl.source,
+          snapped: pl.snapped,
+          ...(pl.distance === null
+            ? {}
+            : { distance: Math.round(pl.distance * 100) / 100 }),
+        },
+      });
+      setHoverSym(null);
       return false;
     }
     if (tool === "beam" || tool === "measure") {
@@ -639,6 +708,16 @@ export const Canvas: React.FC<CanvasProps> = (props) => {
       const b = view?.box;
       setOverHandle(b ? handleAt(b, p, 7 * px) : null);
     }
+    if (tool === "column") {
+      const r = props.symbols?.snap_radius_pt;
+      const near =
+        e.shiftKey || r === undefined
+          ? null
+          : nearestSymbol(props.symbols?.symbols ?? [], p, r);
+      setHoverSym((cur) =>
+        cur === (near?.symbol ?? null) ? cur : (near?.symbol ?? null),
+      );
+    } else if (hoverSym) setHoverSym(null);
     if (handle) setHandle({ ...handle, at: snap(p) });
     else if (drag) setDrag({ ...drag, to: p });
     setHover(first ? snap(p) : null);
@@ -1211,6 +1290,37 @@ export const Canvas: React.FC<CanvasProps> = (props) => {
                 strokeWidth={1 * px}
                 pointerEvents="none"
               />
+            )}
+            {tool === "column" && hoverSym && (
+              <g data-testid="symbol-highlight" pointerEvents="none">
+                {hoverSym.family === "hss_round" ||
+                hoverSym.solid === "round" ? (
+                  <ellipse
+                    cx={hoverSym.centre[0]}
+                    cy={hoverSym.centre[1]}
+                    rx={(hoverSym.box[2] - hoverSym.box[0]) / 2 + 1 * px}
+                    ry={(hoverSym.box[3] - hoverSym.box[1]) / 2 + 1 * px}
+                    fill="rgba(255,145,0,0.12)"
+                    stroke="var(--amber, #ff9100)"
+                    strokeWidth={2 * px}
+                  />
+                ) : (
+                  <rect
+                    x={hoverSym.box[0] - 1 * px}
+                    y={hoverSym.box[1] - 1 * px}
+                    width={hoverSym.box[2] - hoverSym.box[0] + 2 * px}
+                    height={hoverSym.box[3] - hoverSym.box[1] + 2 * px}
+                    fill="rgba(255,145,0,0.12)"
+                    stroke="var(--amber, #ff9100)"
+                    strokeWidth={2 * px}
+                  />
+                )}
+                <path
+                  d={`M ${hoverSym.centre[0] - 3 * px} ${hoverSym.centre[1]} H ${hoverSym.centre[0] + 3 * px} M ${hoverSym.centre[0]} ${hoverSym.centre[1] - 3 * px} V ${hoverSym.centre[1] + 3 * px}`}
+                  stroke="var(--amber, #ff9100)"
+                  strokeWidth={1.5 * px}
+                />
+              </g>
             )}
             {first && hover && (
               <line

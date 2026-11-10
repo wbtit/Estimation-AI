@@ -26,8 +26,17 @@ export interface ImageResult {
     box: [number, number, number, number];
     centre: [number, number];
     real_in: [number, number];
+    /** Phase 0-14g: the example's own turn (degrees, clockwise, -45..45) and its corners */
+    angle?: number;
+    rect?: [number, number][];
   } | null;
   note: string | null;
+  /** Phase 0-14g: 'click_closer' = no symbol or sane ink blob within the snap radius */
+  refused?: string | null;
+  /** Phase 0-14g: 'unchecked_ink' = the example is the ink read of main (no symbol, not checked) */
+  warning?: string | null;
+  snap?: { source: 'symbol' | 'ink'; centre: [number, number]; distance: number } | null;
+  angles?: number[];
   vector: number;
   image: number;
   combined: {

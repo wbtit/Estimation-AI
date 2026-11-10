@@ -31,6 +31,7 @@ import {
   type StoredSymbol,
 } from '../review/find-similar.js';
 import { recordAction, type EditEntry } from '../review/actions.js';
+import { SNAP_RADIUS_PT, SNAP_SOURCES } from '../review/column-snap.js';
 import { answerKey } from '../review/answer-key.js';
 import { logCountAction } from '../review/count-log.js';
 import { loadGrades } from '../review/grades.js';
@@ -898,7 +899,7 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
 
   app.post<{
     Params: { projectId: string; memberId: string };
-    Body: { who: string; a: PagePt; b?: PagePt | null };
+    Body: { who: string; a: PagePt; b?: PagePt | null; nudges?: number };
   }>(
     '/api/projects/:projectId/line-first/pieces/:memberId/ends',
     {
@@ -908,7 +909,13 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
           type: 'object',
           required: ['who', 'a'],
           additionalProperties: false,
-          properties: { who, a: point, b: { anyOf: [point, { type: 'null' }] } },
+          properties: {
+            who,
+            a: point,
+            b: { anyOf: [point, { type: 'null' }] },
+            // Phase 0-14g: arrow-key nudges this move sums up (logged)
+            nudges: { type: 'integer', minimum: 1, maximum: 1000 },
+          },
         },
       },
     },
@@ -935,7 +942,9 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
         ],
         'edit',
         piece.sheet_id,
-        { fields: ['page_ends'] },
+        request.body.nudges
+          ? { fields: ['page_ends'], nudges: request.body.nudges }
+          : { fields: ['page_ends'] },
       );
       const [now] = await loadPieces(db(), projectId, { memberIds: [memberId] });
       return { action_id: actionId, piece: now };
@@ -953,6 +962,8 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
       view_id?: string;
       symbol?: string;
       rotation_deg?: number;
+      real_in?: [number, number];
+      snap?: { source: string; distance?: number; snapped: boolean };
     };
   }>(
     '/api/projects/:projectId/sheets/:sheetId/line-first/pieces',
@@ -973,6 +984,24 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
             // Phase 14b: the palette symbol of a drawn column and its rotation
             symbol: { enum: [...SYMBOL_FAMILIES] },
             rotation_deg: { type: 'number', minimum: -360, maximum: 360 },
+            // Phase 0-14g: the snapped symbol's real size [short, long] in inches (the marker's
+            // size when the column has no section) and how the click was snapped (logged)
+            real_in: {
+              type: 'array',
+              minItems: 2,
+              maxItems: 2,
+              items: { type: 'number', exclusiveMinimum: 0 },
+            },
+            snap: {
+              type: 'object',
+              required: ['source', 'snapped'],
+              additionalProperties: false,
+              properties: {
+                source: { enum: [...SNAP_SOURCES] },
+                distance: { type: 'number', minimum: 0 },
+                snapped: { type: 'boolean' },
+              },
+            },
           },
         },
       },
@@ -1054,7 +1083,7 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
                 symbol: column ? (body.symbol ?? null) : null,
                 symbolSource: column && body.symbol ? 'drawn' : null,
                 rotation: column ? (body.rotation_deg ?? null) : null,
-                realIn: null,
+                realIn: column ? (body.real_in ?? null) : null,
               }) as never,
             )
             .returning('id')
@@ -1080,12 +1109,44 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
             action: 'add',
             who: editor,
             editActionId: actionId,
-            detail: { kind: info.kind },
+            // Phase 0-14g: per placement, click-to-symbol distance, snapped or not, the source
+            detail:
+              column && body.snap ? { kind: info.kind, snap: body.snap } : { kind: info.kind },
           });
           return row.id;
         });
       const [piece] = await loadPieces(db(), projectId, { memberIds: [out] });
       return reply.status(201).send(piece);
+    },
+  );
+
+  // ---- Phase 0-14g: the page's column candidates for the Draw column snap -------------------------
+  // GET /api/projects/:projectId/sheets/:sheetId/column-symbols
+  //   { snap_radius_pt, build_run_id, symbols[] }  the latest Build's stored symbols that Find
+  //   similar can use as an example (a known family or a solid shape), and THE snap radius.
+  app.get<{ Params: { projectId: string; sheetId: string } }>(
+    '/api/projects/:projectId/sheets/:sheetId/column-symbols',
+    { schema: { params: sheetParams } },
+    async (request) => {
+      const { projectId, sheetId } = request.params;
+      await loadSheet(projectId, sheetId);
+      const row = await db()
+        .selectFrom('page_symbols')
+        .select(['build_run_id', 'symbols'])
+        .where('sheet_id', '=', sheetId)
+        .orderBy('created_at', 'desc')
+        .executeTakeFirst();
+      const symbols = ((row?.symbols ?? []) as StoredSymbol[])
+        .filter((s) => s.family !== 'unknown' || !!s.solid)
+        .map((s) => ({
+          centre: s.centre,
+          box: s.box,
+          rotation_deg: s.rotation_deg,
+          real_in: s.real_in,
+          family: s.family,
+          solid: s.solid ?? null,
+        }));
+      return { snap_radius_pt: SNAP_RADIUS_PT, build_run_id: row?.build_run_id ?? null, symbols };
     },
   );
 
@@ -1106,6 +1167,8 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
       run_id?: string;
       strictness?: number;
       unticked?: [number, number][];
+      // Phase 0-14g: false = leave the column where it is (Shift placement, nudged)
+      snap?: boolean;
     };
   }>(
     '/api/projects/:projectId/line-first/pieces/:memberId/find-similar',
@@ -1124,6 +1187,7 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
             who,
             accept: { type: 'boolean' },
             run_id: uuid,
+            snap: { type: 'boolean' },
             strictness: { type: 'number', minimum: STRICTNESS_MIN, maximum: STRICTNESS_MAX },
             unticked: {
               type: 'array',
@@ -1162,13 +1226,32 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
         .map((p) => p.a as [number, number]);
       const noSymbol = () =>
         new HttpError(409, {
-          error: 'no drawing symbol under this column: place it on the column symbol',
+          error: 'click closer to the column symbol',
+          code: 'click_closer',
         });
       // Phase 14d: with FIND_SIMILAR_IMAGE on, the worker's image search (vector + image matches)
       // runs as a job; the preview returns its id and Accept creates exactly the previewed points
-      let example: { family: string; name: string; real_in: [number, number] };
+      let example: {
+        family: string;
+        name: string;
+        real_in: [number, number];
+        source: 'vector' | 'ink';
+        box: [number, number, number, number] | null;
+        centre: [number, number] | null;
+        angle: number;
+        rect: [number, number][] | null;
+      };
       let matches: Match[];
       let image: ImageRun | null = null;
+      // Phase 0-14g: how the example was found and where the column ended up (preview only)
+      let snapInfo: {
+        source: 'symbol' | 'ink';
+        distance: number;
+        moved: boolean;
+        centre: [number, number];
+      } | null = null;
+      let angles: number[] = [];
+      let warning: string | null = null;
       if (findSimilarImage()) {
         const job = await imageJob({
           projectId,
@@ -1189,19 +1272,74 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
                 : 'drawn_symbol'
               : r.example.family,
           real_in: r.example.real_in,
+          source: r.example.source,
+          box: r.example.box,
+          centre: r.example.centre,
+          angle: r.example.angle ?? 0,
+          rect: r.example.rect ?? null,
         };
+        angles = r.angles ?? [];
+        warning = r.warning ?? null;
+        // Phase 0-14g: an example read from ink moves the column onto the ink's centre (a stored
+        // symbol was snapped by the screen; Shift / nudged placements send snap:false)
+        let taken = columns;
+        if (r.snap) {
+          let moved = false;
+          if (
+            request.body.snap !== false &&
+            !request.body.accept &&
+            r.snap.source === 'ink' &&
+            r.snap.distance > 0.5
+          ) {
+            await apply(
+              projectId,
+              editor,
+              [
+                {
+                  memberId,
+                  field: 'page_ends',
+                  before: { a: piece.a, b: null },
+                  after: { a: r.snap.centre, b: null },
+                  status: 'edited',
+                },
+              ],
+              'edit',
+              sheetId,
+              {
+                fields: ['page_ends'],
+                snap: {
+                  source: 'ink',
+                  distance: r.snap.distance,
+                  from: piece.a,
+                  to: r.snap.centre,
+                },
+              },
+            );
+            if (!piece.symbol_real_in)
+              await db()
+                .updateTable('members')
+                .set({ symbol_real_in: JSON.stringify(r.example.real_in) } as never)
+                .where('id', '=', memberId)
+                .where('symbol_real_in', 'is', null)
+                .execute();
+            taken = columns.filter((c) => c[0] !== piece.a![0] || c[1] !== piece.a![1]);
+            taken.push(r.snap.centre);
+            moved = true;
+          }
+          snapInfo = { ...r.snap, moved };
+        }
         const family = (SYMBOL_FAMILIES as readonly string[]).includes(r.example.family)
           ? r.example.family
           : (piece.symbol ?? null);
         matches = r.combined
           .filter(
             (c) =>
-              !columns.some((p) => Math.hypot(p[0] - c.centre[0], p[1] - c.centre[1]) <= TAKEN_PT),
+              !taken.some((p) => Math.hypot(p[0] - c.centre[0], p[1] - c.centre[1]) <= TAKEN_PT),
           )
           .map((c) => ({
             centre: c.centre,
             symbol: family,
-            rotation_deg: ((piece.rotation_deg ?? 0) + (c.rotation === 90 ? 90 : 0)) % 180,
+            rotation_deg: ((((piece.rotation_deg ?? 0) + c.rotation) % 180) + 180) % 180,
             real_in: r.example!.real_in,
             source: c.source,
             score: c.score,
@@ -1217,7 +1355,22 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
       } else {
         const ex = symbolAt(piece.a, symbols);
         if (!ex) throw noSymbol();
-        example = { family: ex.family, name: exampleName(ex), real_in: ex.real_in };
+        const [bx0, by0, bx1, by1] = ex.box;
+        example = {
+          family: ex.family,
+          name: exampleName(ex),
+          real_in: ex.real_in,
+          source: 'vector',
+          box: ex.box,
+          centre: ex.centre,
+          angle: 0,
+          rect: [
+            [bx0, by0],
+            [bx1, by0],
+            [bx1, by1],
+            [bx0, by1],
+          ],
+        };
         matches = findSimilar(ex, symbols, columns).map((m) => ({
           centre: m.centre,
           // a solid shape has no family: the matches take the drawn column's symbol
@@ -1229,7 +1382,19 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
         }));
       }
       const preview = {
-        example: { family: example.name, real_in: example.real_in },
+        example: {
+          family: example.name,
+          real_in: example.real_in,
+          // Phase 0-14g: the box that is the example (page points), always shown on the screen
+          source: example.source,
+          box: example.box,
+          centre: example.centre,
+          angle: example.angle,
+          rect: example.rect,
+        },
+        snap: snapInfo,
+        angles,
+        warning,
         count: matches.length,
         points: matches.map((m) => m.centre),
         sources: matches.map((m) => m.source),
@@ -1312,6 +1477,7 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
               created: ids.length,
               family: example.family,
               real_in: example.real_in,
+              snap: snapInfo,
               member_ids: ids,
               // Phase 14d: the settings in force (image search on / off, its job and runtime)
               image: image ?? false,

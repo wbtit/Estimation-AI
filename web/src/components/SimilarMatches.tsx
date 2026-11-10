@@ -6,6 +6,8 @@ export interface SimilarOverlay {
   matches: SimilarMatch[];
   unticked: ReadonlySet<string>;
   onToggle: (key: string) => void;
+  /** Phase 0-14g: the box used as the example (its corners, page points), always shown */
+  example?: { rect: [number, number][]; source: string } | null;
 }
 
 /** Phase 14e: every Find similar match on the canvas, highlighted, with its score ("shape" for a
@@ -16,6 +18,28 @@ export const SimilarMatches: React.FC<{
   px: number;
 }> = ({ overlay, px }) => (
   <g data-testid="similar-matches">
+    {overlay.example && overlay.example.rect.length === 4 && (
+      <g data-testid="similar-example" pointerEvents="none">
+        <polygon
+          points={overlay.example.rect.map((q) => `${q[0]},${q[1]}`).join(" ")}
+          fill="rgba(255,145,0,0.10)"
+          stroke="var(--amber, #ff9100)"
+          strokeWidth={2 * px}
+          strokeDasharray={`${4 * px} ${2 * px}`}
+        />
+        <text
+          x={Math.max(...overlay.example.rect.map((q) => q[0])) + 3 * px}
+          y={Math.min(...overlay.example.rect.map((q) => q[1]))}
+          fontSize={11 * px}
+          fill="var(--amber, #ff9100)"
+          stroke="#fff"
+          strokeWidth={3 * px}
+          paintOrder="stroke"
+        >
+          {overlay.example.source === "ink" ? "example (ink)" : "example"}
+        </text>
+      </g>
+    )}
     {overlay.matches.map((m) => {
       const key = matchKey(m);
       const on = !overlay.unticked.has(key);

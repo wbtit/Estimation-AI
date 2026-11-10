@@ -11,9 +11,11 @@ Pure and deterministic over the PDF page; OpenCV (headless); no LLM.
 
 from __future__ import annotations
 
+import json
 import math
 import os
 import time
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -31,7 +33,18 @@ INK_LEVEL = 128  # grey below this is ink
 LONG_LINE_IN = 36.0  # straight ink runs longer than this (real inches) are lines, not symbols
 GRID_BAND_PT = 1.0  # a detected grid line erases this much ink each side of its axis
 JOIN_PT = 2.0  # ink this close joins one component (the example from ink)
-CLICK_PT = 12.0  # the example: a symbol / ink within this of the click
+SNAP_RADIUS_PT = float(
+    json.loads((Path(__file__).resolve().parents[3] / "schema" / "column-snap.json").read_text())[
+        "snap_radius_pt"
+    ]
+)  # Phase 0-14g: ONE value for the web snap, the API and this lookup (schema/column-snap.json)
+CLICK_PT = SNAP_RADIUS_PT  # the example: a symbol / ink within this of the click
+ANGLE_MIN_DEG = 2.0  # an example (or a stored symbol) turned more than this has its own angle
+ANGLE_DEDUP_DEG = 2.0  # search angles closer than this are one
+BLOB_ASPECT_MAX = 6.0  # an ink blob longer than this x its short side is not a column symbol
+# hull area / min rectangle area: 0.9 x the lowest of 5 fit-set column blobs, floored to 0.05
+# (docs/PHASE0_14G_PREREGISTRATION.md section 3)
+BLOB_FILL_MIN = 0.55
 EX_WINDOW_IN = 36.0  # the example's ink is read inside this square around the click
 MARGIN_SHARE, MARGIN_MIN_PX = 0.1, 2  # template margin
 THRESHOLD = 0.70  # TM_CCOEFF_NORMED
@@ -84,6 +97,10 @@ class Result:
     runtime_s: float = 0.0
     z: float = 0.0
     note: str | None = None
+    refused: str | None = None  # 'click_closer': no symbol or sane ink blob within the radius
+    snap: dict | None = None  # {"source": "symbol" | "ink", "centre", "distance"} of the example
+    angles: list[float] = field(default_factory=list)  # the absolute angles searched
+    warning: str | None = None  # 'unchecked_ink': the example is main's ink read, not checked
 
 
 def real_in(pt: float, ratio: float) -> float:
@@ -205,6 +222,92 @@ def ink_example(r: Raster, click: Pt, ratio: float) -> tuple[int, int, int, int]
     return box if _size_ok(_sides_in(box, r, ratio)) else None
 
 
+# ---- the example's own geometry (Phase 0-14g) ----------
+@dataclass
+class Blob:
+    """The clean-ink component nearest a point: its minimum-area rectangle (page points)."""
+
+    centre: Pt
+    angle: float  # the rectangle's turn from the page axes, degrees in (-45, 45] (clockwise > 0)
+    sides_in: tuple[float, float]  # (short, long), real inches, along the rectangle
+    box: Box  # axis-aligned box of the ink (page points)
+    box_px: tuple[int, int, int, int]
+    rect: list[Pt]  # the four corners (page points)
+    rect_px: list[tuple[float, float]]
+    sides_px: tuple[float, float]  # (short, long)
+    fill: float  # hull area / rectangle area
+    touches_edge: bool
+
+
+def ink_blob(r: Raster, point: Pt, ratio: float) -> Blob | None:
+    """The ink joined (JOIN_PT) to the ink nearest `point` (within CLICK_PT), read inside an
+    EX_WINDOW_IN square around it, with its minimum-area rectangle; None when there is no ink."""
+    cx, cy = r.px(point)
+    # the window holds the whole radius around the point and a symbol of the largest real size
+    half = (CLICK_PT + LONG_LINE_IN * 72.0 / ratio) * r.z
+    x0, y0 = int(math.floor(cx - half)), int(math.floor(cy - half))
+    x1, y1 = int(math.ceil(cx + half)), int(math.ceil(cy + half))
+    H, W = r.clean.shape
+    x0c, y0c, x1c, y1c = max(x0, 0), max(y0, 0), min(x1, W), min(y1, H)
+    if x1c <= x0c or y1c <= y0c:
+        return None
+    win = r.clean[y0c:y1c, x0c:x1c]
+    j = max(1, round(JOIN_PT * r.z))
+    joined = cv2.dilate(win, np.ones((2 * j + 1, 2 * j + 1), np.uint8))
+    _n, labels = cv2.connectedComponents(joined, connectivity=8)
+    ys, xs = np.nonzero(win)
+    if len(xs) == 0:
+        return None
+    d = np.hypot(xs + x0c + 0.5 - cx, ys + y0c + 0.5 - cy)
+    k = int(np.argmin(d))
+    if d[k] > CLICK_PT * r.z:
+        return None
+    mask = (labels == labels[ys[k], xs[k]]) & (win > 0)
+    ys2, xs2 = np.nonzero(mask)
+    pts = np.column_stack((xs2 + x0c + 0.5, ys2 + y0c + 0.5)).astype(np.float32)
+    rect = cv2.minAreaRect(pts)
+    corners = cv2.boxPoints(rect)
+    e0 = corners[1] - corners[0]
+    a = float(np.degrees(np.arctan2(e0[1], e0[0]))) % 90.0
+    angle = round(a if a <= 45.0 else a - 90.0, 1)
+    edges = [(corners[i], corners[(i + 1) % 4]) for i in range(4)]
+    sides_px = tuple(sorted(float(np.hypot(*(e[1] - e[0]))) for e in edges[:2]))
+    hull = cv2.convexHull(pts)
+    rect_area = float(rect[1][0] * rect[1][1])
+    fill = float(cv2.contourArea(hull)) / rect_area if rect_area > 0 else 0.0
+    box_px = (x0c + int(xs2.min()), y0c + int(ys2.min()),
+              x0c + int(xs2.max()) + 1, y0c + int(ys2.max()) + 1)  # fmt: skip
+    b0, b1 = r.pt(box_px[0], box_px[1]), r.pt(box_px[2], box_px[3])
+    touches = (
+        (x0c == x0 and bool(mask[:, 0].any())) or (x1c == x1 and bool(mask[:, -1].any()))
+        or (y0c == y0 and bool(mask[0, :].any())) or (y1c == y1 and bool(mask[-1, :].any()))
+    )  # fmt: skip
+    return Blob(
+        r.pt(*rect[0]), angle,
+        (round(real_in(sides_px[0] / r.z, ratio), 2), round(real_in(sides_px[1] / r.z, ratio), 2)),
+        (b0[0], b0[1], b1[0], b1[1]), box_px,
+        [r.pt(float(c[0]), float(c[1])) for c in corners],
+        [(float(c[0]), float(c[1])) for c in corners],
+        (sides_px[0], sides_px[1]), fill, touches,
+    )  # fmt: skip
+
+
+def blob_refusal(b: Blob) -> str | None:
+    """Why an ink blob is not a column symbol (None when it passes): the sanity check of the ink
+    example. Size and aspect are the symbol rules of 14b; the fill (hull / rectangle) keeps out a
+    column fused to loose linework."""
+    short, long_ = b.sides_in
+    if not _size_ok((short, long_)):
+        return "size"
+    if long_ > BLOB_ASPECT_MAX * short:
+        return "aspect"
+    if b.fill < BLOB_FILL_MIN:
+        return "fill"
+    if b.touches_edge:
+        return "touches_edge"
+    return None
+
+
 # ---- matching ----------
 SEARCH_THRESHOLD = 0.6  # Phase 14e: one search at the slider's floor; the preview filters by score
 TILE = 256  # result positions per tile side (Phase 14e tiled search)
@@ -270,22 +373,108 @@ def _scores(src: np.ndarray, t: np.ndarray) -> np.ndarray:
     return res
 
 
+def rotate_template(t: np.ndarray, theta: float) -> np.ndarray:
+    """`t` turned clockwise by `theta` degrees (page terms, y down) on a canvas that holds it
+    whole; paper (0) fills the corners."""
+    h, w = t.shape
+    m = cv2.getRotationMatrix2D((w / 2.0, h / 2.0), -theta, 1.0)
+    c, sn = abs(m[0, 0]), abs(m[0, 1])
+    nw, nh = int(round(h * sn + w * c)), int(round(h * c + w * sn))
+    m[0, 2] += nw / 2.0 - w / 2.0
+    m[1, 2] += nh / 2.0 - h / 2.0
+    return cv2.warpAffine(t, m, (nw, nh), flags=cv2.INTER_LINEAR, borderValue=0)
+
+
+def _canonical_template(src: np.ndarray, ex: Blob, r: Raster) -> np.ndarray:
+    """A turned example read upright: its ink turned back by its own angle about its centre and
+    cut to its (now axis-aligned) rectangle plus the template margin."""
+    cx = sum(p[0] for p in ex.rect_px) / 4.0
+    cy = sum(p[1] for p in ex.rect_px) / 4.0
+    short, long_ = ex.sides_px
+    m = max(MARGIN_MIN_PX, round(MARGIN_SHARE * long_))
+    half = int(math.ceil(math.hypot(short, long_) / 2.0)) + m + 2
+    pad = np.pad(src, half, mode="constant")
+    px, py = int(round(cx)) + half, int(round(cy)) + half
+    patch = pad[py - half : py + half, px - half : px + half].astype(np.float32)
+    mat = cv2.getRotationMatrix2D((half, half), ex.angle, 1.0)  # turn it back by -angle
+    up = cv2.warpAffine(patch, mat, (2 * half, 2 * half), flags=cv2.INTER_LINEAR, borderValue=0)
+    phi = math.radians(-ex.angle)  # the rectangle's corners after turning back
+    xs, ys = [], []
+    for qx, qy in ex.rect_px:
+        dx, dy = qx - cx, qy - cy
+        xs.append(dx * math.cos(phi) - dy * math.sin(phi))
+        ys.append(dx * math.sin(phi) + dy * math.cos(phi))
+    w = int(round(max(xs) - min(xs))) + 2 * m
+    h = int(round(max(ys) - min(ys))) + 2 * m
+    return up[half - h // 2 : half - h // 2 + h, half - w // 2 : half - w // 2 + w].copy()
+
+
+def _turned_sides_in(
+    clean: np.ndarray,
+    cx: float,
+    cy: float,
+    tw: int,
+    th: int,
+    theta: float,
+    r: Raster,
+    ratio: float,
+) -> tuple[float, float] | None:
+    """Real sides (short, long) of the ink inside a tw x th window turned by theta about (cx, cy):
+    the minimum-area rectangle of that ink; None when there is none."""
+    rect = ((cx, cy), (float(tw), float(th)), theta)
+    poly = np.round(cv2.boxPoints(rect)).astype(np.int32)
+    x0, y0 = int(poly[:, 0].min()), int(poly[:, 1].min())
+    x1, y1 = int(poly[:, 0].max()) + 1, int(poly[:, 1].max()) + 1
+    H, W = clean.shape
+    xa, ya, xb, yb = max(x0, 0), max(y0, 0), min(x1, W), min(y1, H)
+    if xb <= xa or yb <= ya:
+        return None
+    mask = np.zeros((yb - ya, xb - xa), np.uint8)
+    cv2.fillPoly(mask, [poly - np.array([xa, ya], np.int32)], 1)
+    ys, xs = np.nonzero(clean[ya:yb, xa:xb] & mask)
+    if len(xs) == 0:
+        return None
+    rr = cv2.minAreaRect(np.column_stack((xs, ys)).astype(np.float32))
+    a, b = sorted(float(v) for v in rr[1])
+    return (real_in(a / r.z, ratio), real_in(b / r.z, ratio))
+
+
 def image_matches(
-    r: Raster, box_px: tuple[int, int, int, int], ratio: float, s: Settings
+    r: Raster,
+    box_px: tuple[int, int, int, int],
+    ratio: float,
+    s: Settings,
+    angles: list[float] | None = None,
+    ex: Blob | None = None,
 ) -> list[Hit]:
-    """Template matches of the example box (+ margin) at 0 and 90 degrees, after non-max
+    """Template matches of the example box (+ margin) at 0 and 90 degrees (Phase 0-14g: or at the
+    absolute column angles `angles`; a turned example `ex` is read upright first), after non-max
     suppression and the real-size check, in (y, x) order (prereg 14d 2.3; Phase 14e: tiled and
-    parallel scores, grid-hashed suppression, the same hits)."""
+    parallel scores, grid-hashed suppression, the same hits). Hit.rotation is the template's turn
+    relative to the example (0 and 90 as before when the example is upright)."""
     src, off, tmpl, win = _template(_source(r, s), box_px, r)
-    # the example is measured like every hit: the clean ink inside its template window
-    ex_ink = _ink_box(r.clean, *win)
-    if ex_ink is None:
-        return []
-    ex_sides = _sides_in(ex_ink, r, ratio)
+    alpha = 0.0 if ex is None or ex.angle < ANGLE_MIN_DEG else ex.angle
+    if alpha:
+        canon = _canonical_template(src, ex, r)  # type: ignore[arg-type]
+        ex_sides = ex.sides_in  # type: ignore[union-attr]
+        tmpl = canon
+    else:
+        # the example is measured like every hit: the clean ink inside its template window
+        ex_ink = _ink_box(r.clean, *win)
+        if ex_ink is None:
+            return []
+        ex_sides = _sides_in(ex_ink, r, ratio)
+    thetas = [0.0, 90.0] if angles is None else [float(a) % 180.0 for a in angles]
+    ch, cw = tmpl.shape  # the upright template (turning it never changes this)
     parts = []
-    dims: dict[int, tuple[int, int]] = {}
-    for rot in (0, 90):
-        t = tmpl if rot == 0 else cv2.rotate(tmpl, cv2.ROTATE_90_CLOCKWISE)
+    dims: dict[float, tuple[int, int]] = {}
+    for rot in thetas:
+        if rot == 0.0:
+            t = tmpl
+        elif rot == 90.0:
+            t = cv2.rotate(tmpl, cv2.ROTATE_90_CLOCKWISE)
+        else:
+            t = rotate_template(tmpl, rot)
         th, tw = t.shape
         if th > src.shape[0] or tw > src.shape[1] or float(t.std()) == 0.0:
             continue
@@ -302,10 +491,10 @@ def image_matches(
     xs = np.concatenate([p[2] for p in parts])
     rots = np.concatenate([p[3] for p in parts])
     order = np.lexsort((rots, xs, ys, neg))  # score desc, then y, x, rotation (as 14d)
-    kept: list[tuple[float, float, float, int, int, int]] = []
+    kept: list[tuple[float, float, float, float, int, int]] = []
     cells: dict[tuple[int, int], list[int]] = {}
     for i in order:
-        rot = int(rots[i])
+        rot = float(rots[i])
         tw, th = dims[rot]
         rad = NMS_SHARE * max(tw, th)
         cx, cy = xs[i] + tw / 2 - off, ys[i] + th / 2 - off
@@ -332,17 +521,25 @@ def image_matches(
     clean = r.clean
     for cx, cy, score, rot, tw, th in kept:
         x0, y0 = round(cx - tw / 2), round(cy - th / 2)
-        ib = _ink_box(clean, x0, y0, x0 + tw, y0 + th)
-        if ib is None:
-            continue
-        sides = _sides_in(ib, r, ratio)
+        if not alpha and rot in (0.0, 90.0):
+            ib = _ink_box(clean, x0, y0, x0 + tw, y0 + th)  # the 14d check, unchanged
+            if ib is None:
+                continue
+            sides = _sides_in(ib, r, ratio)
+        else:
+            ts = _turned_sides_in(clean, cx, cy, cw, ch, rot, r, ratio)
+            if ts is None:
+                continue
+            sides = ts
         if not same_size(sides, ex_sides):
             continue
         c = r.pt(cx, cy)
         if not (r.crop[0] <= c[0] <= r.crop[2] and r.crop[1] <= c[1] <= r.crop[3]):
             continue
         b0, b1 = r.pt(x0, y0), r.pt(x0 + tw, y0 + th)
-        out.append(Hit(c, (b0[0], b0[1], b1[0], b1[1]), round(score, 4), rot,
+        rel = (rot - alpha) % 180.0
+        out.append(Hit(c, (b0[0], b0[1], b1[0], b1[1]), round(score, 4),
+                       int(rel) if rel == int(rel) else round(rel, 1),
                        (round(sides[0], 2), round(sides[1], 2))))  # fmt: skip
     out.sort(key=lambda h: (round(h.centre[1], 1), round(h.centre[0], 1)))
     return out
@@ -477,36 +674,183 @@ def load_raster(path: Path) -> Raster | None:
                   (float(meta[1]), float(meta[2])), crop)  # fmt: skip
 
 
-def search(r: Raster, ratio: float, click: Pt, symbols: list[dict], s: Settings) -> Result:
+def _ang(a: Pt, b: Pt) -> float:
+    return math.degrees(math.atan2(b[1] - a[1], b[0] - a[0])) % 180.0
+
+
+def _angle_diff(a: float, b: float) -> float:
+    d = abs(a - b) % 180.0
+    return min(d, 180.0 - d)
+
+
+def _clusters(angles: list[tuple[float, float]], by_count: bool = True) -> list[float]:
+    """Dominant directions of (angle in [0, 180), weight) pairs: angles within ANGLE_DEDUP_DEG are
+    one cluster (weighted mean); kept when it has 15% of the total weight, or (`by_count`) at
+    least 2 members."""
+    total = sum(w for _a, w in angles)
+    out: list[tuple[float, float, int]] = []  # (weighted sum of angle, weight, count) per cluster
+    centres: list[float] = []
+    for a, w in sorted(angles):
+        for k, c in enumerate(centres):
+            if _angle_diff(a, c) < ANGLE_DEDUP_DEG:
+                sa, sw, n = out[k]
+                # unwrap about the cluster centre so 179 and 1 degrees average to 0, not 90
+                d = ((a - c + 90.0) % 180.0) - 90.0
+                out[k] = (sa + (c + d) * w, sw + w, n + 1)
+                centres[k] = (out[k][0] / out[k][1]) % 180.0
+                break
+        else:
+            out.append((a * w, w, 1))
+            centres.append(a)
+    return [c for c, (_sa, sw, n) in zip(centres, out, strict=True)
+            if (by_count and n >= 2) or (total > 0 and sw / total >= 0.15)]  # fmt: skip
+
+
+def grid_angles(grid: list[tuple[Pt, Pt]]) -> list[float]:
+    """The dominant directions of the page's grid lines (degrees in [0, 180))."""
+    pairs = []
+    for a, b in grid:
+        ln = math.dist(a, b)
+        if ln > 0:
+            pairs.append((_ang(a, b), ln))
+    return _clusters(pairs)
+
+
+def long_line_angles(page: pymupdf.Page, crop: Box, ratio: float) -> list[float]:
+    """Fallback when the Build found no grid: the dominant directions of the page's long straight
+    lines (at least LONG_LINE_IN real inches, inside the crop), weighted by length."""
+    min_pt = LONG_LINE_IN * 72.0 / ratio
+    pairs = []
+    for d in page.get_drawings():
+        for it in d["items"]:
+            if it[0] != "l":
+                continue
+            a, b = (it[1].x, it[1].y), (it[2].x, it[2].y)
+            if not (crop[0] <= a[0] <= crop[2] and crop[1] <= a[1] <= crop[3]):
+                continue
+            ln = math.dist(a, b)
+            if ln >= min_pt:
+                pairs.append((_ang(a, b), ln))
+    return _clusters(pairs, by_count=False)  # a few stray lines are not a direction
+
+
+def search_angles(
+    grid: list[tuple[Pt, Pt]] | None,
+    ex_angle: float = 0.0,
+    fallback: Callable[[], list[float]] | None = None,
+) -> list[float]:
+    """The absolute column angles searched: 0 and 90, each dominant grid direction and its
+    perpendicular (else the page's long-line directions), then the example's own angle and its
+    perpendicular; all deduplicated within ANGLE_DEDUP_DEG (the first of a group stays)."""
+    cands = [0.0, 90.0]
+    dom = grid_angles(grid or [])
+    if not dom and fallback is not None:
+        dom = fallback()
+    for c in dom:
+        cands += [c % 180.0, (c + 90.0) % 180.0]
+    if abs(ex_angle) >= ANGLE_MIN_DEG:
+        cands += [ex_angle % 180.0, (ex_angle + 90.0) % 180.0]
+    out: list[float] = []
+    for a in cands:
+        if all(_angle_diff(a, b) >= ANGLE_DEDUP_DEG for b in out):
+            out.append(round(a, 1))
+    return out
+
+
+def _signed(a: float) -> float:
+    """A direction mod 90 (symbol_json rotation_deg) as a signed turn in (-45, 45]."""
+    a = a % 90.0
+    return a if a <= 45.0 else a - 90.0
+
+
+def search(
+    r: Raster,
+    ratio: float,
+    click: Pt,
+    symbols: list[dict],
+    s: Settings,
+    grid: list[tuple[Pt, Pt]] | None = None,
+    fallback: Callable[[], list[float]] | None = None,
+) -> Result:
     """Prereg 14d 2.2-2.4 on a rendered crop: the example under the click (a stored vector symbol,
-    else the ink), its vector and image matches and both combined (the example included)."""
+    else the ink), its vector and image matches and both combined (the example included).
+    Phase 0-14g: the lookup radius is SNAP_RADIUS_PT. NEVER WORSE THAN MAIN: without a stored
+    symbol the example is main's own ink read (`ink_example`: the ink inside the 36 in window),
+    always; the checked ink blob (`blob_refusal`) only decides whether the column moves onto its
+    centre and whether the result carries `warning == 'unchecked_ink'`. The result is a refusal
+    (`refused == 'click_closer'`) only where main also found no example. The image search runs
+    at `search_angles` (0 and 90 on an orthogonal grid, as main)."""
     t0 = time.perf_counter()
     vex = vector_example(click, symbols)
+    ex_blob: Blob | None = None
     if vex is not None:
+        sym_turn = _signed(float(vex.get("rotation_deg") or 0.0))
+        if abs(sym_turn) >= ANGLE_MIN_DEG:  # a turned symbol is read from its own ink
+            b = ink_blob(r, tuple(vex["centre"]), ratio)
+            if b is not None and blob_refusal(b) is None and abs(b.angle) >= ANGLE_MIN_DEG:
+                ex_blob = b
         bx = vex["box"]
         p0, p1 = r.px((bx[0], bx[1])), r.px((bx[2], bx[3]))
         box_px = (math.floor(p0[0]), math.floor(p0[1]), math.ceil(p1[0]), math.ceil(p1[1]))
         keys = ("family", "box", "centre", "real_in")
         example = {"source": "vector", **{k: vex[k] for k in keys}, "solid": vex.get("solid")}
+        example["angle"] = ex_blob.angle if ex_blob else 0.0
+        box_corners = [[bx[0], bx[1]], [bx[2], bx[1]], [bx[2], bx[3]], [bx[0], bx[3]]]
+        example["rect"] = [list(c) for c in ex_blob.rect] if ex_blob else box_corners
         vec = vector_similar(vex, symbols)
+        if ex_blob:
+            box_px = ex_blob.box_px
     else:
-        ib = ink_example(r, click, ratio)
-        if ib is None:
+        # NEVER WORSE THAN MAIN: the example is main's own ink read (the ink inside the 36 in
+        # window), whatever the checked blob says. The blob only decides whether the column is
+        # moved onto its centre and whether the screen warns that nothing was checked.
+        ib = ink_example(r, click, ratio)  # main's example logic, unchanged
+        if ib is None:  # main found none either
+            b = ink_blob(r, click, ratio)
+            why = "no ink within the radius" if b is None else blob_refusal(b)
             return Result(
-                None, runtime_s=time.perf_counter() - t0, z=r.z, note="no symbol under the click"
-            )
-        box_px = ib
+                None, runtime_s=time.perf_counter() - t0, z=r.z, refused="click_closer",
+                note=f"click closer to the column symbol ({why})",
+            )  # fmt: skip
         b0, b1 = r.pt(ib[0], ib[1]), r.pt(ib[2], ib[3])
+        corners = [[b0[0], b0[1]], [b1[0], b0[1]], [b1[0], b1[1]], [b0[0], b1[1]]]
         example = {"source": "ink", "family": "unknown", "solid": None,
                    "box": [b0[0], b0[1], b1[0], b1[1]],
                    "centre": [(b0[0] + b1[0]) / 2, (b0[1] + b1[1]) / 2],
-                   "real_in": list(_sides_in(ib, r, ratio))}  # fmt: skip
-        vec = []
-    hits = image_matches(r, box_px, ratio, s)
+                   "real_in": list(_sides_in(ib, r, ratio)), "angle": 0.0,
+                   "rect": corners}  # fmt: skip
+        blob = ink_blob(r, click, ratio)
+        checked = blob is not None and blob_refusal(blob) is None
+        return _finish(r, ratio, click, symbols, s, grid, fallback, t0, example, [], ib, None,
+                       None, None if checked else "unchecked_ink",
+                       blob.centre if checked and blob is not None else None)  # fmt: skip
+    return _finish(r, ratio, click, symbols, s, grid, fallback, t0, example, vec, box_px,
+                   ex_blob, vex, None)  # fmt: skip
+
+
+def _finish(
+    r: Raster, ratio: float, click: Pt, symbols: list[dict], s: Settings,
+    grid: list[tuple[Pt, Pt]] | None, fallback: Callable[[], list[float]] | None, t0: float,
+    example: dict, vec: list[dict], box_px: tuple[int, int, int, int], ex_blob: Blob | None,
+    vex: dict | None, warning: str | None, snap_centre: Pt | None = None,
+) -> Result:  # fmt: skip
+    """The image search from the example, combined with the vector matches."""
+    ex_angle = float(example["angle"])
+    angles = search_angles(grid, ex_angle, fallback)
+    hits = image_matches(r, box_px, ratio, s, angles, ex_blob)
     long_pt = max(example["box"][2] - example["box"][0], example["box"][3] - example["box"][1])
     image = [(h.centre, h.score, h.rotation) for h in hits]
     comb = combine([tuple(v["centre"]) for v in vec], image, max(DEDUP_MIN_PT, long_pt / 2))
-    return Result(example, vec, hits, comb, time.perf_counter() - t0, r.z)
+    centre = example["centre"]
+    snap = None
+    if vex is not None:  # a stored symbol: the screen snapped to its centre
+        snap = {"source": "symbol", "centre": list(centre),
+                "distance": round(math.dist(click, centre), 2)}  # fmt: skip
+    elif snap_centre is not None:  # a checked ink blob: the column may move onto its centre
+        snap = {"source": "ink", "centre": list(snap_centre),
+                "distance": round(math.dist(click, snap_centre), 2)}  # fmt: skip
+    return Result(example, vec, hits, comb, time.perf_counter() - t0, r.z, snap=snap,
+                  angles=angles, warning=warning)  # fmt: skip
 
 
 def find_similar(
