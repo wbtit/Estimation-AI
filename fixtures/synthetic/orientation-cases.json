@@ -1,0 +1,276 @@
+{
+  "_comment": "Phase 0 column orientation: SYNTHETIC cases run by BOTH copies of the algorithm (web/src/lib/orientation.test.ts and api/src/__tests__/orientation.test.ts). orientation = the web direction (W) / long side (HSS rect) / a side (HSS square), degrees counter-clockwise on screen from +X. A diamond is a 30 in square turned 45 degrees (a plate / pier) drawn around the column and used as the capture box: the reading must follow the column, never the diamond. Kind w3 is a W drawn as THREE strokes (two flanges and a web joined T-fashion), the way a real plan draws it; diamondSide is the diamond's side in inches (the real plate is about 21 in a side, 30 in across); centrelines adds two long lines along the page axes through the column centre (drawn over the web). Phase 0 fixes: diamondSide 16 is a plate whose box (22.6 in) fits under the family cap (23 in) yet still holds the W; neighbour adds a two-line HSS pair 8 to 15 in from the column (an 8 x 4 in HSS stood 5 pt from a column on the real page). Kind w3s is a W8 (8 x 8 in) drawn as three strokes: a W12X53 in a 16 in diamond would touch its edges (its corners are 0.1 pt from them), so the plate-below-the-cap cases use the smaller W.",
+  "ratio": 192,
+  "cases": [
+    {
+      "name": "W12X53 web vertical",
+      "kind": "w",
+      "orientation": 90,
+      "expect": {
+        "deg": 90,
+        "state": "clear"
+      }
+    },
+    {
+      "name": "W12X53 web horizontal",
+      "kind": "w",
+      "orientation": 0,
+      "expect": {
+        "deg": 0,
+        "state": "clear"
+      }
+    },
+    {
+      "name": "W12X53 web at 30",
+      "kind": "w",
+      "orientation": 30,
+      "expect": {
+        "deg": 30,
+        "state": "clear"
+      }
+    },
+    {
+      "name": "W12X53 web at 45",
+      "kind": "w",
+      "orientation": 45,
+      "expect": {
+        "deg": 45,
+        "state": "clear"
+      }
+    },
+    {
+      "name": "W12X53 web at 120",
+      "kind": "w",
+      "orientation": 120,
+      "expect": {
+        "deg": 120,
+        "state": "clear"
+      }
+    },
+    {
+      "name": "W12X53 on a skewed grid (33 / 123)",
+      "kind": "w",
+      "orientation": 33,
+      "grid": [
+        33,
+        123
+      ],
+      "expect": {
+        "deg": 33,
+        "state": "clear"
+      }
+    },
+    {
+      "name": "W with cover plates, web vertical",
+      "kind": "wcp",
+      "orientation": 90,
+      "expect": {
+        "deg": 90,
+        "state": "clear"
+      }
+    },
+    {
+      "name": "W with cover plates, web at 20",
+      "kind": "wcp",
+      "orientation": 20,
+      "expect": {
+        "deg": 20,
+        "state": "clear"
+      }
+    },
+    {
+      "name": "rectangular HSS, long side vertical",
+      "kind": "hss_rect",
+      "orientation": 90,
+      "expect": {
+        "deg": 90,
+        "state": "clear"
+      }
+    },
+    {
+      "name": "rectangular HSS, long side at 60",
+      "kind": "hss_rect",
+      "orientation": 60,
+      "expect": {
+        "deg": 60,
+        "state": "clear"
+      }
+    },
+    {
+      "name": "square HSS upright",
+      "kind": "hss_sq",
+      "orientation": 0,
+      "expect": {
+        "deg": 0,
+        "state": "clear"
+      }
+    },
+    {
+      "name": "square HSS at 45",
+      "kind": "hss_sq",
+      "orientation": 45,
+      "expect": {
+        "deg": 45,
+        "state": "clear"
+      }
+    },
+    {
+      "name": "round HSS has no orientation",
+      "kind": "hss_round",
+      "orientation": 0,
+      "expect": {
+        "deg": null,
+        "state": "none"
+      }
+    },
+    {
+      "name": "W inside a 45 degree diamond, web horizontal (0)",
+      "kind": "w",
+      "orientation": 0,
+      "diamond": true,
+      "expect": {
+        "deg": 0,
+        "state": "clear"
+      }
+    },
+    {
+      "name": "W inside a 45 degree diamond, web vertical (90)",
+      "kind": "w",
+      "orientation": 90,
+      "diamond": true,
+      "expect": {
+        "deg": 90,
+        "state": "clear"
+      }
+    },
+    {
+      "name": "W with cover plates inside a diamond, web at 0",
+      "kind": "wcp",
+      "orientation": 0,
+      "diamond": true,
+      "expect": {
+        "deg": 0,
+        "state": "clear"
+      }
+    },
+    {
+      "name": "W as three strokes, web vertical",
+      "kind": "w3",
+      "orientation": 90,
+      "expect": {
+        "deg": 90,
+        "state": "clear"
+      }
+    },
+    {
+      "name": "W as three strokes, web horizontal",
+      "kind": "w3",
+      "orientation": 0,
+      "expect": {
+        "deg": 0,
+        "state": "clear"
+      }
+    },
+    {
+      "name": "W as three strokes, web at 30",
+      "kind": "w3",
+      "orientation": 30,
+      "expect": {
+        "deg": 30,
+        "state": "clear"
+      }
+    },
+    {
+      "name": "W three strokes in a 21 in diamond with centre lines, web vertical",
+      "kind": "w3",
+      "orientation": 90,
+      "diamond": true,
+      "diamondSide": 21,
+      "centrelines": true,
+      "expect": {
+        "deg": 90,
+        "state": "clear"
+      }
+    },
+    {
+      "name": "W three strokes in a 21 in diamond with centre lines, web horizontal",
+      "kind": "w3",
+      "orientation": 0,
+      "diamond": true,
+      "diamondSide": 21,
+      "centrelines": true,
+      "expect": {
+        "deg": 0,
+        "state": "clear"
+      }
+    },
+    {
+      "name": "W three strokes in a 21 in diamond with centre lines, web at 60",
+      "kind": "w3",
+      "orientation": 60,
+      "diamond": true,
+      "diamondSide": 21,
+      "centrelines": true,
+      "expect": {
+        "deg": 60,
+        "state": "clear"
+      }
+    },
+    {
+      "name": "W8 three strokes in a 16 in diamond (its box fits under the family cap) with centre lines, web 0",
+      "kind": "w3s",
+      "orientation": 0,
+      "diamond": true,
+      "diamondSide": 16,
+      "centrelines": true,
+      "expect": {
+        "deg": 0,
+        "state": "clear"
+      }
+    },
+    {
+      "name": "W8 three strokes in a 16 in diamond (its box fits under the family cap) with centre lines, web 90",
+      "kind": "w3s",
+      "orientation": 90,
+      "diamond": true,
+      "diamondSide": 16,
+      "centrelines": true,
+      "expect": {
+        "deg": 90,
+        "state": "clear"
+      }
+    },
+    {
+      "name": "W8 three strokes in a 16 in diamond (its box fits under the family cap) with centre lines, web 60",
+      "kind": "w3s",
+      "orientation": 60,
+      "diamond": true,
+      "diamondSide": 16,
+      "centrelines": true,
+      "expect": {
+        "deg": 60,
+        "state": "clear"
+      }
+    },
+    {
+      "name": "W three strokes with a neighbouring two-line HSS pair, web 90",
+      "kind": "w3",
+      "orientation": 90,
+      "neighbour": true,
+      "expect": {
+        "deg": 90,
+        "state": "clear"
+      }
+    },
+    {
+      "name": "W three strokes with a neighbouring two-line HSS pair, web 0",
+      "kind": "w3",
+      "orientation": 0,
+      "neighbour": true,
+      "expect": {
+        "deg": 0,
+        "state": "clear"
+      }
+    }
+  ]
+}

@@ -7,6 +7,9 @@ export interface SimilarMatch {
   centre: [number, number];
   source: "vector" | "image";
   score: number | null;
+  /** Phase 0-column-capture: this match's OWN web direction (ccw from +X) and its state */
+  orientation_deg?: number | null;
+  orientation_state?: "clear" | "unsure" | "none" | null;
 }
 
 export const STRICTNESS_DEFAULT = 0.8;

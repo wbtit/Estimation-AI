@@ -6,6 +6,8 @@ import {
 } from "./FindSimilarBar";
 import { shownAt, STRICTNESS_DEFAULT, toggle } from "../lib/similar";
 import type { ColumnSymbols } from "../lib/column-snap";
+import { toArray, type CaptureBox } from "../lib/capture";
+import { ColumnCounts } from "./ColumnCounts";
 import { COLUMN_HINT, showColumnHint } from "../lib/columns";
 import React, {
   useCallback,
@@ -127,6 +129,11 @@ export const Workspace: React.FC<{
     dx: number;
     dy: number;
   } | null>(null);
+  // Phase 0-column-capture: the capture box shown after a column is clicked (edited = a person moved it)
+  const [capture, setCapture] = useState<{
+    box: CaptureBox;
+    edited: boolean;
+  } | null>(null);
   const nudgeAcc = useRef<{ dx: number; dy: number; n: number } | null>(null);
   const nudgeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const setLastColumn = (id: string | null) => {
@@ -137,6 +144,7 @@ export const Workspace: React.FC<{
     nudgeAcc.current = null;
     setNudgeOffset(null);
     setNudged(0);
+    if (id === null) setCapture(null);
   };
 
   const sheetId =
@@ -384,7 +392,7 @@ export const Workspace: React.FC<{
     } finally {
       setNudgeOffset(null);
     }
-  }, [projectId, who, refresh]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [projectId, who, refresh]);
   const nudgeColumn = (id: string, dx: number, dy: number) => {
     if (id !== lastColumnRef.current) return;
     const a = nudgeAcc.current ?? { dx: 0, dy: 0, n: 0 };
@@ -863,6 +871,7 @@ export const Workspace: React.FC<{
           {showColumnHint(page, pieces, !!lastColumn) && (
             <ColumnHint text={COLUMN_HINT} />
           )}
+          {page && <ColumnCounts pieces={pieces} />}
           {page && lastColumn && (
             <FindSimilarBar
               key={lastColumn}
@@ -872,6 +881,7 @@ export const Workspace: React.FC<{
               preview={simPreview}
               snap={!(placedNoSnap || nudged > 0 || nudgeOffset !== null)}
               beforeSearch={flushNudges}
+              box={capture?.edited ? toArray(capture.box) : null}
               onPreview={(p) => {
                 // the column may have moved onto the ink's centre
                 if (p.snap?.moved) void refresh();
@@ -901,6 +911,25 @@ export const Workspace: React.FC<{
               nudgeId={lastColumn}
               onNudge={nudgeColumn}
               onColumnTool={refreshSymbols}
+              lastColumn={lastColumn}
+              capture={capture}
+              onCapture={(box, edited) => setCapture({ box, edited })}
+              onRotate={(ids, by) =>
+                void act(
+                  send(
+                    "POST",
+                    `/api/projects/${projectId}/line-first/pieces/edit`,
+                    {
+                      who,
+                      member_ids: ids,
+                      ...by,
+                    },
+                  ),
+                  ids.length === 1
+                    ? "Rotated (Ctrl+Z undoes)"
+                    : `${ids.length} columns rotated (Ctrl+Z undoes)`,
+                )
+              }
               similar={
                 simPreview
                   ? {

@@ -814,7 +814,7 @@ nothing can change a snapshot through `ON DELETE SET NULL`.
 |---|---|---|
 | `projects` | One estimating job and its settings | 001 |
 | `sheets` | One row per PDF page: scan results, page names, a person's name and sheet number | 001 (scan 002, names 028, overrides 030) |
-| `members` | Every piece (built, drawn or accepted) | 001 (build columns 016, symbols 029) |
+| `members` | Every piece (built, drawn or accepted) | 001 (build columns 016, symbols 029, orientation 031) |
 | `member_edits` | Append-only person changes, grouped by `action_id` | 001 (`action_id` 005, actor/session 027) |
 | `rate_table` | Pricing inputs (unused) | 001 |
 | `catalog_shapes` | AISC shapes per edition | 001 |
@@ -887,6 +887,7 @@ nothing can change a snapshot through `ON DELETE SET NULL`.
 | 028 | Page names, Section role |
 | 029 | Column symbols, page symbols, Stud/Post kind, `find_similar` action |
 | 030 | A person's page name (`name_override`) and sheet number (who and when) |
+| 031 | Column orientation: `members.orientation_deg`, `orientation_state`, `orientation_source` (additive) |
 
 ---
 
@@ -1012,7 +1013,9 @@ All routes are under `/api/projects/:projectId` unless shown otherwise. Files ar
 
 | Route | Purpose |
 |---|---|
-| `POST .../line-first/pieces/:memberId/find-similar` | Preview (`accept: false`) or Accept (`accept: true`, `run_id`, `strictness`, `unticked`) |
+| `POST .../line-first/pieces/:memberId/find-similar` | Preview (`accept: false`) or Accept (`accept: true`, `run_id`, `strictness`, `unticked`) Phase 0: optional `box` (the capture box shown, page points; the worker searches exactly it), `timing`; every match carries its own `orientation_deg` / `orientation_state` |
+| `GET .../sheets/:sheetId/column-symbols` | The page's stored symbols a click can snap to (known family, solid, or an unknown 45 degree square: `square45`) and the one snap radius |
+| `POST .../line-first/pieces/edit` | Besides profile / kind / studs / ignored / approved: `orientation_deg` (set the web direction) or `rotate_deg` (turn the columns clockwise: R = 90, Shift+R = 15), one undoable action |
 
 **Tags**
 
@@ -1044,6 +1047,34 @@ takeoff, old BOM, flags and text-items routes were removed on 2026-11-04 (tag
 `archive/pre-cleanup-20261104`). Their tables stay in the database (no migration drops them).
 
 ---
+
+### Column orientation (the convention the 3D / Tekla step reads)
+
+`members.orientation_deg` (API field `orientation_deg` on a piece) is the direction of the column's **web**:
+the line between the two flanges of a W or W with cover plates, the long side of a rectangular HSS, a side
+of a square HSS. It is measured **counter-clockwise as seen on screen, from the drawing's +X axis (to the
+right)**, in the **displayed page frame** (the page after the PDF's own `/Rotate`; y points down on screen),
+in degrees, and normalised to the symbol's symmetry: `[0, 180)` for W, W with cover plates and rectangular
+HSS (180 degree symmetric), `[0, 90)` for square HSS (90 degree symmetric), `null` for round HSS (no
+orientation) or when it could not be read. A W with its web vertical on the drawing is `90`; with its web
+horizontal, `0`. To leave the displayed frame the 3D step also needs the page's rotation and registration.
+
+`orientation_state` says how much to trust it: `clear` (read from the column symbol, green on screen),
+`unsure` (read but doubtful, amber: the person decides), `manual` (a person set it with R, Shift+R, the
+rotate handle or a typed value: an append-only `member_edits` row, field `orientation`, so undo works),
+`none`. `orientation_source` is `click` (the example column), `match` (a Find similar match, read from its
+own lines), `manual` or `backfill`. The marker's `rotation_deg` (clockwise, web vertical at 0) is derived:
+`rotation_deg = (90 - orientation_deg) mod 180`; the stored `rotation_deg` stays authoritative until a
+person turns the column.
+
+How it is read (`api/src/review/orientation.ts`, an identical copy in `web/src/lib/orientation.ts`, run by
+the same cases in `fixtures/synthetic/orientation-cases.json`): from the page's stored vector lines, in a
+family-sized window around the column and from the column symbol only: lines longer than the family's
+largest symbol and a plate or pier drawn around the column never count. Pre-registration:
+`worker/prereg/PHASE0_COLUMN_CAPTURE_PREREGISTRATION.md`.
+
+The **capture box** is the orange box shown after a click: tight around the symbol, with eight handles to
+move and resize it. Find similar searches exactly the box shown; unedited, the search is exactly what it was.
 
 ## 13. Data and privacy rules
 
@@ -1098,6 +1129,7 @@ make lint-web                  # tsc (typecheck)
 | **Migrations** | Back up, then `make test-db` (the `_test` database first) and run the tests, then `make migrate` |
 | **After a Python change** | Restart the worker (`make worker`). It does not reload. The API (`tsx watch`) and web (Vite) reload by themselves. |
 | **Lines for old projects** | `npm --prefix api run lines:backfill -- --project <id>` (dry run, read-only), then add `--apply`. Real projects only. |
+| **Orientation of old columns** | `npm --prefix api run orientation:backfill -- --project <id> [--page N] [--json out]` (dry run, read-only), then add `--apply` to fill only EMPTY orientations (never a person's value). |
 | **Look at the queue** | `SELECT type, status, count(*) FROM jobs GROUP BY 1, 2;` (read-only) |
 
 **Process safety.** Only stop a process you started yourself and recorded (PID and command
@@ -1167,7 +1199,7 @@ pre-registered entry point built on `measure.jobs`.
 | `tools.markups_intake` (+ `bbmeasure`, `takeoff.import_markups`, `takeoff.phase6c_trace`) | Intake of new estimator markups as a locked TEST set |
 
 **API scripts (`npm --prefix api run ...`)**: `catalog:import`, `kinds:load-abbreviations`,
-`test-db`, `session:export`, `session:report`, `lines:backfill`, `schema:generate`.
+`test-db`, `session:export`, `session:report`, `lines:backfill`, `orientation:backfill`, `schema:generate`.
 
 **Glyph library CLI**: `make glyph-sheets`, `glyph-export`, `glyph-import`, `glyph-summary`
 (`worker/src/text_reader/cli.py`).

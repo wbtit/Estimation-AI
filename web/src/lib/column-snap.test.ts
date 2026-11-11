@@ -2,6 +2,7 @@
 import { describe, expect, it } from "vitest";
 import {
   nearestSymbol,
+  squareMarginPt,
   nudgeStep,
   placeColumn,
   signedTurn,
@@ -47,6 +48,25 @@ describe("nearestSymbol", () => {
     expect(
       nearestSymbol([sym(100, 100, { family: "unknown" })], [100, 100], R),
     ).toBeNull();
+  });
+});
+
+describe("an unknown 45 degree square", () => {
+  const sq = sym(100, 100, {
+    family: "unknown",
+    square45: true,
+    rotation_deg: 45,
+    box: [90, 90, 110, 110],
+  });
+  it("is the click's symbol only inside its box plus the margin", () => {
+    const m = squareMarginPt(5, 128); // 5 real inches at 1:128 = 2.8 pt
+    expect(m).toBeCloseTo(2.8125, 4);
+    expect(squareMarginPt(5, 64)).toBeCloseTo(5.625, 4);
+    expect(squareMarginPt(5, null)).toBe(0);
+    expect(nearestSymbol([sq], [105, 108], R, m)?.symbol).toBe(sq);
+    expect(nearestSymbol([sq], [112, 100], R, m)?.symbol).toBe(sq); // 2 pt outside
+    expect(nearestSymbol([sq], [114, 100], R, m)).toBeNull(); // 4 pt outside
+    expect(nearestSymbol([sq], [100, 113.5], R, m)).toBeNull(); // 13.5 away, outside the box
   });
 });
 

@@ -64,10 +64,10 @@ def test_one_snap_radius_for_every_part():
 def test_a_stored_symbol_within_the_radius_is_the_example_and_beyond_it_is_not():
     sym = {"family": "hss_square", "box": [100.0, 100.0, 106.0, 106.0], "centre": [103.0, 103.0],
            "real_in": [16.0, 16.0], "rotation_deg": 0.0, "solid": None}  # fmt: skip
-    assert vector_example((103.0 + 13.9, 103.0), [sym]) is sym
-    assert vector_example((103.0 + 14.5, 103.0), [sym]) is None
+    assert vector_example((103.0 + 13.9, 103.0), [sym], RATIO) is sym
+    assert vector_example((103.0 + 14.5, 103.0), [sym], RATIO) is None
     near, far = dict(sym, centre=[110.0, 103.0]), dict(sym, centre=[103.0, 90.0])
-    assert vector_example((103.0, 103.0), [far, near]) is near  # two inside: the nearest
+    assert vector_example((103.0, 103.0), [far, near], RATIO) is near  # two inside: the nearest
 
 
 def test_an_off_centre_click_on_ink_snaps_to_the_squares_centre(page):
@@ -226,7 +226,8 @@ def test_refusal_only_where_main_refused(page, monkeypatch):
     for click in clicks:
         monkeypatch.setattr(ci, "CLICK_PT", 12.0)  # main's radius
         main_found = (
-            vector_example(click, []) is not None or ci.ink_example(r, click, RATIO) is not None
+            vector_example(click, [], RATIO) is not None
+            or ci.ink_example(r, click, RATIO) is not None
         )
         monkeypatch.setattr(ci, "CLICK_PT", ci.SNAP_RADIUS_PT)
         res = search(r, RATIO, click, [], Settings())
@@ -236,3 +237,103 @@ def test_refusal_only_where_main_refused(page, monkeypatch):
         if res.example is None:
             assert not main_found, click
     assert checked > 20  # the scene really exercises the rule
+
+
+# ---- Phase 0 column capture: unknown 45 degree squares and the capture box ---------------------
+
+
+def sym(cx, cy, real, rot, family="unknown", solid=None, half=None):
+    h = half if half is not None else real[1] * 0.375 / 2
+    return {"family": family, "solid": solid, "box": [cx - h, cy - h, cx + h, cy + h],
+            "centre": [cx, cy], "rotation_deg": rot, "real_in": list(real)}  # fmt: skip
+
+
+def test_unknown_square_rule_is_the_pre_registered_one():
+    u = ci.UNKNOWN_SQUARE
+    assert {k: v for k, v in u.items() if k != "click_margin_in"} == {
+        "aspect_tol": 0.1,
+        "side_in": [8, 36],
+        "turn_deg": 45,
+        "turn_tol_deg": 5,
+    }  # the pre-registered four numbers; click_margin_in (5 real in) is the addendum 3 addition
+    ok = sym(100, 100, (30.0, 30.0), 45.0)
+    cases = [
+        (ok, True),
+        (sym(100, 100, (30.0, 32.5), 49.0), True),  # within 10% and 45 +/- 5
+        (sym(100, 100, (30.0, 18.0), 45.0), False),  # not square
+        (sym(100, 100, (30.0, 30.0), 0.0), False),  # not turned
+        (sym(100, 100, (30.0, 30.0), 51.0), False),  # turned too far
+        (sym(100, 100, (6.0, 6.0), 45.0), False),  # smaller than 8 in
+        (sym(100, 100, (40.0, 40.0), 45.0), False),  # larger than 36 in
+        (sym(100, 100, (30.0, 30.0), 45.0, solid="square"), False),  # a solid shape is its own kind
+        (sym(100, 100, (30.0, 30.0), 45.0, family="hss_square"), False),  # a known family
+    ]
+    for s, expected in cases:
+        assert (0 in ci.unknown_squares([s])) is expected, s
+    inside = sym(100, 100, (12.0, 8.0), 0.0, family="w_shape", half=1.0)  # a known W inside the box
+    assert 0 not in ci.unknown_squares([ok, inside])  # a plate with a W inside is not a bare square
+
+
+def test_a_square_is_the_third_kind_of_example_and_matches_its_own_kind():
+    sq = [sym(100, 100, (30.0, 30.0), 45.0), sym(200, 100, (30.0, 30.0), 45.0)]
+    known = sym(300, 100, (10.0, 12.0), 0.0, family="w_shape")
+    sym_list = [*sq, known]
+    hit = ci.vector_example_kind((103.0, 100.0), sym_list, RATIO)
+    assert hit is not None and hit[1] == "square45" and hit[0] is sq[0]
+    assert (
+        ci.vector_example_kind((115.0, 100.0), sym_list, RATIO) is None
+    )  # beyond the shared radius
+    near_known = ci.vector_example_kind((296.0, 100.0), [*sq, known], RATIO)
+    assert near_known is not None and near_known[1] == "known"  # a known family always wins
+    ex = {"family": "unknown", "solid": None, "real_in": [30.0, 30.0], "square45": True}
+    assert ci.vector_similar(ex, sym_list) == sq  # the same rule and size, never the W
+
+
+def test_the_capture_box_is_searched_exactly(page):
+    for x in (100.0, 200.0, 300.0):
+        square(page, x, 150.0, 20 * IN)
+    r = raster(page)
+    s = Settings(threshold=0.6)
+    side = 20 * IN
+    tight = (100 - side / 2 - 1, 150 - side / 2 - 1, 100 + side / 2 + 1, 150 + side / 2 + 1)
+    res = search(r, RATIO, (103.0, 152.0), [], s, box=tight)
+    assert res.example is not None and res.example["user_box"] is True
+    assert res.example["box"] == list(tight) and res.warning is None and res.snap is None
+    got = sorted(round(h.centre[0]) for h in res.image)
+    assert got == [100, 200, 300], got  # the box holds one column: all three are found
+    # a box that holds TWO columns is a different template: the single columns no longer match it
+    wide = (100 - side, 150 - side, 200 + side, 150 + side)
+    two = search(r, RATIO, (103.0, 152.0), [], s, box=wide)
+    assert two.example["box"] == list(wide)
+    assert [round(h.centre[0]) for h in two.image if round(h.centre[0]) == 300] == []
+    # a box with no ink in it still returns the example the person showed, and finds nothing
+    empty = search(r, RATIO, (103.0, 152.0), [], s, box=(500.0, 300.0, 520.0, 320.0))
+    assert empty.example is not None and empty.image == []
+
+
+def test_an_unedited_search_is_what_it_was(page):
+    for x in (100.0, 200.0):
+        square(page, x, 150.0, 20 * IN)
+    r = raster(page)
+    a = search(r, RATIO, (103.0, 152.0), [], Settings(threshold=0.6))
+    b = search(r, RATIO, (103.0, 152.0), [], Settings(threshold=0.6), box=None)
+    assert [(h.centre, h.score, h.rotation) for h in a.image] == [
+        (h.centre, h.score, h.rotation) for h in b.image
+    ]
+    assert a.example == b.example
+
+
+def test_an_unknown_square_must_be_under_the_click():
+    """The radius still applies, and an unknown 45 degree square must also be UNDER the click: a
+    diamond 11 pt away but not under it is a neighbour; inside its box (+5 real in) it is taken.
+    At 1:128 the 5 in margin is 2.8 pt; at 1:64 it is 5.6 pt (it follows the scale)."""
+    from src.build.col_image import vector_example_kind
+
+    sym = {"family": "unknown", "solid": None, "box": [110.0, 110.0, 118.0, 118.0],
+           "centre": [114.0, 114.0], "rotation_deg": 45.0, "real_in": [16.0, 16.0]}  # fmt: skip
+    assert vector_example_kind((114.0, 116.0), [sym], 128.0) is not None  # inside the box
+    assert vector_example_kind((114.0, 120.5), [sym], 128.0) is not None  # 2.5 pt = 4.4 in outside
+    assert vector_example_kind((114.0, 121.5), [sym], 128.0) is None  # 3.5 pt = 6.2 in outside
+    assert vector_example_kind((114.0, 121.5), [sym], 64.0) is not None  # same pt, 1:64: 3.1 in
+    assert vector_example_kind((114.0, 125.0), [sym], 128.0) is None  # 11 pt away, not under it
+    assert vector_example_kind((114.0, 130.0), [sym], 64.0) is None  # beyond the radius

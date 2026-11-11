@@ -16,6 +16,7 @@ import {
   type Piece,
   type Project,
   type RoleName,
+  summary,
 } from "../lib/lf";
 import { RoleSelect } from "./RoleSelect";
 import { BomTab } from "./BomTab";
@@ -1690,5 +1691,208 @@ describe("approve and members by size", () => {
     fireEvent.click(projRows[1]!);
     fireEvent.click(screen.getByText("Page s2 · 1"));
     expect(onOpen).toHaveBeenCalledWith("s2", ["p1"]);
+  });
+});
+
+describe("Phase 0 column capture: rotate keys, capture box, rotate handle", () => {
+  const colData = (extra: Record<string, unknown> = {}) => ({
+    sheet_id: "s1",
+    crop: null,
+    pen_class: null,
+    tos_mm: null,
+    scale_ratio: 96,
+    grid_lines: [],
+    pieces: [
+      piece({
+        id: "c1",
+        tag: "C1",
+        type: "column",
+        b: null,
+        symbol: "w_shape",
+        orientation_deg: 90,
+        orientation_state: "clear",
+        ...extra,
+      } as never),
+    ],
+    views: [pview()],
+  });
+
+  it("R turns the selected columns 90 degrees and Shift+R 15; with nothing selected R is the palette's", () => {
+    const onRotate = vi.fn();
+    canvasWith({ data: colData(), selected: new Set(["c1"]), onRotate });
+    fireEvent.keyDown(window, { key: "r" });
+    expect(onRotate).toHaveBeenLastCalledWith(["c1"], { rotate_deg: 90 });
+    fireEvent.keyDown(window, { key: "R", shiftKey: true });
+    expect(onRotate).toHaveBeenLastCalledWith(["c1"], { rotate_deg: 15 });
+    expect(onRotate).toHaveBeenCalledTimes(2);
+  });
+
+  it("nothing selected and no column just placed: R does not rotate anything", () => {
+    const onRotate = vi.fn();
+    canvasWith({
+      data: colData(),
+      selected: new Set(),
+      onRotate,
+      toolAsk: { tool: "column", n: 1 },
+    });
+    fireEvent.keyDown(window, { key: "r" });
+    expect(onRotate).not.toHaveBeenCalled(); // the palette's rotation for the next column
+  });
+
+  it("the column just placed is what R turns, before anything is selected", () => {
+    const onRotate = vi.fn();
+    canvasWith({
+      data: colData(),
+      selected: new Set(),
+      lastColumn: "c1",
+      onRotate,
+    });
+    fireEvent.keyDown(window, { key: "r" });
+    expect(onRotate).toHaveBeenCalledWith(["c1"], { rotate_deg: 90 });
+  });
+
+  it("the capture box shows with eight handles; a single column has a rotate handle", () => {
+    const { container } = canvasWith({
+      pdf: { getPage: () => new Promise(() => undefined) } as never,
+      data: colData(),
+      selected: new Set(["c1"]),
+      capture: { box: { x0: 10, y0: 10, x1: 30, y1: 40 }, edited: false },
+      lastColumn: "c1",
+    });
+    expect(
+      container.querySelectorAll("[data-testid=capture-box] rect"),
+    ).toHaveLength(9);
+    expect(
+      container.querySelector("[data-testid=rotate-handle]"),
+    ).not.toBeNull();
+  });
+
+  it("each column marker carries a green tick when its orientation is clear or set by a person, amber otherwise", () => {
+    const { container } = render(
+      <svg>
+        {["clear", "manual", "unsure", null].map((st, i) => (
+          <PieceMark
+            key={i}
+            p={piece({
+              id: `m${i}`,
+              tag: `M${i}`,
+              type: "column",
+              b: null,
+              symbol: "w_shape",
+              orientation_state: st,
+            } as never)}
+            px={1}
+            on={false}
+            labels
+          />
+        ))}
+      </svg>,
+    );
+    const ticks = [
+      ...container.querySelectorAll("[data-testid=orientation-tick]"),
+    ];
+    expect(ticks.map((t) => t.getAttribute("data-state"))).toEqual([
+      "clear",
+      "manual",
+      "unsure",
+      "legacy",
+    ]);
+    expect(
+      ticks.map((t) => t.getAttribute("stroke")?.includes("ok") ?? false),
+    ).toEqual([true, true, false, false]);
+  });
+});
+
+describe("Phase 0 count rule and the off-grid ring", () => {
+  it("a Reference column is shown in the BOM with its tag, left out of the total and of the summary", () => {
+    const bom = {
+      rows: [
+        row({
+          member: "c1",
+          category: "Column",
+          piecemark: "C1",
+          weight_lb: 600,
+        }),
+        row({
+          member: "c2",
+          category: "Column",
+          piecemark: "C2",
+          weight_lb: 600,
+          reference: true,
+          in_main_total: false,
+        }),
+      ],
+      totals: { pieces: 1, length_mm: 0, weight_lb: 600 },
+      attention: { pieces: 0, length_mm: 0, weight_lb: 0 },
+    };
+    render(<BomTab bom={bom} projectId="p1" />);
+    expect(screen.getAllByTestId("reference-tag")).toHaveLength(1);
+    expect(screen.getByTestId("reference-tag").getAttribute("title")).toContain(
+      "counted on the column plan",
+    );
+    expect(summary(bom.rows).columns).toBe(1); // the Reference column is not counted
+    const total = screen.getByTestId("bom").querySelector("tr.total")!;
+    expect(total.children[1]!.textContent).toBe("1");
+  });
+
+  it("a column off the grid is ringed amber; on the grid or on a page without a grid it is not", () => {
+    const { container } = render(
+      <svg>
+        <PieceMark
+          p={piece({
+            id: "a",
+            tag: "A",
+            type: "column",
+            b: null,
+            symbol: "w_shape",
+          } as never)}
+          px={1}
+          on={false}
+          labels
+          offGrid
+        />
+        <PieceMark
+          p={piece({
+            id: "b",
+            tag: "B",
+            type: "column",
+            b: null,
+            symbol: "w_shape",
+          } as never)}
+          px={1}
+          on={false}
+          labels
+        />
+      </svg>,
+    );
+    expect(container.querySelectorAll("[data-testid=off-grid]")).toHaveLength(
+      1,
+    );
+  });
+
+  it("a Reference column on the canvas is dimmed and says why", () => {
+    const { container } = render(
+      <svg>
+        <PieceMark
+          p={piece({
+            id: "r",
+            tag: "R",
+            type: "column",
+            b: null,
+            symbol: "w_shape",
+            reference: true,
+          } as never)}
+          px={1}
+          on={false}
+          labels
+        />
+      </svg>,
+    );
+    const g = container.querySelector("[data-testid=piece-R]")!;
+    expect(g.getAttribute("data-reference")).toBe("1");
+    expect(g.getAttribute("opacity")).toBe("0.55");
+    expect(g.querySelector("title")!.textContent).toContain(
+      "Reference: counted on the column plan",
+    );
   });
 });

@@ -16,10 +16,14 @@ export interface ColumnSymbol {
   real_in: [number, number];
   family: string;
   solid: string | null;
+  /** Phase 0-column-capture: an unknown 45 degree square (a plate / pier): a capture target */
+  square45?: boolean;
 }
 
 export interface ColumnSymbols {
   snap_radius_pt: number;
+  /** REAL inches: an unknown square is the click's symbol only when the click is inside its box + this */
+  square_margin_in?: number;
   build_run_id: string | null;
   symbols: ColumnSymbol[];
 }
@@ -44,10 +48,17 @@ export function nearestSymbol(
   symbols: readonly ColumnSymbol[],
   p: Pt2,
   radius: number,
+  squareMargin = 0,
 ): { symbol: ColumnSymbol; distance: number } | null {
   for (const ok of [
     (s: ColumnSymbol) => s.family !== "unknown",
     (s: ColumnSymbol) => !!s.solid,
+    (s: ColumnSymbol) =>
+      s.square45 === true &&
+      p[0] >= s.box[0] - squareMargin &&
+      p[0] <= s.box[2] + squareMargin &&
+      p[1] >= s.box[1] - squareMargin &&
+      p[1] <= s.box[3] + squareMargin,
   ]) {
     let best: { symbol: ColumnSymbol; distance: number } | null = null;
     for (const s of symbols) {
@@ -90,10 +101,11 @@ export function placeColumn(args: {
   p: Pt2;
   symbols: readonly ColumnSymbol[];
   radius: number | null;
+  squareMargin?: number;
   shift: boolean;
   line: (p: Pt2) => Pt2 | null;
 }): Placement {
-  const { p, symbols, radius, shift, line } = args;
+  const { p, symbols, radius, squareMargin, shift, line } = args;
   const distance = nearestDistance(symbols, p);
   if (shift)
     return {
@@ -104,7 +116,8 @@ export function placeColumn(args: {
       symbol: null,
       turn: 0,
     };
-  const hit = radius === null ? null : nearestSymbol(symbols, p, radius);
+  const hit =
+    radius === null ? null : nearestSymbol(symbols, p, radius, squareMargin);
   if (hit) {
     const t = signedTurn(hit.symbol.rotation_deg);
     return {
@@ -132,4 +145,12 @@ export function placeColumn(args: {
 /** The nudge of an arrow key: 1 pt, 5 pt with Shift. */
 export function nudgeStep(shift: boolean): number {
   return shift ? 5 : 1;
+}
+
+/** The unknown-square click margin (REAL inches) in page points at the page scale; 0 without a scale. */
+export function squareMarginPt(
+  marginIn: number | undefined,
+  ratio: number | null | undefined,
+): number {
+  return marginIn && ratio ? (marginIn * 72) / ratio : 0;
 }

@@ -948,7 +948,7 @@ export const buildRoutes: FastifyPluginAsync<BuildRouteOptions> = async (app, op
           r.length_mm === null ? null : ftIn(r.length_mm),
           r.grade,
           r.weight_lb,
-          r.build_state,
+          r.reference ? 'reference (counted on the column plan)' : r.build_state,
         ]);
       ws.addRow([]);
       ws.addRow([
@@ -972,6 +972,12 @@ export const buildRoutes: FastifyPluginAsync<BuildRouteOptions> = async (app, op
         ftIn(b.attention.length_mm),
         null,
         Math.round(b.attention.weight_lb),
+      ]);
+      ws.addRow([
+        'REFERENCE (columns counted on the column plan; not in the total)',
+        null,
+        null,
+        b.reference.pieces,
       ]);
       const buf = await wb.xlsx.writeBuffer();
       return reply

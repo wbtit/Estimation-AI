@@ -17,7 +17,9 @@
     "test-db": "tsx src/scripts/ensure-test-db.ts",
     "session:export": "tsx src/scripts/session-export.ts",
     "session:report": "tsx src/scripts/session-report.ts",
-    "lines:backfill": "tsx src/scripts/backfill-sheet-lines.ts"
+    "lines:backfill": "tsx src/scripts/backfill-sheet-lines.ts",
+    "orientation:backfill": "tsx src/scripts/backfill-orientation.ts",
+    "orientation:normalise": "tsx src/scripts/normalise-orientation.ts"
   },
   "dependencies": {
     "@fastify/multipart": "^10.1.2",

@@ -2287,3 +2287,17 @@ table.grid tr.total td {
   color: var(--amber, #b45309);
   font-weight: 600;
 }
+
+/* Phase 0 count rule: a column shown on a page that does not count columns */
+.ref-tag {
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 8px;
+  font-size: 11px;
+  color: var(--muted, #6b7280);
+  border: 1px solid var(--muted, #6b7280);
+}
+
+.find-similar .similar-note {
+  color: var(--muted, #6b7280);
+}

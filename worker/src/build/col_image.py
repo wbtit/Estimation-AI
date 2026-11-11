@@ -33,11 +33,16 @@ INK_LEVEL = 128  # grey below this is ink
 LONG_LINE_IN = 36.0  # straight ink runs longer than this (real inches) are lines, not symbols
 GRID_BAND_PT = 1.0  # a detected grid line erases this much ink each side of its axis
 JOIN_PT = 2.0  # ink this close joins one component (the example from ink)
-SNAP_RADIUS_PT = float(
-    json.loads((Path(__file__).resolve().parents[3] / "schema" / "column-snap.json").read_text())[
-        "snap_radius_pt"
-    ]
-)  # Phase 0-14g: ONE value for the web snap, the API and this lookup (schema/column-snap.json)
+_SHARED = json.loads(
+    (Path(__file__).resolve().parents[3] / "schema" / "column-snap.json").read_text()
+)
+SNAP_RADIUS_PT = float(_SHARED["snap_radius_pt"])
+# Phase 0-14g: ONE value for the web snap, the API and this lookup (schema/column-snap.json)
+# Phase 0-column-capture: the DEFINED rule for an unknown 45 degree square as a capture target
+UNKNOWN_SQUARE = _SHARED["unknown_square"]
+SQUARE_CLICK_MARGIN_IN = float(
+    UNKNOWN_SQUARE["click_margin_in"]
+)  # REAL inches: click inside box + this
 CLICK_PT = SNAP_RADIUS_PT  # the example: a symbol / ink within this of the click
 ANGLE_MIN_DEG = 2.0  # an example (or a stored symbol) turned more than this has its own angle
 ANGLE_DEDUP_DEG = 2.0  # search angles closer than this are one
@@ -171,20 +176,65 @@ def _size_ok(sides: tuple[float, float]) -> bool:
 
 
 # ---- the example ----------
-def vector_example(click: Pt, symbols: list[dict]) -> dict | None:
-    """The stored symbol under the click: nearest known family within CLICK_PT, else the nearest
-    solid shape (14c 2.3)."""
-    for ok in (lambda s: s["family"] in KNOWN, lambda s: bool(s.get("solid"))):
+def unknown_squares(symbols: list[dict]) -> set[int]:
+    """Indices of the unknown 45 degree squares (the pre-registered rule, the same numbers as the
+    API's unknownSquares): family unknown without a solid flag, real sides within the aspect
+    tolerance, a real side inside the size range, turned turn_deg +/- turn_tol_deg (mod 90), and no
+    known-family symbol centre inside its box."""
+    u = UNKNOWN_SQUARE
+    known = [s["centre"] for s in symbols if s["family"] != "unknown"]
+    out: set[int] = set()
+    for k, s in enumerate(symbols):
+        if s["family"] != "unknown" or s.get("solid"):
+            continue
+        short, long_ = sorted(s["real_in"])
+        if long_ <= 0 or (long_ - short) / long_ > u["aspect_tol"]:
+            continue
+        if short < u["side_in"][0] or long_ > u["side_in"][1]:
+            continue
+        if abs((s["rotation_deg"] % 90.0) - u["turn_deg"]) > u["turn_tol_deg"]:
+            continue
+        b = s["box"]
+        if any(b[0] <= c[0] <= b[2] and b[1] <= c[1] <= b[3] for c in known):
+            continue
+        out.add(k)
+    return out
+
+
+def _inside_box(p: Pt, box: list[float], ratio: float) -> bool:
+    """The click is inside the symbol's box plus SQUARE_CLICK_MARGIN_IN real inches (page points at
+    this scale): a diamond near a click but not under it is a neighbour, not the clicked symbol."""
+    m = SQUARE_CLICK_MARGIN_IN * 72.0 / ratio
+    return box[0] - m <= p[0] <= box[2] + m and box[1] - m <= p[1] <= box[3] + m
+
+
+def vector_example_kind(click: Pt, symbols: list[dict], ratio: float) -> tuple[dict, str] | None:
+    """The stored symbol under the click and its kind: the nearest known family within CLICK_PT,
+    else the nearest solid shape (14c 2.3), else (Phase 0-column-capture) the nearest unknown
+    45 degree square (a plate / pier)."""
+    squares = unknown_squares(symbols)
+    tiers = (
+        ("known", lambda k, s: s["family"] in KNOWN),
+        ("solid", lambda k, s: bool(s.get("solid"))),
+        ("square45", lambda k, s: k in squares and _inside_box(click, s["box"], ratio)),
+    )
+    for kind, ok in tiers:
         best = None
         for k, s in enumerate(symbols):
-            if not ok(s):
+            if not ok(k, s):
                 continue
             d = math.dist(click, s["centre"])
             if d <= CLICK_PT and (best is None or (d, k) < best):
                 best = (d, k)
         if best is not None:
-            return symbols[best[1]]
+            return symbols[best[1]], kind
     return None
+
+
+def vector_example(click: Pt, symbols: list[dict], ratio: float) -> dict | None:
+    """The stored symbol under the click (see `vector_example_kind`)."""
+    hit = vector_example_kind(click, symbols, ratio)
+    return hit[0] if hit else None
 
 
 def ink_example(r: Raster, click: Pt, ratio: float) -> tuple[int, int, int, int] | None:
@@ -611,9 +661,12 @@ def image_matches_14d(
 # ---- vector (the stored symbols; the same rule as the API) ----------
 def vector_similar(example: dict, symbols: list[dict]) -> list[dict]:
     solid = example["family"] == "unknown" and example.get("solid")
+    squares = unknown_squares(symbols) if example.get("square45") else set()
     out = []
-    for s in symbols:
-        if solid:
+    for k, s in enumerate(symbols):
+        if example.get("square45"):
+            ok = k in squares
+        elif solid:
             ok = s.get("solid") == example["solid"]
         else:
             ok = s["family"] == example["family"] and s["family"] != "unknown"
@@ -771,6 +824,7 @@ def search(
     s: Settings,
     grid: list[tuple[Pt, Pt]] | None = None,
     fallback: Callable[[], list[float]] | None = None,
+    box: Box | None = None,
 ) -> Result:
     """Prereg 14d 2.2-2.4 on a rendered crop: the example under the click (a stored vector symbol,
     else the ink), its vector and image matches and both combined (the example included).
@@ -781,7 +835,10 @@ def search(
     (`refused == 'click_closer'`) only where main also found no example. The image search runs
     at `search_angles` (0 and 90 on an orthogonal grid, as main)."""
     t0 = time.perf_counter()
-    vex = vector_example(click, symbols)
+    if box is not None:  # Phase 0-column-capture: the person shows the box; search exactly it
+        return _search_box(r, ratio, click, symbols, s, grid, fallback, t0, box)
+    hit = vector_example_kind(click, symbols, ratio)
+    vex, kind = (hit[0], hit[1]) if hit else (None, None)
     ex_blob: Blob | None = None
     if vex is not None:
         sym_turn = _signed(float(vex.get("rotation_deg") or 0.0))
@@ -794,6 +851,8 @@ def search(
         box_px = (math.floor(p0[0]), math.floor(p0[1]), math.ceil(p1[0]), math.ceil(p1[1]))
         keys = ("family", "box", "centre", "real_in")
         example = {"source": "vector", **{k: vex[k] for k in keys}, "solid": vex.get("solid")}
+        if kind == "square45":
+            example["square45"] = True  # a plate / pier: matches the same rule and size
         example["angle"] = ex_blob.angle if ex_blob else 0.0
         box_corners = [[bx[0], bx[1]], [bx[2], bx[1]], [bx[2], bx[3]], [bx[0], bx[3]]]
         example["rect"] = [list(c) for c in ex_blob.rect] if ex_blob else box_corners
@@ -826,6 +885,36 @@ def search(
                        blob.centre if checked and blob is not None else None)  # fmt: skip
     return _finish(r, ratio, click, symbols, s, grid, fallback, t0, example, vec, box_px,
                    ex_blob, vex, None)  # fmt: skip
+
+
+def _search_box(
+    r: Raster, ratio: float, click: Pt, symbols: list[dict], s: Settings,
+    grid: list[tuple[Pt, Pt]] | None, fallback: Callable[[], list[float]] | None, t0: float,
+    box: Box,
+) -> Result:  # fmt: skip
+    """The example is EXACTLY the box the person shows (their ink or symbol inside it): the template
+    is cut from that box (plus the usual margin), whatever it holds. A stored symbol at the click
+    only supplies the family for the vector matches."""
+    p0, p1 = r.px((box[0], box[1])), r.px((box[2], box[3]))
+    box_px = (math.floor(p0[0]), math.floor(p0[1]), math.ceil(p1[0]), math.ceil(p1[1]))
+    corners = [[box[0], box[1]], [box[2], box[1]], [box[2], box[3]], [box[0], box[3]]]
+    centre = [(box[0] + box[2]) / 2, (box[1] + box[3]) / 2]
+    hit = vector_example_kind(click, symbols, ratio)
+    vex = hit[0] if hit else None
+    if vex is not None and hit is not None:
+        example = {"source": "vector", "family": vex["family"], "solid": vex.get("solid"),
+                   "box": list(box), "centre": centre, "real_in": vex["real_in"], "angle": 0.0,
+                   "rect": corners, "user_box": True}  # fmt: skip
+        if hit[1] == "square45":
+            example["square45"] = True
+        vec = vector_similar(vex | ({"square45": True} if hit[1] == "square45" else {}), symbols)
+    else:
+        example = {"source": "ink", "family": "unknown", "solid": None, "box": list(box),
+                   "centre": centre, "real_in": list(_sides_in(box_px, r, ratio)),
+                   "angle": 0.0, "rect": corners, "user_box": True}  # fmt: skip
+        vec = []
+    return _finish(r, ratio, click, symbols, s, grid, fallback, t0, example, vec, box_px, None,
+                   vex, None)  # fmt: skip
 
 
 def _finish(

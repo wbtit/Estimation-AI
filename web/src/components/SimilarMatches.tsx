@@ -69,6 +69,32 @@ export const SimilarMatches: React.FC<{
             strokeWidth={2 * px}
             strokeDasharray={on ? undefined : `${3 * px} ${2 * px}`}
           />
+          {m.orientation_deg !== null && m.orientation_deg !== undefined && (
+            // Phase 0-column-capture: this match's OWN web direction (green clear, amber unsure)
+            <line
+              data-testid="match-orientation"
+              data-state={m.orientation_state ?? "unsure"}
+              x1={
+                m.centre[0] - Math.cos((m.orientation_deg * Math.PI) / 180) * r
+              }
+              y1={
+                m.centre[1] + Math.sin((m.orientation_deg * Math.PI) / 180) * r
+              }
+              x2={
+                m.centre[0] + Math.cos((m.orientation_deg * Math.PI) / 180) * r
+              }
+              y2={
+                m.centre[1] - Math.sin((m.orientation_deg * Math.PI) / 180) * r
+              }
+              stroke={
+                m.orientation_state === "clear"
+                  ? "var(--ok, #00c853)"
+                  : "var(--amber, #ff9100)"
+              }
+              strokeWidth={2.5 * px}
+              strokeLinecap="round"
+            />
+          )}
           <text
             x={m.centre[0] + r + 2 * px}
             y={m.centre[1] - r}

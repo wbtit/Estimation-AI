@@ -157,6 +157,15 @@ export const BomTab: React.FC<{
                         className={`dot ${r.build_state ?? "none"}`}
                         data-testid="status-dot"
                       />
+                      {r.reference && (
+                        <span
+                          className="ref-tag"
+                          data-testid="reference-tag"
+                          title="Reference: counted on the column plan"
+                        >
+                          Reference
+                        </span>
+                      )}
                     </td>
                     <td>{r.main}</td>
                     <td>{r.category ?? "—"}</td>

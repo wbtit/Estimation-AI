@@ -4,6 +4,8 @@ export class ApiError extends Error {
   constructor(
     readonly status: number,
     message: string,
+    /** the API's machine-readable reason (for example no_scale, raster_page, no_build) */
+    readonly code?: string,
   ) {
     super(message);
   }
@@ -30,7 +32,11 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
       body && typeof body === "object" && "error" in body
         ? String((body as { error: unknown }).error)
         : res.statusText;
-    throw new ApiError(res.status, message);
+    const code =
+      body && typeof body === "object" && "code" in body
+        ? String((body as { code: unknown }).code)
+        : undefined;
+    throw new ApiError(res.status, message, code);
   }
   return body as T;
 }
