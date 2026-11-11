@@ -3,6 +3,7 @@ import { Download, Filter, PanelRight } from "lucide-react";
 import { formatFtIn } from "../lib/ftin";
 import { bomOrder, type Bom } from "../lib/lf";
 import { SummaryList } from "./PropertiesPanel";
+import { HEIGHT_SOURCE_LABEL } from "../lib/column-height";
 
 const lb = (v: number | null) =>
   v === null ? "—" : `${Math.round(v).toLocaleString()} lbs`;
@@ -10,7 +11,8 @@ const lb = (v: number | null) =>
 const STATUS_TEXT: Record<string, string> = {
   found: "Found",
   needs_review: "Needs review",
-  attention: "Attention: not in the total (no size or no support)",
+  attention:
+    "Attention: not in the total until a person approves it (no size or no support)",
 };
 
 const STATUS_NAME: Record<string, string> = {
@@ -152,11 +154,28 @@ export const BomTab: React.FC<{
               <tbody>
                 {rows.map((r) => (
                   <tr key={r.member}>
-                    <td title={STATUS_TEXT[r.build_state ?? ""] ?? "—"}>
+                    <td
+                      title={
+                        r.approved_despite_warning
+                          ? "Approved by a person despite the system's warning (counts in the total)"
+                          : r.approved
+                            ? "Approved by a person"
+                            : (STATUS_TEXT[r.build_state ?? ""] ?? "—")
+                      }
+                    >
                       <span
-                        className={`dot ${r.build_state ?? "none"}`}
+                        className={`dot ${r.approved ? "approved" : (r.build_state ?? "none")}`}
                         data-testid="status-dot"
                       />
+                      {r.approved_despite_warning && (
+                        <span
+                          className="ref-tag"
+                          data-testid="approved-warning-tag"
+                          title="The system flagged this piece (no size or no support); a person approved it"
+                        >
+                          Approved despite warning
+                        </span>
+                      )}
                       {r.reference && (
                         <span
                           className="ref-tag"
@@ -173,7 +192,29 @@ export const BomTab: React.FC<{
                     <td>{r.qty}</td>
                     <td>{r.section_type ?? "—"}</td>
                     <td>{r.section ?? "—"}</td>
-                    <td>{formatFtIn(r.length_mm)}</td>
+                    <td>
+                      {r.no_height ? (
+                        <span
+                          className="amber"
+                          data-testid="no-height"
+                          title="No height: set the column's height or the project default (Properties, Column height)"
+                        >
+                          no height
+                        </span>
+                      ) : (
+                        formatFtIn(r.length_mm)
+                      )}
+                      {r.length_source && (
+                        <span
+                          className="muted"
+                          data-testid="length-source"
+                          title="Where this column's length came from"
+                        >
+                          {" "}
+                          ({HEIGHT_SOURCE_LABEL[r.length_source]})
+                        </span>
+                      )}
+                    </td>
                     <td>{r.grade ?? "—"}</td>
                     <td>{lb(r.weight_lb)}</td>
                   </tr>

@@ -10,7 +10,14 @@ the command line.
 
     cd worker && .venv/bin/python -m measure.p14g_regress --project <project id>
     cd worker && .venv/bin/python -m measure.p14g_regress --session1
-    options: --ref main  --work-dir <folder>  --json <out file>
+    options: --ref main  --work-dir <folder>  --json <out file>  --real-caches
+
+By default the page-ink caches a click needs are REGENERATED into a scratch upload folder (Review 3,
+item 8): its entries link to the real upload folder (read only use), its own `cache/` is empty, so
+the job renders a missing cache there and its stale-cache cleanup can only touch scratch. Each side
+(the ref and this branch) has its own scratch folder. `--real-caches` uses the real folder as it is
+and skips a click whose cache file is missing (the old behaviour). A click whose page has no stored
+symbols on the ref ("the page's symbols are not stored") is a skip, not a crash.
 
 Clicks: the recorded `find_similar` jobs of the project (their `click` points), or, with
 --session1, the estimator's 30 drawn columns of session 1 page 5 (frozen export v1) with the
@@ -116,8 +123,29 @@ def _summ(res: dict) -> dict:
     }
 
 
-def run_items(database_url: str, upload_dir: Path, items: list[Item]) -> list[dict]:
-    """Run each item through the real job function of the `src` package that is importable NOW."""
+def scratch_uploads(real: Path, scratch: Path) -> Path:
+    """A scratch upload folder: links to every entry of the real one but `cache`, and its own empty
+    `cache/page_ink` (so a cache the job writes or deletes is scratch's, never the app's)."""
+    scratch.mkdir(parents=True, exist_ok=True)
+    for entry in real.iterdir():
+        if entry.name == "cache":
+            continue
+        link = scratch / entry.name
+        if not link.exists() and not link.is_symlink():
+            link.symlink_to(entry.resolve(), target_is_directory=entry.is_dir())
+    (scratch / "cache" / "page_ink").mkdir(parents=True, exist_ok=True)
+    return scratch
+
+
+NO_SYMBOLS = "symbols are not stored"
+
+
+def run_items(
+    database_url: str, upload_dir: Path, items: list[Item], regenerate: bool = False
+) -> list[dict]:
+    """Run each item through the real job function of the `src` package that is importable NOW.
+    `regenerate`: a missing page-ink cache is rendered by the job (into `upload_dir`, a scratch
+    folder) instead of the click being skipped."""
     from src.build import col_image
     from src.build.similar_job import run_find_similar
     from src.config import WorkerConfig
@@ -141,23 +169,44 @@ def run_items(database_url: str, upload_dir: Path, items: list[Item]) -> list[di
                 pass
             except ValueError:
                 pass
-            if not col_image.cache_path(upload_dir, cache_run).exists():
+            if not regenerate and not col_image.cache_path(upload_dir, cache_run).exists():
                 out.append({"found": None, "skipped": "no page-ink cache (the job would write it)"})
                 continue
             job = Job("regress", "find_similar", {"sheet_id": it["sheet_id"],
                       "build_run_id": it["build_run_id"], "click": it["click"]}, 1, 1)  # fmt: skip
-            out.append(_summ(run_find_similar(conn, job, cfg)))
+            try:
+                out.append(_summ(run_find_similar(conn, job, cfg)))
+            except ValueError as err:
+                # the ref's job reads the click's own (older) build run, whose symbols may be gone
+                if NO_SYMBOLS not in str(err):
+                    raise
+                conn.rollback()
+                out.append({"found": None, "skipped": "the page's symbols are not stored"})
     return out
 
 
-def _child(src_dir: str, items_file: str, out_file: str, upload_dir: str, database_url: str):
+def _child(
+    src_dir: str,
+    items_file: str,
+    out_file: str,
+    upload_dir: str,
+    database_url: str,
+    regenerate: str = "0",
+):
     sys.path.insert(0, src_dir)
     items = json.loads(Path(items_file).read_text())
-    res = run_items(database_url, Path(upload_dir), items)
+    res = run_items(database_url, Path(upload_dir), items, regenerate == "1")
     Path(out_file).write_text(json.dumps(res))
 
 
-def run_ref(ref: str, work: Path, database_url: str, upload_dir: Path, items: list[Item]):
+def run_ref(
+    ref: str,
+    work: Path,
+    database_url: str,
+    upload_dir: Path,
+    items: list[Item],
+    regenerate: bool = False,
+):
     """The same items through the job function of git ref `ref` (a child process on its own copy
     of worker/src and schema/, so nothing of this branch is imported there)."""
     tree = work / f"ref-{ref.replace('/', '_')}"
@@ -169,7 +218,7 @@ def run_ref(ref: str, work: Path, database_url: str, upload_dir: Path, items: li
     items_file.write_text(json.dumps(items))
     subprocess.run(
         [sys.executable, "-I", str(Path(__file__).resolve()), "--child", str(tree / "worker"),
-         str(items_file), str(out_file), str(upload_dir), database_url],
+         str(items_file), str(out_file), str(upload_dir), database_url, "1" if regenerate else "0"],
         check=True, cwd=WORKER,
     )  # fmt: skip
     return json.loads(out_file.read_text())
@@ -215,7 +264,7 @@ def _show(r: dict) -> str:
 
 def main(argv: list[str]) -> int:
     if len(argv) > 1 and argv[1] == "--child":
-        _child(*argv[2:7])
+        _child(*argv[2:8])
         return 0
     ap = argparse.ArgumentParser()
     ap.add_argument("--project")
@@ -223,6 +272,11 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--ref", default="main")
     ap.add_argument("--work-dir")
     ap.add_argument("--json")
+    ap.add_argument(
+        "--real-caches",
+        action="store_true",
+        help="use the real upload folder's caches as they are (skip a click with no cache)",
+    )
     a = ap.parse_args(argv[1:])
     if bool(a.project) == a.session1:
         ap.error("give exactly one of --project <id> or --session1")
@@ -234,8 +288,14 @@ def main(argv: list[str]) -> int:
         items = session1_items(conn) if a.session1 else project_items(conn, a.project)
     work = Path(a.work_dir) if a.work_dir else Path(tempfile.mkdtemp(prefix="p14g-regress-"))
     work.mkdir(parents=True, exist_ok=True)
-    old = run_ref(a.ref, work, cfg.database_url, cfg.upload_dir, items)
-    new = run_items(cfg.database_url, cfg.upload_dir, items)
+    if a.real_caches:
+        old_uploads = new_uploads = cfg.upload_dir
+    else:
+        old_uploads = scratch_uploads(cfg.upload_dir, work / "uploads-ref")
+        new_uploads = scratch_uploads(cfg.upload_dir, work / "uploads-branch")
+    regenerate = not a.real_caches
+    old = run_ref(a.ref, work, cfg.database_url, old_uploads, items, regenerate)
+    new = run_items(cfg.database_url, new_uploads, items, regenerate)
     res = compare(items, old, new)
     for label, o, n in res["rows"]:
         if o == "skipped":

@@ -3,6 +3,7 @@ import { countRoutes } from './routes/count.js';
 import { buildRoutes } from './routes/build.js';
 import { buildViewRoutes } from './routes/build-views.js';
 import { perimeterAngleRoutes } from './routes/perimeter-angle.js';
+import { columnHeightRoutes } from './routes/column-height.js';
 import { reviewUiRoutes } from './routes/review-ui.js';
 import { healthRoutes, type HealthRouteOptions } from './routes/health.js';
 import { memberActionRoutes } from './routes/member-actions.js';
@@ -36,6 +37,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
   app.register(buildViewRoutes, {});
   app.register(reviewUiRoutes, {});
   app.register(perimeterAngleRoutes, {});
+  app.register(columnHeightRoutes, {});
   app.register(sessionRoutes, {});
   return app;
 }

@@ -84,7 +84,7 @@ export interface PieceView {
   orientation_state: 'clear' | 'unsure' | 'manual' | 'none' | null;
   orientation_source: 'click' | 'match' | 'manual' | 'backfill' | null;
   /** Phase 0 count rule: a column is COUNTED in the BOM only on a page whose role counts columns
-   * (a role with the behaviour column_plan: Column plan, Foundation plan, Pile plan). On any other
+   * (a role with the behaviour column_plan: Foundation / column plan, Pile plan). On any other
    * page it is shown but is "Reference: counted on the column plan", unless the person ticked
    * "Count this column" (a column that starts at that level: a crane column, a post on a transfer
    * beam). `count_column` is that explicit choice (null = the page's default); `page_counts_columns`
@@ -103,6 +103,31 @@ export interface PieceView {
   angle_start_offset_mm: number | null;
   slab_edge_side: 'left' | 'right' | null;
   vertical_leg: 'long' | 'short' | null;
+  /** Review 3 item 4 (columns only): a person's height for this column, its optional top and base
+   * elevations (all mm, null = not given), and the resulting height with its source: top - base
+   * ('schedule') wins over the column's own height ('column'), which wins over the project's
+   * default ('project'); null / null when none is set. Never invented. */
+  column_height_mm: number | null;
+  column_top_mm: number | null;
+  column_base_mm: number | null;
+  height_mm: number | null;
+  height_source: 'schedule' | 'column' | 'project' | null;
+}
+
+/** The height of a column and where it came from: top - base (both set, top above base), else the
+ * column's own height, else the project default, else none. */
+export function columnHeight(
+  topMm: number | null,
+  baseMm: number | null,
+  ownMm: number | null,
+  defaultMm: number | null,
+): { height_mm: number | null; height_source: PieceView['height_source'] } {
+  if (topMm !== null && baseMm !== null && topMm - baseMm > 0)
+    return { height_mm: Math.round((topMm - baseMm) * 10) / 10, height_source: 'schedule' };
+  if (ownMm !== null && ownMm > 0) return { height_mm: ownMm, height_source: 'column' };
+  if (defaultMm !== null && defaultMm > 0)
+    return { height_mm: defaultMm, height_source: 'project' };
+  return { height_mm: null, height_source: null };
 }
 
 /** [width, depth] in inches of a column section from its catalog properties (W/HP/S/M: bf x d;
@@ -167,6 +192,9 @@ export function lineFirstEdits(
         'page_ends',
         'orientation',
         'column_count',
+        'column_height',
+        'column_top',
+        'column_base',
         'angle_length',
         'angle_offset',
         'slab_edge_side',
@@ -215,6 +243,16 @@ export async function loadPieces(
     rows = [...rows, ...more];
   }
   const ids = rows.map((r) => r.id);
+  // Review 3 item 4: the project's default column height (mm), null when not set
+  const projectDefaultMm = num(
+    (
+      await db
+        .selectFrom('projects')
+        .select('default_column_height_mm')
+        .where('id', '=', projectId)
+        .executeTakeFirst()
+    )?.default_column_height_mm,
+  );
   const views = new Map(
     (await loadMemberViews(db, projectId, { memberIds: ids })).map((v) => [v.id, v]),
   );
@@ -406,6 +444,18 @@ export async function loadPieces(
         : (r.slab_edge_side ?? null)) as 'left' | 'right' | null,
       vertical_leg: (lf.has('vertical_leg') ? lf.get('vertical_leg') : (r.vertical_leg ?? null)) as
         'long' | 'short' | null,
+      column_height_mm: v.type === 'column' ? num(lf.get('column_height') as number | null) : null,
+      column_top_mm: v.type === 'column' ? num(lf.get('column_top') as number | null) : null,
+      column_base_mm: v.type === 'column' ? num(lf.get('column_base') as number | null) : null,
+      ...(v.type === 'column'
+        ? columnHeight(
+            num(lf.get('column_top') as number | null),
+            num(lf.get('column_base') as number | null),
+            num(lf.get('column_height') as number | null),
+            // the project's default is a floor height: it never applies to piles (their own length)
+            r.kind === 'Piles' ? null : projectDefaultMm,
+          )
+        : { height_mm: null, height_source: null }),
     });
   }
   // a perimeter angle sits on its parent: ends, length, deleted / ignored / excluded follow it
@@ -460,5 +510,7 @@ export function toBuiltPiece(p: PieceView): BuiltPiece {
     excluded_kind: p.excluded_kind,
     reference: p.reference,
     parent_member_id: p.parent_member_id,
+    height_mm: p.type === 'column' ? p.height_mm : undefined,
+    height_source: p.type === 'column' ? p.height_source : undefined,
   };
 }

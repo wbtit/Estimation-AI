@@ -161,6 +161,11 @@ function fin(over: Partial<PieceView>): PieceView {
     angle_start_offset_mm: null,
     slab_edge_side: null,
     vertical_leg: null,
+    column_height_mm: null,
+    column_top_mm: null,
+    column_base_mm: null,
+    height_mm: null,
+    height_source: null,
     ...over,
   };
 }
@@ -302,6 +307,31 @@ describe('system vs final report', () => {
     });
     expect(r.total.manual_items).toBe(3);
     expect(r.sizes.map((x) => x.size)).toEqual(['W16X26']); // no L / BENT PL row
+  });
+
+  it('lists final pieces a person approved despite the system warning (attention) apart', () => {
+    const r = systemReport(
+      [
+        {
+          sheet_id: 'S',
+          page_index: 0,
+          sheet_number: 'S-1',
+          system: [sys({ member_id: 'a' }), sys({ member_id: 'b', page: [100, 200, 300, 200] })],
+          system_setup: SETUP,
+          final_setup: SETUP,
+          reviewed_by: WHO,
+          reviewed_at: at(10),
+        },
+      ],
+      [
+        fin({ member_id: 'a', approved: true, edited: true, build_state: 'attention' }),
+        fin({ member_id: 'b', build_state: 'attention' }), // not approved: not listed
+        fin({ member_id: 'c', approved: true, build_state: 'attention', deleted: true }),
+      ],
+      [],
+    );
+    expect(r.pages[0]!.approved_despite_warning).toBe(1);
+    expect(r.total.approved_despite_warning).toBe(1);
   });
 
   it('counts minutes per page from gaps on the same page, capped at 5 minutes', () => {

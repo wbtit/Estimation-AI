@@ -35,7 +35,7 @@ def _pdf(dbp: DbProject) -> tuple[str, str]:
 
 def _setup(dbp: DbProject, sheet_id: str, role: str, tos=True, pen=True) -> None:
     """A person's setup of the page's first view (Phase 11c)."""
-    name = {"column_plan": "Column plan", "framing": "Framing plan"}[role]
+    name = {"column_plan": "Foundation / column plan", "framing": "Framing plan"}[role]
     dbp.conn.execute(
         "UPDATE build_views SET role_name = %s, role_confirmed_by = 'tester', box = %s,"
         " box_confirmed_by = 'tester', box_confirmed_at = now(), scale_ratio = 96,"
@@ -114,7 +114,9 @@ def test_a_framing_page_waits_for_the_column_plan_unless_told_there_is_none(dbp:
     plan_id, framing_id = _pdf(dbp)
     _setup(dbp, framing_id, "framing")
     _, out = _run(dbp, framing_id)
-    assert out["refused"] == ["build the column plan page first, or say the job has none"]
+    assert out["refused"] == [
+        "build the foundation / column plan page first, or say the job has none"
+    ]
     _, out = _run(dbp, framing_id, {"no_column_plan": True})
     assert "no_column_plan" in out["notes"]
     # no glyphs on this framing page and no column plan: only beam-to-beam supports (rule c)

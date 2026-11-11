@@ -33,6 +33,12 @@ export interface ProjectsTable {
   perimeter_angle_kind: ColumnType<string | null, string | null | undefined, string | null>;
   perimeter_angle_profile: ColumnType<string | null, string | null | undefined, string | null>;
   perimeter_angle_grade: ColumnType<string | null, string | null | undefined, string | null>;
+  /** Migration 036: the default column height in mm (null = not set). */
+  default_column_height_mm: ColumnType<
+    string | null,
+    number | string | null | undefined,
+    number | string | null
+  >;
   last_opened_at: Timestamp | null;
   created_at: Timestamp;
   updated_at: Timestamp;
@@ -146,6 +152,7 @@ export type BuildRole = 'column_plan' | 'framing';
 export type PageType =
   | 'framing_plan'
   | 'foundation_plan'
+  | 'cover_sheet'
   | 'elevation'
   | 'detail'
   | 'schedule_legend'

@@ -4,7 +4,7 @@ import type { Behaviour, RoleName } from "../lib/lf";
 
 export const BEHAVIOUR_LABEL: Record<Behaviour, string> = {
   framing: "Framing",
-  column_plan: "Column plan",
+  column_plan: "Foundation / column plan",
   none: "Don't build",
 };
 const BEHAVIOURS: Behaviour[] = ["framing", "column_plan", "none"];

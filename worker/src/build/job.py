@@ -194,9 +194,19 @@ def _column_plan(
     elif len(rows) == 1:
         plan = rows[0]
     elif not rows:
-        return None, None, ["build the column plan page first, or say the job has none"], []
+        return (
+            None,
+            None,
+            ["build the foundation / column plan page first, or say the job has none"],
+            [],
+        )
     else:
-        return None, None, ["several column plan pages are built: name one"], []
+        return (
+            None,
+            None,
+            ["several foundation / column plan pages are built: choose one, or None"],
+            [],
+        )
     plan_sheet = str(plan["sheet_id"])
     run = conn.execute(
         "SELECT id FROM build_runs WHERE sheet_id = %s AND status = 'done'"

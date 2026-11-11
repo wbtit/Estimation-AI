@@ -14,7 +14,8 @@ from typing import Any
 
 from src.build.geom import Box
 
-NAME_OF_ROLE = {"column_plan": "Column plan", "framing": "Framing plan"}
+COLUMN_PLAN_ROLE = "Foundation / column plan"  # one role for foundation and column plans (035)
+NAME_OF_ROLE = {"column_plan": COLUMN_PLAN_ROLE, "framing": "Framing plan"}
 # auto mode: the name of a page it does not build, from the page type guess
 NAME_OF_GUESS = {
     "detail": "Detail",
@@ -60,8 +61,6 @@ def role_name(
     """The role name auto mode writes for a proposed role (None = not built). Phase 14a: a detail
     page whose only matched words are SECTION(S) is a Section; any DETAIL or CONNECTION word keeps
     Detail."""
-    if role == "column_plan" and page_type_guess == "foundation_plan":
-        return "Foundation plan"
     if role:
         return NAME_OF_ROLE[role]
     if page_type_guess == "detail" and detail_rules(page_type_reason) == {"section"}:

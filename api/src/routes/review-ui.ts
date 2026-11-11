@@ -76,6 +76,14 @@ import {
 import { parseProfile } from '../review/profile.js';
 import { systemReport, type SetupValues } from '../review/system-report.js';
 import {
+  findSimilarMemberIds,
+  firstSnapshotPerView,
+  proposedPiece,
+  systemPiecesOfSheet,
+  type MemberRow,
+  type PersonSnap,
+} from '../review/person-system-version.js';
+import {
   atStrictness,
   imageJob,
   STRICTNESS_DEFAULT,
@@ -1803,6 +1811,7 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
   // ---- report and answer key ---------------------------------------------------------------------
   async function report(projectId: string) {
     await loadProject(projectId);
+    // auto mode's version, when it ran (a project may never have run it: the click-first flow)
     const auto = await db()
       .selectFrom('auto_builds')
       .select(['id', 'finished_at'])
@@ -1811,31 +1820,89 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
       .orderBy('started_at')
       .limit(1)
       .executeTakeFirst();
-    if (!auto) throw new HttpError(409, { error: 'no system version: auto mode has not run' });
-    const autoSnaps = await db()
-      .selectFrom('build_snapshots')
-      .selectAll()
-      .where('auto_build_id', '=', auto.id)
-      .execute();
-    // session preparation: auto mode only suggests, so a page's system version is the snapshot of
-    // its first person Build frozen before any edit, unless auto mode built the page
+    const autoSnaps = auto
+      ? await db()
+          .selectFrom('build_snapshots')
+          .selectAll()
+          .where('auto_build_id', '=', auto.id)
+          .execute()
+      : [];
     const personSnaps = await db()
       .selectFrom('build_snapshots')
       .selectAll()
       .where('project_id', '=', projectId)
       .where('mode', '=', 'person')
-      .where('before_user_edit', '=', true)
       .orderBy('created_at')
       .execute();
-    const bySheet = new Map(autoSnaps.map((sn) => [sn.sheet_id, sn]));
-    const firstPerson = new Set<string>();
+    if (!auto && personSnaps.length === 0)
+      throw new HttpError(409, {
+        error: 'no system version yet: build a page first (the first Build is the system version)',
+      });
+    type VersionSnap = {
+      sheet_id: string;
+      pieces: SnapshotPiece[];
+      setup: Record<string, unknown>;
+    };
+    const bySheet = new Map<string, VersionSnap>(autoSnaps.map((sn) => [sn.sheet_id, sn]));
+    // a page auto mode built keeps auto mode's version. Every other page: what the system produced
+    // in the person's builds (the first Build of each view) and the Find similar matches it
+    // proposed (review/person-system-version.ts), before any person's edit
+    const needing = new Map<string, PersonSnap[]>();
     for (const sn of personSnaps) {
-      const have = bySheet.get(sn.sheet_id);
-      if (firstPerson.has(sn.sheet_id) || (have && have.setup.built === true)) continue;
-      bySheet.set(sn.sheet_id, sn);
-      firstPerson.add(sn.sheet_id);
+      if (bySheet.get(sn.sheet_id)?.setup.built === true) continue;
+      needing.set(sn.sheet_id, [...(needing.get(sn.sheet_id) ?? []), sn]);
+    }
+    if (needing.size > 0) {
+      const sheetIds = [...needing.keys()];
+      const memberRows = await db()
+        .selectFrom('members')
+        .select([
+          'id',
+          'member_id',
+          'sheet_id',
+          'origin',
+          'type',
+          'kind',
+          'tag_prefix',
+          'tag_number',
+          'profile',
+          'profile_raw',
+          'page_x0',
+          'page_y0',
+          'page_x1',
+          'page_y1',
+          'build_state',
+          'size_state',
+          'support_state',
+          'piece_index',
+        ])
+        .where('project_id', '=', projectId)
+        .where('sheet_id', 'in', sheetIds)
+        .execute();
+      const originOf = new Map(memberRows.map((m) => [m.member_id, m.origin as string]));
+      const byUuid = new Map(memberRows.map((m) => [m.id, m]));
+      const similar = findSimilarMemberIds(
+        await db()
+          .selectFrom('count_actions')
+          .select(['sheet_id', 'detail'])
+          .where('project_id', '=', projectId)
+          .where('action', '=', 'find_similar')
+          .orderBy('created_at')
+          .execute(),
+      );
+      for (const [sheetId, snaps] of needing) {
+        const firsts = firstSnapshotPerView(snaps);
+        const pieces = systemPiecesOfSheet(firsts, originOf);
+        const have = new Set(pieces.map((p) => p.member_id));
+        for (const id of similar.get(sheetId) ?? []) {
+          const m = byUuid.get(id);
+          if (m && !have.has(m.member_id)) pieces.push(proposedPiece(m as MemberRow));
+        }
+        bySheet.set(sheetId, { sheet_id: sheetId, pieces, setup: firsts[0]!.setup });
+      }
     }
     const snaps = [...bySheet.values()];
+    const since = auto?.finished_at ?? personSnaps[0]?.created_at ?? new Date(0);
     const rawSheets = await db()
       .selectFrom('sheets')
       .selectAll()
@@ -1875,10 +1942,14 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
       .selectFrom('count_actions')
       .select(['sheet_id', 'created_at'])
       .where('project_id', '=', projectId)
-      .where('created_at', '>=', auto.finished_at ?? new Date(0))
+      .where('created_at', '>=', since)
       .orderBy('created_at')
       .execute();
-    return { auto_build_id: auto.id, ...systemReport(pages, final, log) };
+    return {
+      auto_build_id: auto?.id ?? null,
+      system_source: auto ? 'auto' : 'person',
+      ...systemReport(pages, final, log),
+    };
   }
 
   app.get<{ Params: { projectId: string } }>(
@@ -1925,6 +1996,7 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
         'Added by person',
         'Added by rebuild',
         'Manual items (angles, bent plates)',
+        'Approved despite warning',
         'Setup changed',
         'Minutes',
         'Saved by',
@@ -1946,6 +2018,7 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
           p.added_by_person,
           p.added_by_rebuild,
           p.manual_items,
+          p.approved_despite_warning,
           p.setup_changed.join(', '),
           p.minutes,
           p.reviewed_by,
@@ -1966,6 +2039,7 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
         t.added_by_person,
         t.added_by_rebuild,
         t.manual_items,
+        t.approved_despite_warning,
         t.pages_with_setup_changes,
         t.minutes,
         t.pages_reviewed,

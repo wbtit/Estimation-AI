@@ -76,6 +76,31 @@ describe('line-first BOM (pure)', () => {
     ]);
   });
 
+  it('an approved piece counts in the main total even in attention, and stays visible as approved despite warning', () => {
+    const b = lineFirstBom(
+      [
+        piece({ member_id: 'ok' }),
+        piece({ member_id: 'warned', build_state: 'attention', support_state: 'none' }),
+        piece({ member_id: 'appr', build_state: 'attention', approved: true }),
+        // approval never overrides a duplicate, an excluded kind, a Reference column
+        piece({ member_id: 'dup', build_state: 'attention', approved: true, duplicate_of: 'ok' }),
+        piece({ member_id: 'jo', build_state: 'attention', approved: true, excluded_kind: true }),
+        piece({ member_id: 'ref', approved: true, reference: true }),
+      ],
+      catalog,
+      new Map(),
+    );
+    const by = (m: string) => b.rows.find((r) => r.member === m)!;
+    expect(by('appr').in_main_total).toBe(true);
+    expect(by('appr').approved_despite_warning).toBe(true);
+    expect(by('warned').in_main_total).toBe(false);
+    expect(by('warned').approved_despite_warning).toBe(false);
+    expect(by('ok').approved_despite_warning).toBe(false);
+    for (const m of ['dup', 'jo', 'ref']) expect(by(m).in_main_total).toBe(false);
+    expect(b.totals.pieces).toBe(2); // ok + the approved one
+    expect(b.attention.pieces).toBe(1); // the unapproved attention piece only
+  });
+
   it('takes the grade a person set for the family, else none', () => {
     const grades = new Map([
       ['W', { family: 'W', grade: 'G-1', set_by: WHO, set_at: '' } as GradeRule],
@@ -249,7 +274,7 @@ describe('build routes (test database)', () => {
     const res = await post(`/sheets/${sheetId}/build`, { who: WHO });
     expect(res.statusCode).toBe(409);
     expect(res.json().reasons).toEqual([
-      'build the column plan page first, or say the job has none',
+      'build the foundation / column plan page first, or say the job has none',
     ]);
     const ok = await post(`/sheets/${sheetId}/build`, { who: WHO, no_column_plan: true });
     expect(ok.statusCode).toBe(202);

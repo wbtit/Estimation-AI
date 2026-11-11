@@ -19,11 +19,15 @@ interface PageReport {
   added_by_person: number;
   added_by_rebuild: number;
   manual_items?: number;
+  approved_despite_warning?: number;
   setup_changed: string[];
   minutes: number;
 }
 
 export interface Report {
+  /** 'auto' (auto mode's version) or 'person' (what the system produced in the person's builds and
+   * Find similar, before their edits: auto mode never ran). */
+  system_source?: "auto" | "person";
   pages: PageReport[];
   total: Omit<
     PageReport,
@@ -54,6 +58,7 @@ const COLS: [keyof PageReport, string][] = [
   ["added_by_person", "Added by person"],
   ["added_by_rebuild", "Added by rebuild"],
   ["manual_items", "Manual items (angles, bent plates)"],
+  ["approved_despite_warning", "Approved despite warning"],
 ];
 
 /** Report: SYSTEM VERSION vs SAVED FINAL, per page and in total, and per size. */
@@ -84,6 +89,13 @@ export const ReportTab: React.FC<{ projectId: string; who?: string }> = ({
           <button className="primary">Export to Excel</button>
         </a>
       </div>
+      {r.system_source === "person" && (
+        <p className="muted" data-testid="report-source">
+          System version = what the system produced in your builds and Find
+          similar, before your edits (auto mode did not run). Pieces you drew
+          are not the system&apos;s.
+        </p>
+      )}
       <table className="grid" data-testid="report-pages">
         <thead>
           <tr>

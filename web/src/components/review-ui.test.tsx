@@ -596,7 +596,11 @@ describe("page card", () => {
 });
 
 const ROLES: RoleName[] = [
-  { name: "Column plan", behaviour: "column_plan", built_in: true },
+  {
+    name: "Foundation / column plan",
+    behaviour: "column_plan",
+    built_in: true,
+  },
   { name: "Framing plan", behaviour: "framing", built_in: true },
   { name: "Roof framing", behaviour: "framing", built_in: true },
   { name: "Detail", behaviour: "none", built_in: true },
@@ -868,6 +872,71 @@ describe("BOM tab", () => {
     );
     expect(rows[2]!.className).toBe("");
   });
+
+  it("an approved piece shows an approved dot, and 'approved despite warning' when the system flagged it", () => {
+    const bom = {
+      rows: [
+        row({
+          member: "a",
+          piecemark: "B1",
+          build_state: "attention",
+          approved: true,
+          approved_despite_warning: true,
+          in_main_total: true,
+        }),
+        row({ member: "b", piecemark: "B2", approved: true }),
+        row({
+          member: "c",
+          piecemark: "B3",
+          build_state: "attention",
+          in_main_total: false,
+        }),
+      ],
+      totals: { pieces: 2, length_mm: 0, weight_lb: 0 },
+      attention: { pieces: 1, length_mm: 0, weight_lb: 0 },
+    };
+    render(<BomTab bom={bom} projectId="p1" />);
+    expect(screen.getAllByTestId("status-dot").map((d) => d.className)).toEqual(
+      ["dot approved", "dot approved", "dot attention"],
+    );
+    expect(screen.getAllByTestId("approved-warning-tag")).toHaveLength(1);
+  });
+});
+
+describe("BOM column length source", () => {
+  it("shows where a column's length came from, and 'no height' (amber) when it has none", () => {
+    const bom = {
+      rows: [
+        row({
+          member: "a",
+          piecemark: "C1",
+          length_mm: 3657.6,
+          length_source: "project",
+        }),
+        row({
+          member: "b",
+          piecemark: "C2",
+          length_mm: 4572,
+          length_source: "column",
+        }),
+        row({
+          member: "c",
+          piecemark: "C3",
+          length_mm: 4000,
+          length_source: "schedule",
+        }),
+        row({ member: "d", piecemark: "C4", length_mm: null, no_height: true }),
+      ],
+      totals: { pieces: 4, length_mm: 0, weight_lb: 0 },
+      attention: { pieces: 0, length_mm: 0, weight_lb: 0 },
+    };
+    render(<BomTab bom={bom} projectId="p1" />);
+    expect(
+      screen.getAllByTestId("length-source").map((e) => e.textContent?.trim()),
+    ).toEqual(["(project default)", "(this column)", "(top − base)"]);
+    expect(screen.getByTestId("no-height").textContent).toBe("no height");
+    expect(screen.getByTestId("no-height").className).toBe("amber");
+  });
 });
 
 describe("report tab", () => {
@@ -924,6 +993,23 @@ describe("report tab", () => {
     await screen.findByText("pen_class");
     expect(screen.getByTestId("report-pages").textContent).toContain("12.5");
     expect(screen.getByTestId("report-sizes").textContent).toContain(`25'-0"`);
+    expect(screen.queryByTestId("report-source")).toBeNull(); // auto mode's version: no note
+  });
+
+  it("says where the system version comes from when auto mode never ran", async () => {
+    stubFetch({
+      "/api/projects/p1/report": {
+        auto_build_id: null,
+        system_source: "person",
+        pages: [],
+        total: {},
+        sizes: [],
+      },
+    });
+    render(<ReportTab projectId="p1" />);
+    expect((await screen.findByTestId("report-source")).textContent).toContain(
+      "auto mode did not run",
+    );
   });
 });
 
@@ -1546,7 +1632,7 @@ describe("polish round: views on the card", () => {
       "Crop:ok",
       "Scale:system",
       "Pen:ok",
-      "Column plan:ok",
+      "Column page:ok",
     ]);
   });
 

@@ -1681,6 +1681,10 @@ table.grid tr.total td {
   background: var(--attention);
 }
 
+.dot.approved {
+  background: var(--approved, #2f6fdd);
+}
+
 .dot.none {
   background: #c5cad6;
 }
@@ -2330,4 +2334,9 @@ table.grid tr.total td {
 .angle-bad {
   color: var(--attention);
   font-size: 12px;
+}
+
+/* Review 3 item 4: a column with no height */
+.amber {
+  color: var(--review, #b7791f);
 }

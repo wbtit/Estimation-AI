@@ -21,6 +21,8 @@ import {
 } from "../lib/lf";
 import { SectionSearch } from "./SectionSearch";
 import { canAddAngle, isAngle } from "../lib/perimeter-angle";
+import { ColumnHeightSection } from "./ColumnHeight";
+import type { ColumnHeightApi } from "../lib/column-height";
 import {
   AngleList,
   AngleSection,
@@ -141,6 +143,8 @@ export const PropertiesPanel: React.FC<{
   pageName?: (sheetId: string) => string;
   /** Phase 0 perimeter angle: Add perimeter angle on beams, the angles under a beam, their edit. */
   perimeter?: PerimeterApi;
+  /** Review 3 item 4: the height of selected columns (their BOM length) and the project default. */
+  columnHeight?: ColumnHeightApi;
 }> = ({
   bomRows,
   sheetId,
@@ -158,6 +162,7 @@ export const PropertiesPanel: React.FC<{
   onOpenPage,
   pageName = (id) => id,
   perimeter,
+  columnHeight,
 }) => {
   const [tab, setTab] = useState<"summary" | "member">(
     selected.length ? "member" : "summary",
@@ -254,6 +259,9 @@ export const PropertiesPanel: React.FC<{
               onEdit={onEdit}
               onDelete={onDelete}
             />
+            {columnHeight && selected.every((p) => p.type === "column") && (
+              <ColumnHeightSection selected={selected} api={columnHeight} />
+            )}
             {perimeter && canAddAngle(selected) && (
               <>
                 <PerimeterAdd selected={selected} api={perimeter} />

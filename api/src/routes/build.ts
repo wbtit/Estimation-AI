@@ -5,6 +5,7 @@
 //   POST /api/projects/:projectId/sheets/:sheetId/build-setup/tos          { tos_mm, raw?, source, who }
 //   POST /api/projects/:projectId/sheets/:sheetId/build-setup/pen-class    { pen_class, source, who }
 //   POST /api/projects/:projectId/sheets/:sheetId/build-setup/no-beams     { who } beam pen = none
+//   POST /api/projects/:projectId/sheets/:sheetId/build-setup/confirm-pen  { who } confirm the pens as they are
 //   POST /api/projects/:projectId/sheets/:sheetId/build-setup/pick-pen     { x, y, who }  click a line
 //   POST /api/projects/:projectId/sheets/:sheetId/build-setup/column-plan  { sheet_id | null, who }
 //   GET  /api/projects/:projectId/sheets/:sheetId/build                    page build state
@@ -626,6 +627,45 @@ export const buildRoutes: FastifyPluginAsync<BuildRouteOptions> = async (app, op
     },
   );
 
+  // Confirm the view's beam pens as they are (a suggested pen that is already right): a person's
+  // confirmation, one setup action. 409 when the view has no pen to confirm.
+  app.post<{
+    Params: { projectId: string; sheetId: string };
+    Body: { view_id?: string; who: string };
+  }>(
+    '/api/projects/:projectId/sheets/:sheetId/build-setup/confirm-pen',
+    {
+      schema: {
+        params: sheetParams,
+        body: {
+          type: 'object',
+          required: ['who'],
+          additionalProperties: false,
+          properties: { view_id: uuid, who },
+        },
+      },
+    },
+    async (request) => {
+      const { s, v } = await target(
+        request.params.projectId,
+        request.params.sheetId,
+        request.body.view_id,
+      );
+      const editor = who_(request.body.who);
+      const pens = v.pens.map((p) => p.pen_class);
+      if (pens.length === 0)
+        throw new HttpError(409, { error: 'this view has no beam pen to confirm', code: 'no_pen' });
+      await confirm(s, v, 'pen_class', pens, pens, {}, editor, 'setup', async (trx) => {
+        await trx
+          .updateTable('view_pens')
+          .set({ source: 'person', confirmed_by: editor, confirmed_at: new Date() } as never)
+          .where('view_id', '=', v.row.id)
+          .execute();
+      });
+      return { ok: true, pens };
+    },
+  );
+
   app.post<{
     Params: { projectId: string; sheetId: string };
     Body: { sheet_id?: string | null; plan_view_id?: string | null; view_id?: string; who: string };
@@ -784,11 +824,16 @@ export const buildRoutes: FastifyPluginAsync<BuildRouteOptions> = async (app, op
           // Phase 14f: a named column plan that is not built is not a reason to refuse: the
           // worker builds the page without column supports and notes a warning
           if (!named) {
-            if (others.length !== 1 && allowSystem) inputs.no_column_plan = true;
+            // Review 3 item 2: exactly one built page is linked by itself (the worker takes the
+            // only one); none: the review UI's build goes on without column supports; several:
+            // ask which one (or None)
+            if (others.length === 0 && allowSystem) inputs.no_column_plan = true;
             else if (others.length === 0)
-              reasons.push('build the column plan page first, or say the job has none');
+              reasons.push(
+                'build the foundation / column plan page first, or say the job has none',
+              );
             else if (others.length > 1)
-              reasons.push('several column plan pages are built: name one');
+              reasons.push('several foundation / column plan pages are built: choose one, or None');
           }
         }
         if (!file || file.scan_status !== 'done') reasons.push('the PDF scan is not finished');
@@ -938,6 +983,7 @@ export const buildRoutes: FastifyPluginAsync<BuildRouteOptions> = async (app, op
         'Weight (lb)',
         'State',
         'Unit wt (lb/ft)',
+        'Length source',
       ]);
       for (const r of b.rows)
         ws.addRow([
@@ -950,8 +996,21 @@ export const buildRoutes: FastifyPluginAsync<BuildRouteOptions> = async (app, op
           r.length_mm === null ? null : ftIn(r.length_mm),
           r.grade,
           r.weight_lb,
-          r.reference ? 'reference (counted on the column plan)' : r.build_state,
+          r.reference
+            ? 'reference (counted on the column plan)'
+            : r.approved_despite_warning
+              ? 'approved despite warning (in the total)'
+              : r.build_state,
           r.unit_w_lb_ft,
+          r.no_height
+            ? 'no height'
+            : r.length_source === 'schedule'
+              ? 'schedule (top - base)'
+              : r.length_source === 'column'
+                ? 'column'
+                : r.length_source === 'project'
+                  ? 'project default'
+                  : null,
         ]);
       // Phase 0 perimeter angle: its own lines by profile (count, total length, weights)
       if (b.angles.length > 0) {
@@ -984,6 +1043,14 @@ export const buildRoutes: FastifyPluginAsync<BuildRouteOptions> = async (app, op
         null,
         Math.round(b.totals.weight_lb),
       ]);
+      const warned = b.rows.filter((r) => r.in_main_total && r.approved_despite_warning);
+      if (warned.length > 0)
+        ws.addRow([
+          'of which approved by a person despite the system warning',
+          null,
+          null,
+          warned.reduce((n, r) => n + r.qty, 0),
+        ]);
       ws.addRow([
         'ATTENTION (not in the total)',
         null,

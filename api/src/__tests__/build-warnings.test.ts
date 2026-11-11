@@ -48,7 +48,7 @@ describe('Build with a column plan that is not built (test database)', () => {
       .execute();
     const box = JSON.stringify({ x0: 0, y0: 0, x1: 1000, y1: 800 });
     const planView = await setFirstView(db, planId, {
-      role_name: 'Column plan',
+      role_name: 'Foundation / column plan',
       box,
       scale_ratio: 96,
     });

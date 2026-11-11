@@ -16,7 +16,8 @@
 //                review UI and the Excel export show lb and ft-in (Phase 11b owner decision).
 //
 // Totals follow the existing rule: rows in "attention" (no size, or no support) stay out of the
-// main total and are summed on their own line; "found" and "needs review" rows are in it.
+// main total and are summed on their own line; "found" and "needs review" rows are in it. A row a
+// person APPROVED is in the main total even in "attention" (Review 3: approved despite warning).
 import type { CatalogLookup } from '../catalog/lookup.js';
 import type { GradeRule } from './grades.js';
 import { familyOf } from './grades.js';
@@ -51,6 +52,9 @@ export interface BuiltPiece {
   reference?: boolean;
   /** Phase 0 perimeter angle: the beam it sits on (null / undefined: not an angle). */
   parent_member_id?: string | null;
+  /** Review 3 item 4: a column's height (mm) and its source; null = no height (no length). */
+  height_mm?: number | null;
+  height_source?: 'schedule' | 'column' | 'project' | null;
 }
 
 export interface LineFirstBomRow {
@@ -80,6 +84,13 @@ export interface LineFirstBomRow {
   excluded: boolean;
   /** Phase 0 count rule: "Reference: counted on the column plan": shown, in no total. */
   reference: boolean;
+  /** Review 3: a person approved a piece the system flagged (attention); it counts in the total
+   * and stays visible as "approved despite warning". */
+  approved_despite_warning: boolean;
+  /** Review 3 item 4: where a column's length came from (null: not a column, or no height). */
+  length_source: 'schedule' | 'column' | 'project' | null;
+  /** A column (or pile) with no height from any source: shown amber, never a made-up length. */
+  no_height: boolean;
   /** Phase 0 perimeter angle: a perimeter angle on a beam (its own BOM line by profile). */
   perimeter_angle: boolean;
 }
@@ -124,6 +135,8 @@ export interface LineFirstBom {
 }
 
 function lengthMm(p: BuiltPiece): number | null {
+  // a column has a point, not two ends: its length is its height (never invented)
+  if (p.type === 'column') return p.height_mm && p.height_mm > 0 ? p.height_mm : null;
   if (!p.start || !p.end) return null;
   const d = Math.hypot(p.end[0] - p.start[0], p.end[1] - p.start[1], p.end[2] - p.start[2]);
   return d > 0 ? d : null;
@@ -196,8 +209,17 @@ export function lineFirstBom(
       size_state: p.size_state,
       support_state: p.support_state,
       piece_index: p.piece_index,
+      // a person's approval counts the piece even when the system flagged it (attention); a
+      // duplicate, a kind outside the totals, a Reference column, or a piece whose beam is any of
+      // these (loadPieces passes the parent's state to an angle) never counts
       in_main_total:
-        p.build_state !== 'attention' && !p.duplicate_of && !p.excluded_kind && !p.reference,
+        (p.build_state !== 'attention' || p.approved === true) &&
+        !p.duplicate_of &&
+        !p.excluded_kind &&
+        !p.reference,
+      approved_despite_warning: p.approved === true && p.build_state === 'attention',
+      length_source: p.type === 'column' && length !== null ? (p.height_source ?? null) : null,
+      no_height: p.type === 'column' && length === null,
       duplicate_of: p.duplicate_of ?? null,
       excluded: (Boolean(p.duplicate_of) || p.excluded_kind === true) && p.reference !== true,
       reference: p.reference === true,
