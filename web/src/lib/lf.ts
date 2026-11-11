@@ -289,6 +289,15 @@ export interface Piece {
   evidence: SizeEvidence | null;
   /** The view the piece belongs to; null = the page's first view. */
   build_view_id?: string | null;
+  /** Phase 0 perimeter angle: the beam it sits on (null / absent: not an angle), that beam's tag,
+   * the typed real length (null = follows the whole beam), the start offset from the beam's start
+   * and the optional 3D hints. Its ends, length and deleted / ignored are its parent's. */
+  parent_member_id?: string | null;
+  parent_tag?: string | null;
+  angle_length_mm?: number | null;
+  angle_start_offset_mm?: number | null;
+  slab_edge_side?: "left" | "right" | null;
+  vertical_leg?: "long" | "short" | null;
 }
 
 export interface GridLine {
@@ -334,9 +343,26 @@ export interface BomRow {
    * steel totals (Joist). */
   excluded?: boolean;
   duplicate_of?: string | null;
+  /** Phase 0 perimeter angle: this row is a perimeter angle on a beam. */
+  perimeter_angle?: boolean;
+}
+
+/** Phase 0 perimeter angle: the angles of the main total by profile. */
+export interface AngleLine {
+  category: string | null;
+  section: string | null;
+  /** 'angle' (AISC L shape) or 'bent_plate' (custom made). */
+  sub_type?: "angle" | "bent_plate";
+  qty: number;
+  length_mm: number | null;
+  unit_w_lb_ft: number | null;
+  grade: string | null;
+  weight_kg: number | null;
+  weight_lb: number | null;
 }
 
 export interface Bom {
+  angles?: AngleLine[];
   rows: BomRow[];
   totals: { pieces: number; length_mm: number; weight_lb: number };
   attention: { pieces: number; length_mm: number; weight_lb: number };
@@ -452,6 +478,7 @@ export function pieceAt(
   let best: { d: number; piece: Piece } | null = null;
   for (const piece of pieces) {
     if (!piece.a || !visible(piece, layers)) continue;
+    // Phase 0 perimeter angle: a beam wins a tie with the angle that lies along it
     const d = piece.b
       ? pointSegDist(p, piece.a, piece.b)
       : Math.hypot(p[0] - piece.a[0], p[1] - piece.a[1]);
@@ -460,8 +487,8 @@ export function pieceAt(
       !best ||
       d < best.d - 1e-9 ||
       (Math.abs(d - best.d) <= 1e-9 &&
-        isColumn(piece) &&
-        !isColumn(best.piece));
+        ((isColumn(piece) && !isColumn(best.piece)) ||
+          (!piece.parent_member_id && !!best.piece.parent_member_id)));
     if (better) best = { d, piece };
   }
   return best?.piece ?? null;
@@ -475,8 +502,14 @@ export function piecesInBox(
 ): Piece[] {
   const inside = (q: Pt2) =>
     q[0] >= box.x0 && q[0] <= box.x1 && q[1] >= box.y0 && q[1] <= box.y1;
+  // a perimeter angle is never box-selected with its beam (a size edit would change the angle too)
   return pieces.filter(
-    (p) => p.a && visible(p, layers) && inside(p.a) && (!p.b || inside(p.b)),
+    (p) =>
+      p.a &&
+      !p.parent_member_id &&
+      visible(p, layers) &&
+      inside(p.a) &&
+      (!p.b || inside(p.b)),
   );
 }
 
@@ -991,6 +1024,8 @@ export interface Summary {
   /** Phase 12b: piles and joists apart (joists are outside the steel totals). */
   piles: number;
   joists: number;
+  /** Phase 0 perimeter angle: perimeter angles apart (never counted as beams). */
+  angles: number;
   tons: number;
 }
 
@@ -1006,6 +1041,7 @@ export function summary(
     braces: 0,
     piles: 0,
     joists: 0,
+    angles: 0,
     tons: 0,
   };
   let lb = 0;
@@ -1013,7 +1049,8 @@ export function summary(
     if (sheetId !== undefined && r.sheet_id !== sheetId) continue;
     if (r.duplicate_of) continue;
     const cat = (r.category ?? "").toLowerCase();
-    if (cat === "column") out.columns += r.qty;
+    if (r.perimeter_angle) out.angles += r.qty;
+    else if (cat === "column") out.columns += r.qty;
     else if (cat === "piles") out.piles += r.qty;
     else if (cat === "joist") out.joists += r.qty;
     else if (cat.includes("brace")) out.braces += r.qty;

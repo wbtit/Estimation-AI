@@ -20,6 +20,7 @@
 import type { CatalogLookup } from '../catalog/lookup.js';
 import type { GradeRule } from './grades.js';
 import { familyOf } from './grades.js';
+import { ANGLE_GRADE, bentPlateKgPerM, parseBentPlate } from './perimeter-angle.js';
 import type { ShapeFamily } from '../db/types.js';
 
 export const KG_PER_LB = 0.45359237;
@@ -46,6 +47,8 @@ export interface BuiltPiece {
   duplicate_of?: string | null;
   /** Phase 12b: a kind outside the steel totals (Joist). */
   excluded_kind?: boolean;
+  /** Phase 0 perimeter angle: the beam it sits on (null / undefined: not an angle). */
+  parent_member_id?: string | null;
 }
 
 export interface LineFirstBomRow {
@@ -73,6 +76,8 @@ export interface LineFirstBomRow {
   /** Phase 12b: a duplicate column or a kind outside the steel totals: in neither total. */
   duplicate_of: string | null;
   excluded: boolean;
+  /** Phase 0 perimeter angle: a perimeter angle on a beam (its own BOM line by profile). */
+  perimeter_angle: boolean;
 }
 
 export interface LineFirstBomTotal {
@@ -85,6 +90,22 @@ export interface LineFirstBomTotal {
   weight_lb: number;
 }
 
+/** Phase 0 perimeter angle: the angles that are in the main total, by profile. */
+export interface AngleLine {
+  /** The scope kind of the line (default 'Deck edge Angle / Bent plate'; the project may rename). */
+  category: string | null;
+  section: string | null;
+  /** 'angle' (a catalog L shape) or 'bent_plate' (custom made; weight from the formula). */
+  sub_type: 'angle' | 'bent_plate';
+  qty: number;
+  /** Total length, mm (null: no angle of the profile has a length). */
+  length_mm: number | null;
+  unit_w_lb_ft: number | null;
+  grade: string | null;
+  weight_kg: number | null;
+  weight_lb: number | null;
+}
+
 export interface LineFirstBom {
   rows: LineFirstBomRow[];
   totals: LineFirstBomTotal;
@@ -92,6 +113,8 @@ export interface LineFirstBom {
   /** Phase 12b: duplicate columns and kinds outside the steel totals (Joist), shown apart. */
   excluded: LineFirstBomTotal;
   by_category: (LineFirstBomTotal & { category: string | null })[];
+  /** Phase 0 perimeter angle: count, total length, unit weight and total weight by profile. */
+  angles: AngleLine[];
 }
 
 function lengthMm(p: BuiltPiece): number | null {
@@ -128,30 +151,35 @@ export function lineFirstBom(
   pieces: readonly BuiltPiece[],
   catalog: CatalogLookup | null,
   grades: Map<ShapeFamily, GradeRule>,
+  /** The grade of perimeter angles and bent plates (the project's own, else A36). */
+  manualGrade: string = ANGLE_GRADE,
 ): LineFirstBom {
   const rows = pieces.map((p): LineFirstBomRow => {
     const length = lengthMm(p);
     const hit = catalog?.find(p.profile ?? p.profile_raw) ?? null;
     const shape = hit && hit.found ? hit.shape : null;
+    // a perimeter bent plate is not in the catalog: its weight is the estimator's formula
+    const bent = p.parent_member_id ? parseBentPlate(p.profile ?? p.profile_raw) : null;
+    const kgPerM = shape ? shape.weight_kg_per_m : bent ? bentPlateKgPerM(bent) : null;
     const family = familyOf({ type: p.type, profile: p.profile });
     const weight =
-      length !== null && shape !== null
-        ? p.quantity * (length / 1000) * shape.weight_kg_per_m
-        : null;
+      length !== null && kgPerM !== null ? p.quantity * (length / 1000) * kgPerM : null;
     return {
       main: 1,
       category: p.kind,
       piecemark: p.tag,
       qty: p.quantity,
-      section_type: shape?.family ?? null,
+      section_type: shape?.family ?? (bent ? 'BENT PL' : null),
       section: shape?.shape_name ?? p.profile ?? p.profile_raw,
       length_mm: length === null ? null : Math.round(length * 10) / 10,
-      grade: family ? (grades.get(family)?.grade ?? null) : null,
+      grade: p.parent_member_id ? manualGrade : family ? (grades.get(family)?.grade ?? null) : null,
       weight_kg: weight === null ? null : Math.round(weight * 100) / 100,
       weight_lb: weight === null ? null : Math.round((weight / KG_PER_LB) * 100) / 100,
       unit_w_lb_ft:
         shape === null
-          ? null
+          ? bent
+            ? Math.round(((bentPlateKgPerM(bent) * 0.3048) / KG_PER_LB) * 1000) / 1000
+            : null
           : (shape.weight_lb_per_ft ??
             Math.round(((shape.weight_kg_per_m * 0.3048) / KG_PER_LB) * 1000) / 1000),
       member: p.member_id,
@@ -165,6 +193,7 @@ export function lineFirstBom(
       in_main_total: p.build_state !== 'attention' && !p.duplicate_of && !p.excluded_kind,
       duplicate_of: p.duplicate_of ?? null,
       excluded: Boolean(p.duplicate_of) || p.excluded_kind === true,
+      perimeter_angle: Boolean(p.parent_member_id),
     };
   });
   rows.sort(
@@ -190,5 +219,50 @@ export function lineFirstBom(
   const by_category = [...byCat.entries()]
     .map(([category, t]) => ({ category, ...t }))
     .sort((a, b) => (a.category ?? '').localeCompare(b.category ?? ''));
-  return { rows, totals, attention, excluded, by_category };
+  return { rows, totals, attention, excluded, by_category, angles: angleLines(rows) };
+}
+
+/** The perimeter angles in the main total, grouped by kind and profile (a row without a length or
+ * a weight counts in qty but adds nothing to the sums, as everywhere in the BOM). */
+function angleLines(rows: readonly LineFirstBomRow[]): AngleLine[] {
+  const by = new Map<string, AngleLine>();
+  for (const r of rows) {
+    if (!r.perimeter_angle || !r.in_main_total || r.excluded) continue;
+    const key = `${r.category ?? ''}|${r.section ?? ''}`;
+    const l =
+      by.get(key) ??
+      ({
+        category: r.category,
+        section: r.section,
+        sub_type: r.section_type === 'BENT PL' ? 'bent_plate' : 'angle',
+        qty: 0,
+        length_mm: null,
+        unit_w_lb_ft: r.unit_w_lb_ft,
+        grade: r.grade,
+        weight_kg: null,
+        weight_lb: null,
+      } satisfies AngleLine);
+    l.qty += r.qty;
+    if (r.length_mm !== null) l.length_mm = (l.length_mm ?? 0) + r.length_mm * r.qty;
+    if (r.weight_kg !== null) {
+      l.weight_kg = (l.weight_kg ?? 0) + r.weight_kg;
+      l.weight_lb = (l.weight_lb ?? 0) + (r.weight_lb ?? 0);
+    }
+    by.set(key, l);
+  }
+  const r1 = (v: number | null) => (v === null ? null : Math.round(v * 10) / 10);
+  const r2 = (v: number | null) => (v === null ? null : Math.round(v * 100) / 100);
+  return [...by.values()]
+    .map((l) => ({
+      ...l,
+      length_mm: r1(l.length_mm),
+      weight_kg: r2(l.weight_kg),
+      weight_lb: r2(l.weight_lb),
+    }))
+    .sort(
+      (a, b) =>
+        (a.category ?? '').localeCompare(b.category ?? '') ||
+        a.sub_type.localeCompare(b.sub_type) ||
+        (a.section ?? '').localeCompare(b.section ?? '', undefined, { numeric: true }),
+    );
 }

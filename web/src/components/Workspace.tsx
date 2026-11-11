@@ -46,6 +46,8 @@ import { Canvas, type PickMode, type Tool } from "./Canvas";
 import { PageCard, type PageActions } from "./PageCard";
 import { PropertiesPanel, type Kind, type PieceEdit } from "./PropertiesPanel";
 import { ReportTab } from "./ReportTab";
+import type { PerimeterApi } from "./PerimeterAngle";
+import type { AngleOptions } from "../lib/perimeter-angle";
 import { SessionControl } from "./SessionControl";
 import { useTagRenumber } from "./TagRenumber";
 import { pingDue } from "../lib/session";
@@ -91,6 +93,7 @@ export const Workspace: React.FC<{
   const [data, setData] = useState<LineFirstPage | null>(null);
   const [bom, setBom] = useState<Bom | null>(null);
   const [kinds, setKinds] = useState<Kind[]>([]);
+  const [angleOptions, setAngleOptions] = useState<AngleOptions | null>(null);
   const [roles, setRoles] = useState<RoleName[]>([]);
   const loadRoles = useCallback(
     () =>
@@ -225,6 +228,9 @@ export const Workspace: React.FC<{
     void loadPages();
     void loadBom();
     void loadRoles();
+    api<AngleOptions>(
+      `/api/projects/${projectId}/perimeter-angles/options`,
+    ).then(setAngleOptions, () => undefined);
   }, [projectId]);
 
   const pickPen = (p: Pt2, mode: PickMode) => {
@@ -625,6 +631,53 @@ export const Workspace: React.FC<{
           ? `${selected.size} unapproved`
           : undefined,
     );
+  // Phase 0 perimeter angle: every add / edit / remove is one recorded, undoable action
+  const loadAngleOptions = () =>
+    api<AngleOptions>(
+      `/api/projects/${projectId}/perimeter-angles/options`,
+    ).then(setAngleOptions, () => undefined);
+  const perimeter: PerimeterApi = {
+    options: angleOptions,
+    pieces,
+    onAdd: (beamIds, form) =>
+      void act(
+        send("POST", `/api/projects/${projectId}/line-first/perimeter-angles`, {
+          who,
+          beam_ids: beamIds,
+          ...form,
+        }).then(loadAngleOptions),
+        `${beamIds.length} perimeter angle${beamIds.length === 1 ? "" : "s"} added (Undo takes ${beamIds.length === 1 ? "it" : "them"} back)`,
+      ),
+    onEdit: (ids, patch) =>
+      void act(
+        send(
+          "POST",
+          `/api/projects/${projectId}/line-first/perimeter-angles/edit`,
+          { who, member_ids: ids, ...patch },
+        ).then(loadAngleOptions),
+      ),
+    onSetGrade: (grade) =>
+      void send("POST", `/api/projects/${projectId}/perimeter-angles/grade`, {
+        who,
+        grade,
+      }).then(() => {
+        say(
+          grade === null
+            ? "Grade of angles and bent plates back to the default (A36)"
+            : `Grade of angles and bent plates set to ${grade}`,
+        );
+        return Promise.all([loadAngleOptions(), loadBom()]);
+      }, fail),
+    onSelect: (ids) => setSelected(new Set(ids)),
+    onRemove: (ids) =>
+      void act(
+        send("POST", `/api/projects/${projectId}/line-first/pieces/delete`, {
+          who,
+          member_ids: ids,
+        }),
+        `${ids.length} removed (Undo puts ${ids.length === 1 ? "it" : "them"} back)`,
+      ),
+  };
   /** Save page; with red or orange members left, ask first (Approve all and save / Save only). */
   const [saveAsk, setSaveAsk] = useState<ReturnType<
     typeof remainingIssues
@@ -1076,6 +1129,7 @@ export const Workspace: React.FC<{
             crop={view ? view.box : (data?.crop ?? page?.setup.crop ?? null)}
             onEdit={(e) => void editSelected(e)}
             onDelete={deleteSelected}
+            perimeter={perimeter}
             onCropTool={() => askTool("crop")}
             onResetCrop={
               page ? () => resetFullPage(page, view?.id ?? null) : undefined

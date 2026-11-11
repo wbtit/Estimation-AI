@@ -387,7 +387,9 @@ def _touched_rows(conn, sheet_id: str, view: View) -> dict[str, dict[str, Any]]:
     rows = conn.execute(
         "SELECT m.id, m.member_id, m.review_status, m.count_state, m.page_x0, m.page_y0,"
         " m.page_x1, m.page_y1,"
-        " EXISTS (SELECT 1 FROM member_edits e WHERE e.member_id = m.id) AS has_edit"
+        " (EXISTS (SELECT 1 FROM member_edits e WHERE e.member_id = m.id)"
+        # a beam a person put a perimeter angle on is touched (a rebuild must not replace it)
+        " OR EXISTS (SELECT 1 FROM members c WHERE c.parent_member_id = m.id)) AS has_edit"
         " FROM members m WHERE m.sheet_id = %s AND m.member_id LIKE 'LF-%%'"
         " AND (m.build_view_id = %s OR (m.build_view_id IS NULL AND %s))",
         (sheet_id, view.id, view.first),
@@ -488,7 +490,8 @@ def store(
     kept = (
         "SELECT {col} FROM members m WHERE m.sheet_id = %s AND m.{col} IS NOT NULL AND ("
         " m.review_status <> 'unreviewed' OR m.count_state <> 'suggested'"
-        " OR EXISTS (SELECT 1 FROM member_edits e WHERE e.member_id = m.id))"
+        " OR EXISTS (SELECT 1 FROM member_edits e WHERE e.member_id = m.id)"
+        " OR EXISTS (SELECT 1 FROM members c WHERE c.parent_member_id = m.id))"
     )
     of_view = (
         "build_run_id IS DISTINCT FROM %s AND ((build_run_id IS NULL AND %s) OR build_run_id IN"

@@ -74,6 +74,7 @@ import {
   type Pt2,
   type SheetLines,
 } from "../lib/lf";
+import { ANGLE_OFFSET_PX, sideNormal } from "../lib/perimeter-angle";
 import { snapPoint } from "../lib/snap";
 import {
   nearestSymbol,
@@ -556,9 +557,10 @@ export const Canvas: React.FC<CanvasProps> = (props) => {
     [tool, lines, pens, crop, view],
   );
 
+  // a perimeter angle's ends are its beam's: no end handles on it
   const single =
     selected.size === 1
-      ? (pieces.find((p) => selected.has(p.id)) ?? null)
+      ? (pieces.find((p) => selected.has(p.id) && !p.parent_member_id) ?? null)
       : null;
 
   const exclusionAt = (p: Pt2) =>
@@ -1661,6 +1663,48 @@ export const PieceMark: React.FC<{
           </text>
         )}
         {flag && <FlagMark at={mid} px={px} colour={flag} />}
+      </g>
+    );
+  }
+  if (p.parent_member_id && p.b) {
+    // Phase 0 perimeter angle: a thin line of its own colour beside its beam, on the slab-edge side
+    const [nx, ny] = sideNormal(p.a, p.b, p.slab_edge_side ?? null);
+    const o = ANGLE_OFFSET_PX * px;
+    const aseg = {
+      x1: p.a[0] + nx * o,
+      y1: p.a[1] + ny * o,
+      x2: p.b[0] + nx * o,
+      y2: p.b[1] + ny * o,
+    };
+    const aw = (wide ? 3 : 2) * px;
+    const atip = [
+      `Perimeter angle ${p.tag ?? ""} ${p.profile ?? "no size"}`.trim(),
+      p.length_mm !== null ? formatFtIn(p.length_mm) : "",
+      p.parent_tag ? `on beam ${p.parent_tag}` : "",
+      p.slab_edge_side ? `slab edge: ${p.slab_edge_side} of the beam` : "",
+      p.vertical_leg ? `vertical leg: ${p.vertical_leg}` : "",
+    ]
+      .filter(Boolean)
+      .join("\n");
+    return (
+      <g
+        data-testid={`angle-${p.tag ?? p.id}`}
+        data-angle="1"
+        data-state={state}
+      >
+        <title>{atip}</title>
+        {on && (
+          <line
+            {...aseg}
+            stroke="var(--select)"
+            strokeWidth={aw + 4 * px}
+            strokeOpacity={0.7}
+            strokeLinecap="round"
+          />
+        )}
+        <line {...aseg} stroke="#fff" strokeWidth={aw + 1.5 * px} />
+        <line {...aseg} stroke="var(--angle)" strokeWidth={aw} />
+        <line {...aseg} stroke="transparent" strokeWidth={8 * px} />
       </g>
     );
   }

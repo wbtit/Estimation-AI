@@ -35,6 +35,7 @@ import {
 } from '../review/build-views.js';
 import { XLSX_MIME } from '../excel/index.js';
 import { loadGrades } from '../review/grades.js';
+import { angleGradeOf } from '../review/perimeter-angle.js';
 import { lineFirstBom } from '../review/line-first-bom.js';
 import { counted, effectiveState, loadPieces, toBuiltPiece } from '../review/line-first-pieces.js';
 import { logCountAction } from '../review/count-log.js';
@@ -886,13 +887,13 @@ export const buildRoutes: FastifyPluginAsync<BuildRouteOptions> = async (app, op
   async function bom(projectId: string) {
     const project = await db()
       .selectFrom('projects')
-      .select('id')
+      .select(['id', 'perimeter_angle_grade'])
       .where('id', '=', projectId)
       .executeTakeFirst();
     if (!project) throw new HttpError(404, { error: 'project not found' });
     const pieces = (await loadPieces(db(), projectId)).filter(counted).map(toBuiltPiece);
     const catalog = await defaultCatalogLookup(db());
-    return lineFirstBom(pieces, catalog, await loadGrades(db(), projectId));
+    return lineFirstBom(pieces, catalog, await loadGrades(db(), projectId), angleGradeOf(project));
   }
 
   app.get<{ Params: { projectId: string } }>(
@@ -936,6 +937,7 @@ export const buildRoutes: FastifyPluginAsync<BuildRouteOptions> = async (app, op
         'Grade',
         'Weight (lb)',
         'State',
+        'Unit wt (lb/ft)',
       ]);
       for (const r of b.rows)
         ws.addRow([
@@ -949,7 +951,27 @@ export const buildRoutes: FastifyPluginAsync<BuildRouteOptions> = async (app, op
           r.grade,
           r.weight_lb,
           r.build_state,
+          r.unit_w_lb_ft,
         ]);
+      // Phase 0 perimeter angle: its own lines by profile (count, total length, weights)
+      if (b.angles.length > 0) {
+        ws.addRow([]);
+        ws.addRow(['PERIMETER ANGLES AND BENT PLATES by size (in the total above)']);
+        for (const a of b.angles)
+          ws.addRow([
+            1,
+            a.category,
+            null,
+            a.qty,
+            a.sub_type === 'bent_plate' ? 'BENT PL' : 'L',
+            a.section,
+            a.length_mm === null ? null : ftIn(a.length_mm),
+            a.grade,
+            a.weight_lb,
+            null,
+            a.unit_w_lb_ft,
+          ]);
+      }
       ws.addRow([]);
       ws.addRow([
         'TOTAL (found and needs review)',

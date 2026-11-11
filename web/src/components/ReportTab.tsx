@@ -18,6 +18,7 @@ interface PageReport {
   removed_by_rebuild: number;
   added_by_person: number;
   added_by_rebuild: number;
+  manual_items?: number;
   setup_changed: string[];
   minutes: number;
 }
@@ -52,6 +53,7 @@ const COLS: [keyof PageReport, string][] = [
   ["removed_by_rebuild", "Removed by rebuild"],
   ["added_by_person", "Added by person"],
   ["added_by_rebuild", "Added by rebuild"],
+  ["manual_items", "Manual items (angles, bent plates)"],
 ];
 
 /** Report: SYSTEM VERSION vs SAVED FINAL, per page and in total, and per size. */
@@ -104,7 +106,7 @@ export const ReportTab: React.FC<{ projectId: string; who?: string }> = ({
               <td>{p.sheet_number ?? "—"}</td>
               {COLS.map(([k]) => (
                 <td key={k} className="num">
-                  {p[k] as number}
+                  {(p[k] as number | undefined) ?? 0}
                 </td>
               ))}
               <td>{p.setup_changed.join(", ") || "—"}</td>
@@ -116,7 +118,7 @@ export const ReportTab: React.FC<{ projectId: string; who?: string }> = ({
             <td colSpan={2}>Total</td>
             {COLS.map(([k]) => (
               <td key={k} className="num">
-                {(r.total as unknown as Record<string, number>)[k]}
+                {(r.total as unknown as Record<string, number>)[k] ?? 0}
               </td>
             ))}
             <td>{r.total.pages_with_setup_changes} pages</td>

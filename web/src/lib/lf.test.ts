@@ -163,6 +163,7 @@ describe("properties and summary", () => {
       braces: 1,
       piles: 0,
       joists: 0,
+      angles: 0,
       tons: 2.25,
     });
     expect(summary(rows, "S")).toEqual({
@@ -171,6 +172,7 @@ describe("properties and summary", () => {
       braces: 1,
       piles: 0,
       joists: 0,
+      angles: 0,
       tons: 2,
     });
   });
@@ -192,6 +194,7 @@ describe("properties and summary", () => {
       braces: 0,
       piles: 0,
       joists: 0,
+      angles: 0,
       tons: 0,
     });
   });

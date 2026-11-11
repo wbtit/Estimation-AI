@@ -28,6 +28,11 @@ export interface ProjectsTable {
   archived: Generated<boolean>;
   // migration 025
   purpose: Generated<ProjectPurpose>;
+  // migration 032: the scope kind of the perimeter angle BOM line (null = default) and the last
+  // angle profile used on the project
+  perimeter_angle_kind: ColumnType<string | null, string | null | undefined, string | null>;
+  perimeter_angle_profile: ColumnType<string | null, string | null | undefined, string | null>;
+  perimeter_angle_grade: ColumnType<string | null, string | null | undefined, string | null>;
   last_opened_at: Timestamp | null;
   created_at: Timestamp;
   updated_at: Timestamp;
@@ -406,6 +411,29 @@ export interface MembersTable {
   >;
   symbol_flag: ColumnType<string | null, string | null | undefined, string | null>;
   symbol_real_in: ColumnType<[number, number] | null, string | null | undefined, string | null>;
+  /** Migration 032: a perimeter angle's parent beam, typed real length, start offset and the
+   * optional 3D hints (null = not given). */
+  parent_member_id: ColumnType<string | null, string | null | undefined, string | null>;
+  angle_length_mm: ColumnType<
+    string | null,
+    number | string | null | undefined,
+    number | string | null
+  >;
+  angle_start_offset_mm: ColumnType<
+    string | null,
+    number | string | null | undefined,
+    number | string | null
+  >;
+  slab_edge_side: ColumnType<
+    'left' | 'right' | null,
+    'left' | 'right' | null | undefined,
+    'left' | 'right' | null
+  >;
+  vertical_leg: ColumnType<
+    'long' | 'short' | null,
+    'long' | 'short' | null | undefined,
+    'long' | 'short' | null
+  >;
   created_at: Timestamp;
   updated_at: Timestamp;
 }

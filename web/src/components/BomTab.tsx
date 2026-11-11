@@ -178,6 +178,42 @@ export const BomTab: React.FC<{
               </tbody>
             </table>
           </div>
+          {bom.angles && bom.angles.length > 0 && (
+            <div className="table-scroll" data-testid="angle-lines">
+              <table className="grid bom">
+                <caption>
+                  Perimeter angles and bent plates by size (in the total above)
+                </caption>
+                <thead>
+                  <tr>
+                    <th>Category</th>
+                    <th>Section</th>
+                    <th>Qty</th>
+                    <th>Total length</th>
+                    <th>Unit wt (lb/ft)</th>
+                    <th>Grade</th>
+                    <th>Weight</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {bom.angles.map((a) => (
+                    <tr
+                      key={`${a.category}|${a.section}`}
+                      data-testid="angle-line"
+                    >
+                      <td>{a.category ?? "—"}</td>
+                      <td>{a.section ?? "—"}</td>
+                      <td>{a.qty}</td>
+                      <td>{formatFtIn(a.length_mm)}</td>
+                      <td>{a.unit_w_lb_ft ?? "—"}</td>
+                      <td>{a.grade ?? "—"}</td>
+                      <td>{lb(a.weight_lb)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       </div>
       <div className="props dark">

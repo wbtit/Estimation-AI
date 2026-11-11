@@ -67,6 +67,15 @@ export async function viewPieces(
           .exists(
             eb.selectFrom('member_edits as e').select('e.id').whereRef('e.member_id', '=', 'm.id'),
           )
+          // a beam with a perimeter angle on it is touched (a rebuild must not replace it)
+          .or(
+            eb.exists(
+              eb
+                .selectFrom('members as c')
+                .select('c.id')
+                .whereRef('c.parent_member_id', '=', 'm.id'),
+            ),
+          )
           .as('has_edit'),
     ])
     .where('m.build_view_id', '=', viewId)
