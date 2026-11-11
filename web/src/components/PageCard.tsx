@@ -753,6 +753,15 @@ export const PageCard: React.FC<{
               )}
             </div>
           )}
+          {!!page.text_problem && (
+            <div
+              className="card-note warning"
+              data-testid="card-text-problem"
+              title={page.text_problem}
+            >
+              ⚠ Text not read — {page.text_problem}
+            </div>
+          )}
           {!saved && view.badge !== "Not built" && !!view.warnings?.length && (
             <div
               className="card-note warning"

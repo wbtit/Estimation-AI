@@ -535,6 +535,11 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
             sheet_number_source: s.sheet_number_source ?? null,
             page_type: s.page_type_guess,
             page_kind: s.page_kind,
+            // the text step failed on this page: "page N: <step>: <reason>" (worker, per page)
+            text_problem:
+              s.review_reasons
+                .find((r) => r.startsWith('text_read_failed: '))
+                ?.slice('text_read_failed: '.length) ?? null,
             lines_ready: withLines.has(s.id),
             width_pt: num(s.width_pt),
             height_pt: num(s.height_pt),

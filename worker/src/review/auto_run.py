@@ -19,7 +19,7 @@ from psycopg.types.json import Jsonb
 
 from src.config import WorkerConfig
 from src.queue import Job
-from src.text_reader.job import read_project
+from src.text_reader.job import ReadError, read_project, reason_of
 
 log = logging.getLogger("worker.autorun")
 
@@ -51,8 +51,15 @@ def auto_run(
     document_id: str,
 ) -> dict[str, Any]:
     totals: Counter = Counter()
-    read_project(conn, config, project_id, document_id, config.glyph_font_id)
+    try:
+        read = read_project(conn, config, project_id, document_id, config.glyph_font_id)
+    except Exception as err:  # name the step, not just the raw error (never page text)
+        conn.rollback()
+        detail = str(err) if isinstance(err, ReadError) else reason_of(err)
+        raise ReadError(f"auto run, step read text: {detail}") from err
     conn.commit()
+    totals["pages_read"] = int(read.get("pages_read", 0))
+    totals["pages_failed"] = int(read.get("pages_failed", 0))
     totals["sheets"] = conn.execute(
         "SELECT count(*) AS n FROM sheets WHERE project_id = %s", (project_id,)
     ).fetchone()["n"]
@@ -71,4 +78,7 @@ def auto_run(
         conn.commit()
         totals["auto_build_queued"] += 1
     log.info("auto run: %s", dict(totals))
-    return {k: int(v) for k, v in sorted(totals.items())}
+    result: dict[str, Any] = {k: int(v) for k, v in sorted(totals.items())}
+    if read.get("page_failures"):
+        result["page_failures"] = list(read["page_failures"])  # "page N: step: reason"
+    return result

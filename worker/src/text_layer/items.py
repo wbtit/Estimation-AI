@@ -8,6 +8,7 @@ stored rotated does not make its upright text look rotated. Rotated text is kept
 
 import hashlib
 import math
+import re
 from dataclasses import dataclass
 
 import pymupdf
@@ -17,6 +18,16 @@ from src.text_layer.quality import MIN_TEXT_CHARS, bad_char_count, is_usable, te
 
 UPRIGHT_TOL_DEG = 2.0  # within this of 0: upright
 VERTICAL_TOL_DEG = 5.0  # within this of 90 or 270: orientation "vertical"
+
+
+_UNSTORABLE = re.compile("[\x00\ud800-\udfff]")
+
+
+def clean_text(text: str) -> str:
+    """Text safe to store: NUL bytes are removed (PostgreSQL text cannot hold them) and lone
+    surrogates become U+FFFD. Callers count unprintable characters BEFORE cleaning, so the
+    `unprintable` flag and the page quality still see them."""
+    return _UNSTORABLE.sub(lambda m: "" if m.group() == "\x00" else "\ufffd", text)
 
 
 @dataclass
@@ -97,7 +108,9 @@ def extract_page_text(page: pymupdf.Page, catalog: Catalog | None = None) -> Pag
             bad += line_bad
             angle = _angle(ln["dir"], m)
             orientation = _orientation(angle)
-            line_text = text.strip()
+            line_text = clean_text(text.strip())
+            if not line_text:
+                continue
             line_quality = round(1 - line_bad / len(visible), 4) if visible else 1.0
             items.append(
                 PdfTextItem(
@@ -115,20 +128,22 @@ def extract_page_text(page: pymupdf.Page, catalog: Catalog | None = None) -> Pag
             for c, r in [*chars, (" ", pymupdf.Rect())]:
                 if c.isspace():
                     if word:
-                        w_text = "".join(ch for ch, _ in word)
-                        w_bad = bad_char_count(w_text)
-                        items.append(
-                            PdfTextItem(
-                                "word",
-                                w_text,
-                                _box([rr for _, rr in word], m),
-                                angle,
-                                orientation,
-                                round(1 - w_bad / len(w_text), 4),
-                                w_bad,
-                                annotate_word(w_text) or None,
+                        raw_word = "".join(ch for ch, _ in word)
+                        w_bad = bad_char_count(raw_word)
+                        w_text = clean_text(raw_word)
+                        if w_text:
+                            items.append(
+                                PdfTextItem(
+                                    "word",
+                                    w_text,
+                                    _box([rr for _, rr in word], m),
+                                    angle,
+                                    orientation,
+                                    round(1 - w_bad / len(raw_word), 4),
+                                    w_bad,
+                                    annotate_word(w_text) or None,
+                                )
                             )
-                        )
                         word = []
                 else:
                     word.append((c, r))

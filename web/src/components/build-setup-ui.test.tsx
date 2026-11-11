@@ -302,3 +302,16 @@ describe("Cover / Title page suggestion", () => {
     expect(screen.queryByTestId("cover-suggestion")).toBeNull();
   });
 });
+
+describe("a page whose text could not be read", () => {
+  it("shows 'page N: step: reason' on the card, and nothing when the text was read", () => {
+    const msg = "page 12: reading text: RuntimeError: broken font";
+    card(actions(), page(view(), { text_problem: msg }));
+    expect(screen.getByTestId("card-text-problem").textContent).toBe(
+      `⚠ Text not read — ${msg}`,
+    );
+    cleanup();
+    card(actions(), page(view()));
+    expect(screen.queryByTestId("card-text-problem")).toBeNull();
+  });
+});

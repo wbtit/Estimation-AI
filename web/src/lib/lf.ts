@@ -109,6 +109,8 @@ export interface Page {
   sheet_number_source?: string | null;
   page_type: string | null;
   page_kind: string;
+  /** The text step failed on this page: "page N: <step>: <reason>" (null when it did not). */
+  text_problem?: string | null;
   width_pt: number | null;
   height_pt: number | null;
   rotation: number | null;

@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 
 import pymupdf
 
+from src.text_layer.items import clean_text
 from src.text_reader import rules
 from src.text_reader.decode import decode_line
 from src.text_reader.geometry import describe
@@ -112,7 +113,11 @@ def read_page(
     for line in hlines:
         d = decode_line(line, lookup)
         item = TextItem(
-            *line.bbox, "horizontal", d.text, char_count=d.char_count, unknown_count=d.unknown_count
+            *line.bbox,
+            "horizontal",
+            None if d.text is None else clean_text(d.text),
+            char_count=d.char_count,
+            unknown_count=d.unknown_count,
         )
         if d.unknown_count:
             item.confidence = rules.CONF_GLYPH_UNKNOWN
@@ -145,7 +150,7 @@ def read_page(
 
 def _crosscheck(item: TextItem, page: pymupdf.Page, ocr: OcrEngine) -> None:
     """Add the OCR reading beside the glyph text. The glyph text is never replaced."""
-    item.ocr_text = ocr.read(render_crop(page, item.bbox)).strip()
+    item.ocr_text = clean_text(ocr.read(render_crop(page, item.bbox)).strip())
     item.methods.append("ocr")
     if item.unknown_count:
         return  # cannot compare a text with unknown shapes; stays 0.3 / needs_review

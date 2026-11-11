@@ -683,6 +683,26 @@ describe('review UI routes (test database)', () => {
       .execute();
   });
 
+  it('a page whose text step failed carries the worker\'s "page N: step: reason" (text_problem)', async () => {
+    const msg = 'page 2: reading text: RuntimeError: broken font';
+    const read = async () =>
+      ((await get('/pages')).json().pages as { id: string; text_problem: string | null }[]).find(
+        (p) => p.id === planId,
+      )!.text_problem;
+    expect(await read()).toBeNull();
+    await db
+      .updateTable('sheets')
+      .set({ review_reasons: ['other_reason', `text_read_failed: ${msg}`] })
+      .where('id', '=', planId)
+      .execute();
+    try {
+      expect(await read()).toBe(msg);
+    } finally {
+      await db.updateTable('sheets').set({ review_reasons: [] }).where('id', '=', planId).execute();
+    }
+    expect(await read()).toBeNull();
+  });
+
   afterAll(async () => {
     delete process.env.CATALOG_EDITION;
     if (jobs.length) await db.deleteFrom('jobs').where('id', 'in', jobs).execute();

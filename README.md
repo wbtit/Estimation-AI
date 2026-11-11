@@ -1283,3 +1283,12 @@ pre-registered entry point built on `measure.jobs`.
 
 The phase study tools (Phases 4e to 14e) were archived on 2026-11-04: they are in the tag
 `archive/pre-cleanup-20261104`, not in the tree.
+
+**Read text per page (NUL fix).** A PDF font glyph with no Unicode mapping comes out as a NUL
+(0x00) character, which Postgres cannot store; one such page used to fail the whole read. NULs are now
+removed when a text item is built (`clean_text`, pdf text layer and glyph reader; the `unprintable`
+flag and the page quality still count them). The read-text step also saves page by page (a
+savepoint each): a page that fails is stored with no text, listed in the job result as
+`page_failures: ["page N: <step>: <reason>"]`, kept on the sheet as `review_reasons`
+`text_read_failed: ...` and shown on its page card; the other pages keep their text. A failed run's
+message names the step, e.g. `auto run, step read text: no page could be read: page 1: ...`.
