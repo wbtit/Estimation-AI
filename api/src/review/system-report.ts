@@ -70,6 +70,9 @@ export interface PageReport {
   added_by_person: number;
   added_by_rebuild: number;
   added_then_deleted: number;
+  /** Perimeter angles and bent plates: manual-only items, never detected, so they stay out of
+   * every detection number above and in the sizes table; counted here (not deleted, not ignored). */
+  manual_items: number;
   setup_changed: (keyof SetupValues)[];
   setup: { [K in keyof SetupValues]: { system: SetupValues[K]; final: SetupValues[K] } };
   minutes: number;
@@ -246,8 +249,15 @@ export function systemReport(
 ): SystemReport {
   const minutes = minutesPerSheet(log);
   const finalOf = new Map<string, PieceView[]>();
-  for (const p of finalPieces)
+  const manualOf = new Map<string, number>();
+  for (const p of finalPieces) {
+    if (p.parent_member_id) {
+      if (p.sheet_id && !p.deleted && !p.ignored)
+        manualOf.set(p.sheet_id, (manualOf.get(p.sheet_id) ?? 0) + p.quantity);
+      continue;
+    }
     if (p.sheet_id) finalOf.set(p.sheet_id, [...(finalOf.get(p.sheet_id) ?? []), p]);
+  }
   const sizes = new Map<string, SizeRow>();
   const sizeRow = (k: string) => {
     const r = sizes.get(k) ?? {
@@ -282,6 +292,7 @@ export function systemReport(
       added_by_person: 0,
       added_by_rebuild: 0,
       added_then_deleted: 0,
+      manual_items: manualOf.get(pg.sheet_id) ?? 0,
       setup_changed: setupChanged(pg.system_setup, pg.final_setup),
       setup: Object.fromEntries(
         (Object.keys(pg.system_setup) as (keyof SetupValues)[]).map((k) => [
@@ -336,6 +347,7 @@ export function systemReport(
     added_by_person: sum('added_by_person'),
     added_by_rebuild: sum('added_by_rebuild'),
     added_then_deleted: sum('added_then_deleted'),
+    manual_items: sum('manual_items'),
     minutes: Math.round(sum('minutes') * 10) / 10,
     pages_with_setup_changes: out.filter((p) => p.setup_changed.length > 0).length,
     pages_reviewed: out.filter((p) => p.reviewed_at !== null).length,

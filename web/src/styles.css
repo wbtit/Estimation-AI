@@ -39,6 +39,8 @@
   --column-id: #1b3f8f;
   /* Phase 14b: a stud / post (counted apart from columns) */
   --stud: #0f9d8a;
+  /* Phase 0 perimeter angle: a thin line beside its beam, in its own colour */
+  --angle: #8d5524;
   --pick: #00b8d4;
   --crop: #3d6bf5;
   --grid: #2b8a3e;
@@ -2300,4 +2302,32 @@ table.grid tr.total td {
 
 .find-similar .similar-note {
   color: var(--muted, #6b7280);
+}
+
+/* Phase 0 perimeter angle */
+.angle-form {
+  display: grid;
+  gap: 8px;
+}
+.angle-row {
+  gap: 8px;
+  align-items: center;
+  padding: 3px 0;
+}
+.angle-row .linklike {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--angle);
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.angle-grade-note {
+  display: grid;
+  gap: 4px;
+}
+.angle-bad {
+  color: var(--attention);
+  font-size: 12px;
 }

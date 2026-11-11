@@ -20,6 +20,13 @@ import {
   type Piece,
 } from "../lib/lf";
 import { SectionSearch } from "./SectionSearch";
+import { canAddAngle, isAngle } from "../lib/perimeter-angle";
+import {
+  AngleList,
+  AngleSection,
+  PerimeterAdd,
+  type PerimeterApi,
+} from "./PerimeterAngle";
 
 export interface Kind {
   kind: string;
@@ -82,6 +89,14 @@ export const SummaryList: React.FC<{
       <b>{s.beams}</b>
       <span>Brace:</span>
       <b>{s.braces}</b>
+      {s.angles > 0 && (
+        <>
+          <span title="Manual items: perimeter angles and bent plates (never detected)">
+            Manual items:
+          </span>
+          <b>{s.angles}</b>
+        </>
+      )}
       {s.piles > 0 && (
         <>
           <span>Piles:</span>
@@ -124,6 +139,8 @@ export const PropertiesPanel: React.FC<{
   onSelectPieces?: (ids: string[]) => void;
   onOpenPage?: (sheetId: string, ids: string[]) => void;
   pageName?: (sheetId: string) => string;
+  /** Phase 0 perimeter angle: Add perimeter angle on beams, the angles under a beam, their edit. */
+  perimeter?: PerimeterApi;
 }> = ({
   bomRows,
   sheetId,
@@ -140,6 +157,7 @@ export const PropertiesPanel: React.FC<{
   onSelectPieces,
   onOpenPage,
   pageName = (id) => id,
+  perimeter,
 }) => {
   const [tab, setTab] = useState<"summary" | "member">(
     selected.length ? "member" : "summary",
@@ -226,13 +244,25 @@ export const PropertiesPanel: React.FC<{
               )}
             </Section>
           </>
+        ) : selected.length > 0 && perimeter && selected.every(isAngle) ? (
+          <AngleSection selected={selected} api={perimeter} />
         ) : selected.length > 0 ? (
-          <MemberSection
-            selected={selected}
-            kinds={kinds}
-            onEdit={onEdit}
-            onDelete={onDelete}
-          />
+          <>
+            <MemberSection
+              selected={selected}
+              kinds={kinds}
+              onEdit={onEdit}
+              onDelete={onDelete}
+            />
+            {perimeter && canAddAngle(selected) && (
+              <>
+                <PerimeterAdd selected={selected} api={perimeter} />
+                {selected.length === 1 && (
+                  <AngleList beam={selected[0]!} api={perimeter} />
+                )}
+              </>
+            )}
+          </>
         ) : (
           <Section title="Member Properties">
             <span className="muted">Click a member</span>

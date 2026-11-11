@@ -8,6 +8,8 @@
 //   approved            a person confirmed the member as built (it stays approved through later
 //                       edits of its size, type, studs, camber or ends; Unapprove or Undo removes it)
 //   page_ends           { a: [x, y], b: [x, y] | null } a person moved an end (displayed page points)
+//   angle_length / angle_offset / slab_edge_side / vertical_leg   a perimeter angle's own values
+//                       (Phase 0 perimeter angle: its ends are derived from its parent beam)
 // Length = support-to-support: the 3D distance of the stored plan end points (both ends at the page
 // T.O.S., so with no T.O.S. it is the plan length), or after a moved end the page distance x the
 // build scale (pt x 25.4/72 x ratio). Deterministic.
@@ -16,6 +18,7 @@ import { markerRotation } from './orientation.js';
 import type { Database } from '../db/types.js';
 import { loadMemberViews } from './member-views.js';
 import type { BuiltPiece } from './line-first-bom.js';
+import { deriveAngle } from './perimeter-angle.js';
 
 export const MM_PER_PT = 25.4 / 72;
 
@@ -91,6 +94,15 @@ export interface PieceView {
   reference: boolean;
   symbol_real_in: [number, number] | null;
   section_in: [number, number] | null;
+  /** Phase 0 perimeter angle: the parent beam (null: not an angle), its tag, the typed real length
+   * (null = follows the whole beam), the start offset from the beam's start, and the optional 3D
+   * hints. The ends, length, deleted and ignored of an angle are those of its parent. */
+  parent_member_id: string | null;
+  parent_tag: string | null;
+  angle_length_mm: number | null;
+  angle_start_offset_mm: number | null;
+  slab_edge_side: 'left' | 'right' | null;
+  vertical_leg: 'long' | 'short' | null;
 }
 
 /** [width, depth] in inches of a column section from its catalog properties (W/HP/S/M: bf x d;
@@ -155,6 +167,10 @@ export function lineFirstEdits(
         'page_ends',
         'orientation',
         'column_count',
+        'angle_length',
+        'angle_offset',
+        'slab_edge_side',
+        'vertical_leg',
       ].includes(r.field_name)
     )
       out.set(r.field_name, r.corrected_value);
@@ -176,8 +192,28 @@ export async function loadPieces(
     if (filter.memberIds.length === 0) return [];
     q = q.where('id', 'in', filter.memberIds);
   }
-  const rows = await q.orderBy('member_id').execute();
+  let rows = await q.orderBy('member_id').execute();
   if (rows.length === 0) return [];
+  // Phase 0 perimeter angle: an angle's ends come from its parent, which may not be in the filter
+  const have = new Set(rows.map((r) => r.id));
+  const parentIds = [
+    ...new Set(
+      rows
+        .map((r) => r.parent_member_id)
+        .filter((id): id is string => id !== null && !have.has(id)),
+    ),
+  ];
+  const extra = new Set<string>();
+  if (parentIds.length) {
+    const more = await db
+      .selectFrom('members')
+      .selectAll()
+      .where('project_id', '=', projectId)
+      .where('id', 'in', parentIds)
+      .execute();
+    for (const m of more) extra.add(m.id);
+    rows = [...rows, ...more];
+  }
   const ids = rows.map((r) => r.id);
   const views = new Map(
     (await loadMemberViews(db, projectId, { memberIds: ids })).map((v) => [v.id, v]),
@@ -357,9 +393,43 @@ export async function loadPieces(
       reference: v.type === 'column' && !(countColumn ?? pageCounts0),
       symbol_real_in: (r.symbol_real_in as [number, number] | null) ?? null,
       section_in: v.type === 'column' ? sectionOf(v.profile) : null,
+      parent_member_id: r.parent_member_id ?? null,
+      parent_tag: null,
+      angle_length_mm: lf.has('angle_length')
+        ? (lf.get('angle_length') as number | null)
+        : num(r.angle_length_mm),
+      angle_start_offset_mm: lf.has('angle_offset')
+        ? (lf.get('angle_offset') as number | null)
+        : num(r.angle_start_offset_mm),
+      slab_edge_side: (lf.has('slab_edge_side')
+        ? lf.get('slab_edge_side')
+        : (r.slab_edge_side ?? null)) as 'left' | 'right' | null,
+      vertical_leg: (lf.has('vertical_leg') ? lf.get('vertical_leg') : (r.vertical_leg ?? null)) as
+        'long' | 'short' | null,
     });
   }
-  return out;
+  // a perimeter angle sits on its parent: ends, length, deleted / ignored / excluded follow it
+  const byId = new Map(out.map((p) => [p.id, p]));
+  for (const p of out) {
+    const parent = p.parent_member_id ? byId.get(p.parent_member_id) : undefined;
+    if (!parent) continue;
+    const d = deriveAngle(parent, p.angle_start_offset_mm, p.angle_length_mm);
+    p.a = d.a;
+    p.b = d.b;
+    p.start = d.start;
+    p.end = d.end;
+    p.length_mm = d.length_mm;
+    p.ends_moved = false;
+    p.elevation_mm = parent.elevation_mm;
+    p.scale_ratio = parent.scale_ratio;
+    p.parent_tag = parent.tag;
+    p.deleted = p.deleted || parent.deleted;
+    p.ignored = p.ignored || parent.ignored;
+    p.excluded_kind = p.excluded_kind || parent.excluded_kind;
+    p.duplicate_of = p.duplicate_of ?? parent.duplicate_of;
+    p.reference = p.reference || parent.reference; // never counted when its beam is a Reference
+  }
+  return out.filter((p) => !extra.has(p.id));
 }
 
 /** Pieces that count: not deleted, not ignored. */
@@ -389,5 +459,6 @@ export function toBuiltPiece(p: PieceView): BuiltPiece {
     duplicate_of: p.duplicate_of,
     excluded_kind: p.excluded_kind,
     reference: p.reference,
+    parent_member_id: p.parent_member_id,
   };
 }

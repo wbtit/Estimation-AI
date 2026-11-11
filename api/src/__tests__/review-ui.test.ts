@@ -155,6 +155,12 @@ function fin(over: Partial<PieceView>): PieceView {
     reference: false,
     symbol_real_in: null,
     section_in: null,
+    parent_member_id: null,
+    parent_tag: null,
+    angle_length_mm: null,
+    angle_start_offset_mm: null,
+    slab_edge_side: null,
+    vertical_leg: null,
     ...over,
   };
 }
@@ -253,6 +259,49 @@ describe('system vs final report', () => {
     expect(w16.system_count).toBe(9);
     // final W16X26: kept, len, conf, drawn, rebuilt (del and ign are out)
     expect(w16.final_count).toBe(5);
+  });
+
+  it('manual items (perimeter angles, bent plates) are counted apart, never as detection numbers', () => {
+    const system = [sys({ member_id: 'beam' })];
+    const final = [
+      fin({ member_id: 'beam' }),
+      fin({ member_id: 'ang', parent_member_id: 'beam', added: true, profile: 'L4X4X1/4' }),
+      fin({
+        member_id: 'bp',
+        parent_member_id: 'beam',
+        added: true,
+        profile: 'BENT PL 3/8 x 6 x 4',
+        quantity: 2,
+      }),
+      fin({ member_id: 'gone', parent_member_id: 'beam', added: true, deleted: true }),
+      fin({ member_id: 'ign', parent_member_id: 'beam', added: true, ignored: true }),
+    ];
+    const r = systemReport(
+      [
+        {
+          sheet_id: 'S',
+          page_index: 0,
+          sheet_number: 'S-1',
+          system,
+          system_setup: SETUP,
+          final_setup: SETUP,
+          reviewed_by: WHO,
+          reviewed_at: at(10),
+        },
+      ],
+      final,
+      [],
+    );
+    expect(r.pages[0]).toMatchObject({
+      system_pieces: 1,
+      final_pieces: 1,
+      kept_unchanged: 1,
+      added_by_person: 0,
+      added_then_deleted: 0,
+      manual_items: 3, // the angle and 2 bent plates; the deleted and ignored ones are out
+    });
+    expect(r.total.manual_items).toBe(3);
+    expect(r.sizes.map((x) => x.size)).toEqual(['W16X26']); // no L / BENT PL row
   });
 
   it('counts minutes per page from gaps on the same page, capped at 5 minutes', () => {

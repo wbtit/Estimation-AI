@@ -51,6 +51,7 @@ import {
 import { answerKey } from '../review/answer-key.js';
 import { logCountAction } from '../review/count-log.js';
 import { loadGrades } from '../review/grades.js';
+import { angleGradeOf } from '../review/perimeter-angle.js';
 import { loadKinds, typeOfKind } from '../review/kinds.js';
 import { lineFirstBom } from '../review/line-first-bom.js';
 import {
@@ -1923,6 +1924,7 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
         'Removed by rebuild',
         'Added by person',
         'Added by rebuild',
+        'Manual items (angles, bent plates)',
         'Setup changed',
         'Minutes',
         'Saved by',
@@ -1943,6 +1945,7 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
           p.removed_by_rebuild,
           p.added_by_person,
           p.added_by_rebuild,
+          p.manual_items,
           p.setup_changed.join(', '),
           p.minutes,
           p.reviewed_by,
@@ -1962,6 +1965,7 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
         t.removed_by_rebuild,
         t.added_by_person,
         t.added_by_rebuild,
+        t.manual_items,
         t.pages_with_setup_changes,
         t.minutes,
         t.pages_reviewed,
@@ -2003,12 +2007,13 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
     { schema: { params: projectParams } },
     async (request, reply) => {
       const { projectId } = request.params;
-      await loadProject(projectId);
+      const project = await loadProject(projectId);
       const pieces = (await loadPieces(db(), projectId)).filter(counted).map(toBuiltPiece);
       const bom = lineFirstBom(
         pieces,
         await defaultCatalogLookup(db()),
         await loadGrades(db(), projectId),
+        angleGradeOf(project),
       );
       const sheets = new Map(
         (
