@@ -433,6 +433,17 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
             ).map((r) => r.sheet_id)
           : [],
       );
+      // migration 040: the pages that have a (non-empty) note
+      const withNotes = new Set(
+        (
+          await db()
+            .selectFrom('sheet_notes')
+            .select('sheet_id')
+            .where('project_id', '=', projectId)
+            .where('note', '<>', '')
+            .execute()
+        ).map((r) => r.sheet_id),
+      );
       return {
         pages: sheets.map((page) => {
           const views = viewsBy.get(page.id) ?? [];
@@ -552,6 +563,7 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
             // Phase 0 profile from callout: the labels were read (null: not yet) and the page's
             // text lines (0: no text layer, e.g. outlined text)
             labels_read: s.labels_read_at !== null,
+            has_notes: withNotes.has(page.id),
             labels_text_lines: s.labels_text_lines,
             width_pt: num(s.width_pt),
             height_pt: num(s.height_pt),

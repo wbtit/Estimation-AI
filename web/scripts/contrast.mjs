@@ -108,6 +108,17 @@ add(
   GRAPHIC,
 );
 
+// white text on the page-card status tags (theme.css / styles.css)
+for (const [name, bg] of [
+  ["Built / Reviewed", "#136b2e"],
+  ["Scale needed / Requesting build / Not built", "orange"],
+  ["Not confirmed", "#7c3aed"],
+  ["Building", "#2563eb"],
+  ["Failed", "#c62828"],
+  ["Estimating / Skip", "slate"],
+])
+  add("status tags", name, "#ffffff", bg, TEXT);
+
 const rows = checks.map((c) => {
   const r = ratio(c.fg, c.bg);
   return { ...c, ratio: Math.round(r * 100) / 100, pass: r >= c.need };

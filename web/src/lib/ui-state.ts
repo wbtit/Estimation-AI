@@ -41,11 +41,11 @@ export function usePersistentFlag(
 }
 
 /** Which drawer is open (or none), remembered per person. */
-export type DrawerName = "details" | "profile" | null;
+export type DrawerName = "profile" | null;
 export function loadDrawer(who?: string): DrawerName {
   try {
     const v = localStorage.getItem(key("drawer", who));
-    return v === "details" || v === "profile" ? v : null;
+    return v === "profile" ? v : null;
   } catch {
     return null;
   }
@@ -59,8 +59,8 @@ export function saveDrawer(d: DrawerName, who?: string): void {
 }
 
 /** The one side panel that is open next to the rail (or none), remembered per person. */
-export type PanelName = "pages" | "members" | "profile" | "details" | null;
-const PANELS = ["pages", "members", "profile", "details"] as const;
+export type PanelName = "pages" | "members" | "profile" | null;
+const PANELS = ["pages", "members", "profile"] as const; // (a stored "details" panel is gone: closed)
 export function loadPanel(who?: string): PanelName {
   try {
     const v = localStorage.getItem(key("panel", who));
@@ -105,3 +105,30 @@ export interface InspectorPos {
   top: number;
 }
 export const INSPECTOR_POS: InspectorPos = { right: 14, top: 60 };
+
+// ---- resizable side panels -------------------------------------------------------------------
+/** The narrowest a side panel gets (page cards and the inspector need this much) and the widest, as
+ * a share of the window. */
+export const PANEL_MIN = 280;
+export const PANEL_MAX_FRAC = 0.45;
+export const LEFT_DEFAULT = 320;
+export const INSPECTOR_DEFAULT = 320;
+
+/** The width a panel really gets in a window of `win` px: between PANEL_MIN and 45% of the window
+ * (a window so small that 45% is under the minimum still gets the minimum). */
+export function clampPanelWidth(w: number, win: number): number {
+  const max = Math.max(PANEL_MIN, Math.floor(win * PANEL_MAX_FRAC));
+  return Math.round(
+    Math.min(Math.max(Number.isFinite(w) ? w : PANEL_MIN, PANEL_MIN), max),
+  );
+}
+export const panelMax = (win: number): number =>
+  Math.max(PANEL_MIN, Math.floor(win * PANEL_MAX_FRAC));
+
+/** The remembered width of a panel (a number), else the default; a bad value is the default. */
+export function loadWidth(name: string, def: number, who?: string): number {
+  const v = loadJson<unknown>(name, def, who);
+  return typeof v === "number" && Number.isFinite(v) ? v : def;
+}
+export const saveWidth = (name: string, w: number, who?: string): void =>
+  saveJson(name, Math.round(w), who);

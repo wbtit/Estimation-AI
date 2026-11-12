@@ -2414,7 +2414,4 @@ button.link { background: none; border: 0; color: var(--select, #2563eb); cursor
 .drawer .profile-row { flex-wrap: wrap; }
 .drawer .profile-row input { flex: 1 1 140px; min-width: 0; }
 .drawer button { max-width: 100%; }
-@media (max-width: 1500px) {
-  .left { width: 232px; }
-  .props { width: 264px; }
-}
+

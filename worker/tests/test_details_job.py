@@ -6,6 +6,7 @@ from __future__ import annotations
 import pymupdf
 from db_fixtures import DbProject
 
+import src.details.read as read_mod
 from src.details.job import recheck, run_read_details
 from src.queue import Job
 
@@ -72,7 +73,20 @@ def _fields(dbp: DbProject) -> dict:
     }
 
 
-def test_read_stores_fields_with_source_rule_and_confidence(dbp: DbProject) -> None:
+def test_the_index_check_is_switched_off_by_default(dbp: DbProject) -> None:
+    """The owner removed the drawing index check: a read finds the fields, writes no index rows."""
+    _pdf(dbp)
+    out = _run(dbp)
+    assert out["fields"] >= 6 and out["index_rows"] == 0 and out["flags"] == 0
+    for table in ("drawing_index_rows", "drawing_index_flags"):
+        n = dbp.conn.execute(
+            f"SELECT count(*) AS n FROM {table} WHERE project_id = %s", (dbp.project_id,)
+        ).fetchone()["n"]
+        assert n == 0
+
+
+def test_read_stores_fields_with_source_rule_and_confidence(dbp: DbProject, monkeypatch) -> None:
+    monkeypatch.setattr(read_mod, "INDEX_CHECK", True)  # the switched-off code still works
     _pdf(dbp)
     out = _run(dbp)
     assert out["fields"] >= 6 and out["index_rows"] == 4 and out["flags"] == 0
@@ -108,8 +122,9 @@ def test_read_stores_fields_with_source_rule_and_confidence(dbp: DbProject) -> N
 
 
 def test_a_reread_keeps_a_persons_edit_and_the_recheck_follows_a_renamed_sheet(
-    dbp: DbProject,
+    dbp: DbProject, monkeypatch
 ) -> None:
+    monkeypatch.setattr(read_mod, "INDEX_CHECK", True)
     ids = _pdf(dbp)
     _run(dbp)
     dbp.conn.execute(

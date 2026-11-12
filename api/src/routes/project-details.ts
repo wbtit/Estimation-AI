@@ -12,6 +12,7 @@ import type { Kysely, Transaction } from 'kysely';
 import { sql } from 'kysely';
 import { getDb } from '../db/client.js';
 import type { Database } from '../db/types.js';
+import { logCountAction } from '../review/count-log.js';
 import { HttpError } from './http-error.js';
 
 type Db = Kysely<Database> | Transaction<Database>;
@@ -113,7 +114,7 @@ export const projectDetailsRoutes: FastifyPluginAsync<{ db?: Kysely<Database> }>
   async function project(projectId: string) {
     const p = await db()
       .selectFrom('projects')
-      .select(['id', 'name', 'number'])
+      .select(['id', 'name', 'number', 'client', 'location', 'building_type'])
       .where('id', '=', projectId)
       .executeTakeFirst();
     if (!p) throw new HttpError(404, { error: 'project not found' });
@@ -191,6 +192,13 @@ export const projectDetailsRoutes: FastifyPluginAsync<{ db?: Kysely<Database> }>
           agreement: r?.agreement ?? null,
         };
       });
+      const reading = !!(await db()
+        .selectFrom('jobs')
+        .select('id')
+        .where('type', '=', 'read_details')
+        .where('status', 'in', ['pending', 'processing'])
+        .where(sql<boolean>`payload->>'project_id' = ${projectId}`)
+        .executeTakeFirst());
       const matched = rows.filter((r) => r.match !== 'none').length;
       const status = !readRow
         ? 'not_read'
@@ -199,6 +207,7 @@ export const projectDetailsRoutes: FastifyPluginAsync<{ db?: Kysely<Database> }>
           : 'read';
       return {
         status,
+        reading,
         project: { name: p.name, number: p.number },
         read: readRow
           ? {
@@ -446,6 +455,122 @@ export const projectDetailsRoutes: FastifyPluginAsync<{ db?: Kysely<Database> }>
           return { undone: last.id, field: last.field, kind: last.kind };
         });
       return out;
+    },
+  );
+
+  // ---- the Project details step (after an upload, or "Edit details" on the project card) --------
+  // The four details the owner keeps: name, client, location, building type. The client sends what
+  // the step SHOWS: the suggestion where a field was left untouched, the typed value where one was
+  // typed, empty where it was cleared. The name can never be empty (null keeps the current one).
+  // Each stored change is also a person edit (who, when) in project_detail_edits.
+  const INTAKE: { key: 'name' | 'client' | 'location' | 'building_type'; field: Field }[] = [
+    { key: 'name', field: 'project_name' },
+    { key: 'client', field: 'owner' },
+    { key: 'location', field: 'location' },
+    { key: 'building_type', field: 'building_type' },
+  ];
+  const intakeValue = { type: ['string', 'null'], maxLength: 200 } as const;
+  app.put<{
+    Params: { projectId: string };
+    Body: {
+      who: string;
+      name?: string | null;
+      client?: string | null;
+      location?: string | null;
+      building_type?: string | null;
+    };
+  }>(
+    '/api/projects/:projectId/details',
+    {
+      schema: {
+        params: projectParams,
+        body: {
+          type: 'object',
+          required: ['who'],
+          additionalProperties: false,
+          properties: {
+            who,
+            name: intakeValue,
+            client: intakeValue,
+            location: intakeValue,
+            building_type: intakeValue,
+          },
+        },
+      },
+    },
+    async (request) => {
+      const { projectId } = request.params;
+      const before = await project(projectId);
+      const editor = trim(request.body.who);
+      const clean = (v: string | null | undefined) => (v == null ? null : v.trim() || null);
+      const current = {
+        name: before.name as string | null,
+        client: before.client,
+        location: before.location,
+        building_type: before.building_type,
+      };
+      const next = { ...current };
+      let nameKept = false;
+      for (const { key } of INTAKE) {
+        if (request.body[key] === undefined) continue; // not sent: unchanged
+        const v = clean(request.body[key]);
+        if (key === 'name') {
+          if (v === null)
+            nameKept = true; // the name can never be empty
+          else next.name = v;
+        } else next[key] = v;
+      }
+      if (next.name !== current.name) {
+        const taken = await db()
+          .selectFrom('projects')
+          .select('id')
+          .where('name', '=', next.name)
+          .where('id', '<>', projectId)
+          .executeTakeFirst();
+        if (taken) throw new HttpError(409, { error: 'a project with that name already exists' });
+      }
+      const changed = INTAKE.filter(({ key }) => next[key] !== current[key]);
+      await db()
+        .transaction()
+        .execute(async (trx) => {
+          if (changed.length === 0) return;
+          await trx
+            .updateTable('projects')
+            .set({
+              name: next.name as string,
+              client: next.client,
+              location: next.location,
+              building_type: next.building_type,
+              updated_at: new Date(),
+            })
+            .where('id', '=', projectId)
+            .execute();
+          for (const { key, field } of changed) {
+            await trx
+              .insertInto('project_detail_edits')
+              .values({
+                project_id: projectId,
+                field,
+                before: JSON.stringify({ value: current[key] }),
+                after: JSON.stringify({ value: next[key] }),
+                kind: 'edit',
+                who: editor,
+              } as never)
+              .execute();
+          }
+          if (next.name !== current.name)
+            await logCountAction(trx, {
+              projectId,
+              action: 'project',
+              who: editor,
+              detail: { change: 'rename', from: current.name, to: next.name },
+            });
+        });
+      return {
+        saved: changed.map((c) => c.key),
+        name_kept: nameKept,
+        project: next,
+      };
     },
   );
 };

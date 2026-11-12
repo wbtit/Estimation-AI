@@ -58,3 +58,37 @@ export async function assertSchemaCurrent(
   const missing = await missingMigrations(db, dir);
   if (missing.length > 0) throw new Error(schemaMessage(missing));
 }
+
+/** Development / watch mode (NODE_ENV=development, which `npm run dev` sets): a database that lacks
+ * a migration is a loud warning, not a refusal, so a watcher that restarts on every file change
+ * (a new migration file appears before `npm run migrate` ran) keeps the API up. Any other start
+ * (npm start, production, no NODE_ENV) stays strict. The worker has its own check and stays strict
+ * (it writes data). */
+export const isDevelopment = (env: NodeJS.ProcessEnv = process.env): boolean =>
+  env.NODE_ENV === 'development';
+
+export type StartupSchemaResult =
+  | { status: 'current' }
+  | { status: 'warned'; missing: string[]; message: string }
+  | { status: 'refused'; missing: string[]; message: string };
+
+/** The startup decision: current, warn and continue (development), or refuse (everything else). */
+export async function startupSchemaCheck(
+  db: Kysely<Database>,
+  env: NodeJS.ProcessEnv = process.env,
+  dir: string = MIGRATIONS_DIR,
+  log: (line: string) => void = (l) => console.error(l),
+): Promise<StartupSchemaResult> {
+  const missing = await missingMigrations(db, dir);
+  if (missing.length === 0) return { status: 'current' };
+  const message = schemaMessage(missing);
+  if (isDevelopment(env)) {
+    const bar = '!'.repeat(78);
+    log(
+      `${bar}\n!! WARNING (development mode): the database schema is out of date: ${message}\n` +
+        `!! The API keeps running; requests that need the new columns or tables will fail until you run it.\n${bar}`,
+    );
+    return { status: 'warned', missing, message };
+  }
+  return { status: 'refused', missing, message };
+}

@@ -27,6 +27,9 @@ from src.details import repeat as R
 from src.details.types import Cand, Detail, DetailsResult, PageText, box_t
 
 NAME_FIELD, NUMBER_FIELD = "project_name", "project_number"
+# The drawing index check is switched off (the owner removed it from the product): the code and the
+# tables stay, but a read finds no index rows and writes no flags. Tests pass index_check=True.
+INDEX_CHECK = False
 COVER_WORDS = re.compile(
     r"\b(COVER|TITLE\s+SHEET|DRAWING\s+INDEX|SHEET\s+INDEX|INDEX|SHEET|DRAWINGS?|STRUCTURAL|"
     r"GENERAL\s+NOTES|NOT\s+FOR\s+CONSTRUCTION|PRELIMINARY)\b",
@@ -134,7 +137,11 @@ def _choose(cands: list[Cand]) -> tuple[Cand, list[Cand]]:
     return ranked[0], ranked[1:]
 
 
-def read_details(pages: list[PageText], cover_pages: list[int] | None = None) -> DetailsResult:
+def read_details(
+    pages: list[PageText],
+    cover_pages: list[int] | None = None,
+    index_check: bool | None = None,
+) -> DetailsResult:
     res = DetailsResult()
     if not pages:
         return res
@@ -239,6 +246,8 @@ def read_details(pages: list[PageText], cover_pages: list[int] | None = None) ->
         res.fields["address"] = Detail("address", best.value, best.page_index, best.box, best.rule,
                                        best.confidence, [], more)  # fmt: skip
 
+    if not (INDEX_CHECK if index_check is None else index_check):
+        return res
     # the drawing index: the cover pages and any page whose rows say it is an index
     rows = []
     index_pages: set[int] = set()

@@ -497,22 +497,21 @@ td .dot,
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
 }
 
-/* the status legend, bottom left of the canvas */
+/* the status legend, inside the "?" help popover */
+.legend-block {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--shell-line);
+  display: grid;
+  gap: 6px;
+}
 .legend {
-  position: absolute;
-  left: 76px;
-  bottom: 14px;
-  z-index: 12;
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 12px;
-  padding: 5px 12px;
-  background: var(--shell);
-  border: 1px solid var(--control-border);
-  border-radius: 10px;
   font-size: 12px;
   color: var(--text);
-  pointer-events: none;
 }
 .legend span {
   display: inline-flex;
@@ -541,4 +540,351 @@ td .dot,
 }
 .legend .st.bad {
   color: var(--bad-text);
+}
+
+/* page notes on a page card */
+.notes-row {
+  display: grid;
+  gap: 6px;
+  margin-top: 6px;
+}
+.notes-row .notes-add,
+.notes-row .notes-icon {
+  justify-self: start;
+  font-size: 12px;
+}
+.notes-row .notes-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  color: var(--warn-text);
+  border-color: var(--control-border);
+}
+.page-notes {
+  display: grid;
+  gap: 4px;
+}
+.page-notes textarea {
+  width: 100%;
+  min-height: 72px;
+  resize: vertical;
+  font: inherit;
+  background: var(--shell-input);
+  color: var(--text);
+  border: 1px solid var(--control-border);
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+.page-notes .notes-status {
+  display: flex;
+  align-items: center;
+  min-height: 20px;
+  font-size: 12px;
+}
+.notes-conflict {
+  display: grid;
+  gap: 6px;
+  padding: 6px 8px;
+  border: 1px solid var(--warn-text);
+  border-radius: 6px;
+  color: var(--warn-text);
+  font-size: 12px;
+}
+
+/* project cards: the details marker and line; the Project details step */
+.details-marker,
+.details-line {
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.modal.intake {
+  display: grid;
+  gap: 10px;
+  min-width: 380px;
+  max-width: min(520px, calc(100vw - 32px));
+}
+.modal.intake label {
+  display: grid;
+  gap: 4px;
+}
+.modal.intake input {
+  width: 100%;
+}
+.modal.intake input::placeholder {
+  color: var(--muted);
+  font-style: italic;
+}
+.intake-hint {
+  font-size: 12px;
+}
+.intake-error {
+  color: var(--bad-text);
+  font-size: 12px;
+}
+
+/* ---- resizable side panels ------------------------------------------------------------------- */
+.ws-body > .left,
+.ws-body > .drawer {
+  width: var(--left-w, 320px);
+  max-width: none;
+  min-width: 0;
+}
+.ws-body > .props {
+  width: var(--insp-w, 320px);
+  max-width: none;
+  min-width: 0;
+}
+.resize-handle {
+  position: relative;
+  flex: none;
+  width: 6px;
+  z-index: 20;
+  cursor: col-resize;
+  touch-action: none;
+  background: transparent;
+}
+.resize-handle::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 2px;
+  width: 2px;
+  border-radius: 1px;
+  background: transparent;
+}
+.resize-handle:hover::after,
+.resize-handle.active::after,
+.resize-handle:focus-visible::after {
+  background: var(--accent);
+}
+.resize-handle:focus-visible {
+  outline: none;
+}
+
+/* ---- nothing clipped at any width: the panel is a size container; cards wrap, truncate with a
+   tooltip, and stack label-over-field when narrow ----------------------------------------------- */
+.left {
+  container: panel / inline-size;
+  overflow: hidden;
+}
+.left .scroll {
+  overflow-x: hidden;
+}
+.left .page-list {
+  padding: 4px 8px 12px;
+  outline: none;
+}
+.left .page-list:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--accent);
+  border-radius: 8px;
+}
+.page-card {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+.page-card * {
+  min-width: 0;
+}
+.page-card button {
+  min-width: 28px;
+}
+.page-card .head {
+  min-width: 0;
+}
+.page-card .title {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.page-card .sheet-name,
+.page-card .sheet-no {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.page-card .field {
+  grid-template-columns: minmax(64px, 28%) minmax(0, 1fr);
+}
+.page-card .field > label,
+.page-card .field select,
+.page-card .field input {
+  max-width: 100%;
+}
+.page-card .field select,
+.page-card .field input {
+  width: 100%;
+}
+.page-card .field > label {
+  display: grid;
+  gap: 4px;
+}
+.page-card .chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  max-width: 100%;
+}
+.page-card .chip {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.25;
+  padding: 3px 8px;
+}
+.page-card .card-note,
+.page-card .status,
+.page-card .views {
+  overflow-wrap: anywhere;
+}
+.page-card .views {
+  padding: 4px 0 2px;
+}
+.page-card .menu {
+  max-width: 100%;
+}
+@container panel (max-width: 340px) {
+  .page-card .field {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 3px;
+  }
+}
+
+/* ---- setup chips are steps, not errors: done = green with a tick, to do = amber outline, red only
+   for a real failure ------------------------------------------------------------------------------ */
+.page-card .chip.ok {
+  background: rgba(95, 211, 138, 0.16);
+  color: var(--ok-text);
+  border-color: var(--ok-text);
+}
+.page-card .chip.missing {
+  background: transparent;
+  color: var(--warn-text);
+  border: 1px solid var(--warn-text);
+}
+.page-card .chip.system {
+  background: transparent;
+  color: var(--shell-muted);
+  border: 1px dashed var(--control-border);
+}
+.page-card .chip.problem {
+  background: rgba(255, 138, 128, 0.16);
+  color: var(--bad-text);
+  border: 1px solid var(--bad-text);
+}
+.page-card .card-note .link.need {
+  color: var(--warn-text);
+}
+
+/* status tags: white text on a colour that holds 4.5:1 */
+.tag.Built,
+.tag.Reviewed {
+  background: #136b2e;
+}
+.tag.Not-built {
+  background: var(--orange);
+}
+.tag.Failed {
+  background: #c62828;
+}
+
+/* ---- compact cards: only the selected card shows its setup ----------------------------------- */
+.page-card:not(.on) {
+  grid-template-columns: 96px minmax(0, 1fr);
+  grid-template-areas:
+    "thumb head"
+    "thumb sheet"
+    "thumb name"
+    "thumb status"
+    "thumb notes";
+  column-gap: 10px;
+  row-gap: 2px;
+  align-items: start;
+  padding: 8px;
+}
+.page-card:not(.on) .head {
+  grid-area: head;
+}
+.page-card:not(.on) .sheet-no {
+  grid-area: sheet;
+  margin-top: 0;
+}
+.page-card:not(.on) .sheet-name {
+  grid-area: name;
+  font-size: 12px;
+  color: var(--shell-muted);
+}
+.page-card:not(.on) .names-edit {
+  grid-area: sheet / sheet / status / status;
+}
+.page-card:not(.on) .card-status {
+  grid-area: status;
+}
+.page-card:not(.on) .thumb {
+  grid-area: thumb;
+  height: 68px;
+}
+.page-card:not(.on) .notes-row {
+  grid-area: notes;
+}
+/* the notes box open: it gets the whole card width, under the thumbnail */
+.page-card:not(.on).notes-open {
+  grid-template-areas:
+    "thumb head"
+    "thumb sheet"
+    "thumb name"
+    "thumb status"
+    "notes notes";
+}
+.card-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 2px;
+}
+.card-status .tag {
+  position: static;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 4px;
+  color: #fff;
+  white-space: nowrap;
+}
+.page-card.on {
+  border-color: var(--accent);
+  border-left-color: var(--accent);
+  background: var(--shell-3);
+}
+.page-card:not(.on):hover {
+  border-color: var(--control-border);
+}
+
+/* the canvas bar gives way before it overflows: the title and the issue navigator shrink and
+   truncate (with a tooltip) when a wide side panel leaves the canvas little room */
+.canvas-bar {
+  min-width: 0;
+  overflow: hidden;
+}
+.canvas-bar > * {
+  flex-shrink: 0;
+}
+.canvas-bar > .title,
+.canvas-bar > .hint,
+.canvas-bar > .navigator {
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.canvas-bar > .grow {
+  flex-shrink: 1;
+  min-width: 0;
 }

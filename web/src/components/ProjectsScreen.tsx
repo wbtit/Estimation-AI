@@ -1,8 +1,10 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { MoreVertical, Plus, Search } from "lucide-react";
 import { api, ApiError, getWho, send, setWho } from "../lib/api";
+import { ProjectIntake } from "./ProjectIntake";
 import {
   chipCounts,
+  detailsNotSet,
   DEFAULT_CHIPS,
   nameFromFile,
   PROJECT_CHIPS,
@@ -30,10 +32,16 @@ export const ProjectsScreen: React.FC<{ onOpen: (id: string) => void }> = ({
   const [creating, setCreating] = useState(false);
   const [processing, setProcessing] = useState<string | null>(null);
   const [action, setAction] = useState<{
-    kind: ActionKind;
+    kind: Exclude<ActionKind, "details">;
     project: Project;
   } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // the Project details step: right after an upload (once the scan is done), or "Edit details"
+  const [intake, setIntake] = useState<{
+    id: string;
+    mode: "new" | "edit";
+  } | null>(null);
+  const uploaded = useRef<string | null>(null); // the project whose upload just began
 
   const load = () =>
     api<{ projects: Project[] }>("/api/projects").then(
@@ -127,7 +135,11 @@ export const ProjectsScreen: React.FC<{ onOpen: (id: string) => void }> = ({
               key={p.id}
               p={p}
               onOpen={() => open(p)}
-              onAction={(kind) => setAction({ kind, project: p })}
+              onAction={(kind) =>
+                kind === "details"
+                  ? setIntake({ id: p.id, mode: "edit" })
+                  : setAction({ kind, project: p })
+              }
             />
           ))}
         </div>
@@ -137,6 +149,7 @@ export const ProjectsScreen: React.FC<{ onOpen: (id: string) => void }> = ({
           onClose={() => setCreating(false)}
           onCreated={(id) => {
             setCreating(false);
+            uploaded.current = id;
             setProcessing(id);
             void load();
           }}
@@ -150,6 +163,24 @@ export const ProjectsScreen: React.FC<{ onOpen: (id: string) => void }> = ({
             void load();
           }}
           onOpen={() => onOpen(processing)}
+          onScanned={() => {
+            // once, right after an upload: the Project details step (Skip does not ask again)
+            if (uploaded.current === processing) {
+              uploaded.current = null;
+              setIntake({ id: processing, mode: "new" });
+            }
+          }}
+        />
+      )}
+      {intake && (
+        <ProjectIntake
+          projectId={intake.id}
+          mode={intake.mode}
+          onClose={(msg) => {
+            setIntake(null);
+            if (msg) setNotice(msg);
+            void load();
+          }}
         />
       )}
       {action && (
@@ -177,7 +208,7 @@ export const PURPOSE_LABEL: Record<Purpose, string> = {
 const fmtDate = (d: string | null | undefined) =>
   d ? new Date(d).toLocaleDateString() : null;
 
-type ActionKind = "rename" | "purpose" | "archive" | "duplicate";
+type ActionKind = "rename" | "purpose" | "archive" | "duplicate" | "details";
 
 export const ProjectCard: React.FC<{
   p: Project;
@@ -238,6 +269,9 @@ export const ProjectCard: React.FC<{
                 <button role="menuitem" onClick={pick("rename")}>
                   Rename
                 </button>
+                <button role="menuitem" onClick={pick("details")}>
+                  Edit details
+                </button>
                 <button role="menuitem" onClick={pick("purpose")}>
                   Change purpose
                 </button>
@@ -256,6 +290,23 @@ export const ProjectCard: React.FC<{
           {p.name}
         </div>
         {p.number && <div className="muted">#{p.number}</div>}
+        {detailsNotSet(p) ? (
+          <div className="muted details-marker" data-testid="details-not-set">
+            details not set
+          </div>
+        ) : (
+          <div
+            className="muted details-line"
+            data-testid="details-line"
+            title={[p.client, p.location, p.building_type]
+              .filter(Boolean)
+              .join(" · ")}
+          >
+            {[p.client, p.location, p.building_type]
+              .filter(Boolean)
+              .join(" · ")}
+          </div>
+        )}
         {pages && (
           <div className="card-stats">
             <span>
@@ -277,7 +328,7 @@ export const ProjectCard: React.FC<{
 /** Rename, Change purpose, Archive/Unarchive, Duplicate as demo: one small dialog that asks for
  * the value (if any) and the person's name, then calls the API (which logs the change). */
 export const ProjectActionDialog: React.FC<{
-  kind: ActionKind;
+  kind: Exclude<ActionKind, "details">;
   project: Project;
   onClose: () => void;
   onDone: (message: string) => void;
@@ -601,8 +652,11 @@ export const ProcessingPanel: React.FC<{
   projectId: string;
   onClose: () => void;
   onOpen: () => void;
-}> = ({ projectId, onClose, onOpen }) => {
+  /** Called once when the Scan step is done (the Project details step opens then). */
+  onScanned?: () => void;
+}> = ({ projectId, onClose, onOpen, onScanned }) => {
   const [state, setState] = useState<Processing | null>(null);
+  const scanned = useRef(false);
   useEffect(() => {
     let alive = true;
     const tick = () =>
@@ -618,6 +672,12 @@ export const ProcessingPanel: React.FC<{
     };
   }, [projectId]);
   const steps = processingSteps(state);
+  useEffect(() => {
+    if (steps[1]!.state === "done" && !scanned.current) {
+      scanned.current = true;
+      onScanned?.();
+    }
+  });
   const share = steps.reduce((a, s) => a + s.share, 0) / steps.length;
   const finished =
     steps[3]!.state === "done" || steps.some((s) => s.state === "failed");

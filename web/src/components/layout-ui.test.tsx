@@ -30,8 +30,8 @@ describe("remembered panel state", () => {
     saveFlag("left", false, "ann");
     expect(loadFlag("left", true, "ann")).toBe(false);
     expect(loadFlag("left", true, "bob")).toBe(true); // another person has their own
-    saveDrawer("details", "ann");
-    expect(loadDrawer("ann")).toBe("details");
+    saveDrawer("profile", "ann");
+    expect(loadDrawer("ann")).toBe("profile");
     expect(loadDrawer("bob")).toBeNull();
     saveDrawer(null, "ann");
     expect(loadDrawer("ann")).toBeNull();
@@ -105,8 +105,8 @@ describe("properties panel", () => {
 describe("one panel beside the rail, remembered per person", () => {
   it("defaults to Pages, remembers the panel (or none), and reads the old two-flag state", () => {
     expect(loadPanel("ann")).toBe("pages");
-    savePanel("details", "ann");
-    expect(loadPanel("ann")).toBe("details");
+    savePanel("profile", "ann");
+    expect(loadPanel("ann")).toBe("profile");
     savePanel(null, "ann");
     expect(loadPanel("ann")).toBeNull(); // closed stays closed
     expect(loadPanel("bob")).toBe("pages");
@@ -116,6 +116,9 @@ describe("one panel beside the rail, remembered per person", () => {
     expect(loadPanel("cy")).toBeNull();
     saveDrawer("profile", "cy");
     expect(loadPanel("cy")).toBe("profile");
+    // a panel stored before the owner removed "Project details" from the workspace is closed
+    localStorage.setItem("ui.cy.panel", "details");
+    expect(loadPanel("cy")).toBeNull();
   });
 
   it("the inspector position is remembered, and blocked storage gives the defaults", () => {

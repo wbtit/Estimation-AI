@@ -26,6 +26,10 @@ export interface Project {
   /** Migration 025: real (default), demo or evaluation (measurement copies). */
   purpose?: Purpose;
   last_opened_at?: string | null;
+  /** Migration 040: the project details (name is the project's name). */
+  client?: string | null;
+  location?: string | null;
+  building_type?: string | null;
   created_at: string;
   thumbnail_url?: string | null;
   /** Card counts: plan pages, built pages, reviewed pages. */
@@ -125,6 +129,8 @@ export interface Page {
    * text layer: outlined text, the profile comes from the example). */
   labels_read?: boolean;
   labels_text_lines?: number | null;
+  /** Migration 040: the page has a (non-empty) note. */
+  has_notes?: boolean;
   width_pt: number | null;
   height_pt: number | null;
   rotation: number | null;
@@ -1256,4 +1262,50 @@ export function routeHash(r: Route): string {
   return r.sheetId
     ? `#/p/${r.projectId}/plans/${r.sheetId}`
     : `#/p/${r.projectId}`;
+}
+
+/** The project details step: the four details the owner keeps. The step shows a suggestion in grey
+ * where the reader found one; what is saved is what the step shows. */
+export const INTAKE_FIELDS = [
+  { key: "name", label: "Project name", read: "project_name" },
+  { key: "client", label: "Client", read: "owner" },
+  { key: "location", label: "Location", read: "location" },
+  { key: "building_type", label: "Building type", read: "building_type" },
+] as const;
+export type IntakeKey = (typeof INTAKE_FIELDS)[number]["key"];
+
+/** "details not set": the client, location and building type are all empty (the name always is). */
+export const detailsNotSet = (
+  p: Pick<Project, "client" | "location" | "building_type">,
+): boolean =>
+  !p.client?.trim() && !p.location?.trim() && !p.building_type?.trim();
+
+/** What a save sends: per field the typed value where one was typed (an empty string = cleared),
+ * else the suggestion where the field was left untouched; a field untouched with no suggestion is
+ * not sent (unchanged). */
+export function intakePayload(
+  typed: Partial<Record<IntakeKey, string>>,
+  suggestion: Partial<Record<IntakeKey, string | null>>,
+): Partial<Record<IntakeKey, string>> {
+  const out: Partial<Record<IntakeKey, string>> = {};
+  for (const { key } of INTAKE_FIELDS) {
+    const t = typed[key];
+    const s = suggestion[key];
+    if (t !== undefined) out[key] = t.trim();
+    else if (s) out[key] = s;
+  }
+  return out;
+}
+
+/** Up / down through the page cards: the neighbour of the selected page (none past either end; with
+ * no page selected, ArrowDown takes the first and ArrowUp the last). */
+export function pageNeighbour<T extends { id: string }>(
+  pages: readonly T[],
+  selectedId: string | null,
+  key: "ArrowUp" | "ArrowDown",
+): T | null {
+  if (pages.length === 0) return null;
+  const at = pages.findIndex((p) => p.id === selectedId);
+  if (at < 0) return key === "ArrowDown" ? pages[0]! : pages[pages.length - 1]!;
+  return pages[at + (key === "ArrowDown" ? 1 : -1)] ?? null;
 }

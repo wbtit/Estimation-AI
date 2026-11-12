@@ -18,7 +18,6 @@ import React, {
 } from "react";
 import {
   Download,
-  FileText,
   House,
   LayoutGrid,
   X,
@@ -30,11 +29,18 @@ import {
 import { api, ApiError, send } from "../lib/api";
 import { undoAsking } from "../lib/undo";
 import { ProfilePanel, type ProfileOverlay } from "./ProfilePanel";
-import { ProjectDetailsPanel } from "./ProjectDetails";
 import { Drawer } from "./Drawer";
+import { ResizeHandle } from "./ResizeHandle";
 import {
+  clampPanelWidth,
+  INSPECTOR_DEFAULT,
   INSPECTOR_POS,
+  LEFT_DEFAULT,
   loadJson,
+  loadWidth,
+  PANEL_MIN,
+  panelMax,
+  saveWidth,
   loadPanel,
   savePanel,
   saveJson,
@@ -63,6 +69,7 @@ import {
   type RoleName,
   type Route,
   BEAM_STYLE_LABEL,
+  pageNeighbour,
 } from "../lib/lf";
 import { usePdf } from "../lib/usePdf";
 import {
@@ -158,26 +165,20 @@ export const Workspace: React.FC<{
     null,
   );
   const [profileTick, setProfileTick] = useState(0);
-  // Phase 0 cover details: the panel, and the box of the source it jumped to
-  const [jumpBox, setJumpBox] = useState<
-    [number, number, number, number] | null
-  >(null);
-  // ONE panel opens next to the rail (Pages, Members, Profile search or Project details), and it is
+  // ONE panel opens next to the rail (Pages, Members or Profile search), and it is
   // remembered per person (localStorage, wrapped). Closing it ends what it drew on the page.
   const [panel, setPanelState] = useState<PanelName>(() => loadPanel(who));
   const setPanel = useCallback(
     (p: PanelName) => {
       setPanelState(p);
       savePanel(p, who);
-      if (p !== "details") setJumpBox(null);
     },
     [who],
   );
   const leftOpen = panel === "pages" || panel === "members";
   const left: "pages" | "members" = panel === "members" ? "members" : "pages";
   const setLeft = (l: "pages" | "members") => setPanel(l);
-  const drawer: DrawerName =
-    panel === "profile" || panel === "details" ? panel : null;
+  const drawer: DrawerName = panel === "profile" ? panel : null;
   const setDrawer = (d: DrawerName) => setPanel(d);
   // the inspector (Properties): shown or hidden, docked at the right or floating over the canvas
   // (draggable, collapsible to its header); all remembered per person
@@ -195,6 +196,22 @@ export const Workspace: React.FC<{
   const [inspPos, setInspPos] = useState<InspectorPos>(() =>
     loadJson("inspector.pos", INSPECTOR_POS, who),
   );
+  // the widths of the left panel (Pages / Members / Profile search) and of the docked inspector:
+  // dragged with the handle, remembered per person, never wider than 45% of the window
+  const [winW, setWinW] = useState(() => window.innerWidth);
+  useEffect(() => {
+    const on = () => setWinW(window.innerWidth);
+    window.addEventListener("resize", on);
+    return () => window.removeEventListener("resize", on);
+  }, []);
+  const [leftW, setLeftW] = useState(() =>
+    loadWidth("panel.left.width", LEFT_DEFAULT, who),
+  );
+  const [inspW, setInspW] = useState(() =>
+    loadWidth("panel.inspector.width", INSPECTOR_DEFAULT, who),
+  );
+  const leftNow = clampPanelWidth(leftW, winW);
+  const inspNow = clampPanelWidth(inspW, winW);
   const inspPosRef = useRef(inspPos);
   inspPosRef.current = inspPos;
   const stageRef = useRef<HTMLDivElement>(null);
@@ -1079,7 +1096,15 @@ export const Workspace: React.FC<{
       )}
       {tab === "report" && <ReportTab projectId={projectId} who={who} />}
       {tab === "plans" && (
-        <div className="ws-body">
+        <div
+          className="ws-body"
+          style={
+            {
+              "--left-w": `${leftNow}px`,
+              "--insp-w": `${inspNow}px`,
+            } as React.CSSProperties
+          }
+        >
           <nav className="irail" aria-label="panels">
             {(
               [
@@ -1091,13 +1116,6 @@ export const Workspace: React.FC<{
                   Search,
                   "Profile search: every occurrence of a size on the pages",
                   !page,
-                ],
-                [
-                  "details",
-                  "Project details",
-                  FileText,
-                  "Project details and the drawing index check",
-                  false,
                 ],
               ] as const
             ).map(([name, label, Icon, tip, off]) => (
@@ -1159,7 +1177,22 @@ export const Workspace: React.FC<{
             </div>
             <div className="scroll">
               {left === "pages" && (
-                <div className="page-list">
+                <div
+                  className="page-list"
+                  tabIndex={0}
+                  aria-label="pages"
+                  onKeyDown={(e) => {
+                    // up / down moves through the pages (not while typing in a field)
+                    if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+                    const t = e.target as HTMLElement;
+                    if (["INPUT", "SELECT", "TEXTAREA"].includes(t.tagName))
+                      return;
+                    const to = pageNeighbour(pages, sheetId, e.key);
+                    if (!to) return;
+                    e.preventDefault();
+                    selectSheet(to.id);
+                  }}
+                >
                   {pages.map((p) => (
                     <PageCard
                       key={p.id}
@@ -1175,6 +1208,7 @@ export const Workspace: React.FC<{
                         p.id === sheetId ? (view?.id ?? null) : null
                       }
                       onActiveView={setViewId}
+                      notes={{ projectId, who }}
                     />
                   ))}
                 </div>
@@ -1217,24 +1251,6 @@ export const Workspace: React.FC<{
               )}
             </div>
           </div>
-          {drawer === "details" && (
-            <Drawer title="Project details" onClose={() => setDrawer(null)}>
-              <ProjectDetailsPanel
-                projectId={projectId}
-                who={who}
-                onClose={() => setDrawer(null)}
-                onJump={(pageIndex, box, sid) => {
-                  const target =
-                    pages.find((p) => p.id === sid) ??
-                    pages.find((p) => p.page_number === pageIndex + 1);
-                  setJumpBox(box);
-                  if (target && target.id !== sheetId) selectSheet(target.id);
-                }}
-                onChanged={say}
-                onError={fail}
-              />
-            </Drawer>
-          )}
           {drawer === "profile" && page && (
             <Drawer title="Profile search" onClose={() => setDrawer(null)}>
               <ProfilePanel
@@ -1253,6 +1269,24 @@ export const Workspace: React.FC<{
                 onError={fail}
               />
             </Drawer>
+          )}
+          {(leftOpen || drawer) && (
+            <ResizeHandle
+              side="right"
+              label="resize the side panel"
+              width={leftNow}
+              min={PANEL_MIN}
+              max={panelMax(winW)}
+              onChange={setLeftW}
+              onCommit={(w) => {
+                setLeftW(w);
+                saveWidth("panel.left.width", w, who);
+              }}
+              onReset={() => {
+                setLeftW(LEFT_DEFAULT);
+                saveWidth("panel.left.width", LEFT_DEFAULT, who);
+              }}
+            />
           )}
           <div className="ws-main">
             <div className="ws-stage" ref={stageRef}>
@@ -1320,7 +1354,6 @@ export const Workspace: React.FC<{
                     )
                   }
                   profileMarks={profileOverlay}
-                  jumpBox={jumpBox}
                   similar={
                     simPreview
                       ? {
@@ -1532,7 +1565,27 @@ export const Workspace: React.FC<{
               )}
             </div>
           </div>
-          {rightOpen && !inspFloat && inspectorEl}
+          {rightOpen && !inspFloat && (
+            <>
+              <ResizeHandle
+                side="left"
+                label="resize the inspector"
+                width={inspNow}
+                min={PANEL_MIN}
+                max={panelMax(winW)}
+                onChange={setInspW}
+                onCommit={(w) => {
+                  setInspW(w);
+                  saveWidth("panel.inspector.width", w, who);
+                }}
+                onReset={() => {
+                  setInspW(INSPECTOR_DEFAULT);
+                  saveWidth("panel.inspector.width", INSPECTOR_DEFAULT, who);
+                }}
+              />
+              {inspectorEl}
+            </>
+          )}
         </div>
       )}
       {saveAsk && page && (

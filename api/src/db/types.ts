@@ -15,6 +15,9 @@ export interface ProjectsTable {
   design_standard: Generated<string>;
   unit_system: Generated<string>;
   location: string | null;
+  /** Migration 040: the project details step (name, client, location, building type). */
+  client: ColumnType<string | null, string | null | undefined, string | null>;
+  building_type: ColumnType<string | null, string | null | undefined, string | null>;
   grids: Json;
   levels: Json;
   drawing_issue: string | null;
@@ -1004,7 +1007,18 @@ export interface DrawingIndexFlagsTable {
   created_at: Generated<Timestamp>;
 }
 
+/** Migration 040: one plain-text note per page. */
+export interface SheetNotesTable {
+  sheet_id: string;
+  project_id: string;
+  note: Generated<string>;
+  version: Generated<number>;
+  updated_by: string;
+  updated_at: Timestamp;
+}
+
 export interface Database {
+  sheet_notes: SheetNotesTable;
   project_details: ProjectDetailsTable;
   project_detail_edits: ProjectDetailEditsTable;
   project_detail_reads: ProjectDetailReadsTable;

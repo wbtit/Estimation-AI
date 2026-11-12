@@ -5,10 +5,12 @@ import {
   Check,
   ChevronDown,
   EllipsisVertical,
+  ListTodo,
   LoaderCircle,
   Pencil,
   Play,
   Plus,
+  StickyNote,
 } from "lucide-react";
 import { formatFtIn, parseFtIn } from "../lib/ftin";
 import {
@@ -26,6 +28,7 @@ import {
   type RoleName,
   BEAM_STYLE_LABEL,
 } from "../lib/lf";
+import { PageNotesBox } from "./PageNotes";
 import { RoleSelect } from "./RoleSelect";
 
 /** What a page card asks for. Setup changes are for one view of the page (the first by default). */
@@ -145,6 +148,8 @@ export const PageCard: React.FC<{
   roles?: RoleName[];
   activeViewId?: string | null;
   onActiveView?: (id: string) => void;
+  /** Page notes (migration 040): the project and the person; without it the card has no notes. */
+  notes?: { projectId: string; who: string };
 }> = ({
   page,
   columnPlans,
@@ -154,8 +159,13 @@ export const PageCard: React.FC<{
   roles = [],
   activeViewId = null,
   onActiveView,
+  notes,
 }) => {
   const [menu, setMenu] = useState(false);
+  // page notes: closed by default; the icon shows when the page has a note and reopens it
+  const [notesOpen, setNotesOpen] = useState(false);
+  const [hasNotes, setHasNotes] = useState(page.has_notes === true);
+  useEffect(() => setHasNotes(page.has_notes === true), [page.has_notes]);
   const ref = useRef<HTMLDivElement>(null);
   const views = viewsOf(page);
   const view = activeView(views, activeViewId)!;
@@ -253,15 +263,40 @@ export const PageCard: React.FC<{
           : first.behaviour === "framing"
             ? "Framing"
             : (PAGE_TYPE_SHORT[page.page_type ?? "other"] ?? "Other")));
+  // the status tags (build badge, Estimating / Skip): on the thumbnail of the selected card, in a
+  // line beside the small thumbnail of the others (compact cards)
+  const statusTags = (
+    <>
+      {page.badge !== "Skip" && (
+        <span
+          className={`tag top ${badgeClass(page.badge)}`}
+          title={[...page.reasons, ...(page.warnings ?? [])].join("; ")}
+        >
+          {/* Phase 14f: built without column supports */}
+          {!!page.warnings?.length && (
+            <span data-testid="badge-warning" aria-label="warning">
+              ⚠
+            </span>
+          )}
+          {page.badge === "Requesting Build" && <Bell size={11} />}
+          {(page.badge === "Built" || page.badge === "Reviewed") && (
+            <Check size={11} />
+          )}
+          {page.badge}
+        </span>
+      )}
+      <span className={`tag bottom ${second}`}>{second}</span>
+    </>
+  );
   return (
     <div
       ref={ref}
-      className={`page-card${selected ? " on" : ""}`}
+      className={`page-card${selected ? " on" : ""}${notesOpen ? " notes-open" : ""}`}
       onClick={onSelect}
       data-testid={`page-card-${page.page_number}`}
     >
       <div className="head">
-        <span className="title">
+        <span className="title" title={`Page ${page.page_number} | ${title}`}>
           Page {page.page_number} | {title}
         </span>
         <span className="grow" />
@@ -407,29 +442,16 @@ export const PageCard: React.FC<{
           )}
         </>
       )}
+      {!selected && (
+        <div className="card-status" data-testid="card-status">
+          {statusTags}
+        </div>
+      )}
       <div className="thumb">
         {page.thumbnail_url ? (
           <img src={page.thumbnail_url} alt="" loading="lazy" />
         ) : null}
-        {page.badge !== "Skip" && (
-          <span
-            className={`tag top ${badgeClass(page.badge)}`}
-            title={[...page.reasons, ...(page.warnings ?? [])].join("; ")}
-          >
-            {/* Phase 14f: built without column supports */}
-            {!!page.warnings?.length && (
-              <span data-testid="badge-warning" aria-label="warning">
-                ⚠
-              </span>
-            )}
-            {page.badge === "Requesting Build" && <Bell size={11} />}
-            {(page.badge === "Built" || page.badge === "Reviewed") && (
-              <Check size={11} />
-            )}
-            {page.badge}
-          </span>
-        )}
-        <span className={`tag bottom ${second}`}>{second}</span>
+        {selected && statusTags}
         {(page.counts.attention > 0 || page.counts.needs_review > 0) && (
           <span className="issue-counts" data-testid="issue-counts">
             {page.counts.attention > 0 && (
@@ -445,8 +467,48 @@ export const PageCard: React.FC<{
           </span>
         )}
       </div>
+      {notes && (
+        <div className="notes-row" onClick={(e) => e.stopPropagation()}>
+          {hasNotes ? (
+            <button
+              className="notes-icon"
+              data-testid="notes-icon"
+              aria-label="notes of this page"
+              aria-expanded={notesOpen}
+              title="This page has notes"
+              onClick={() => setNotesOpen(!notesOpen)}
+            >
+              <StickyNote size={14} />
+              <span>Notes</span>
+            </button>
+          ) : (
+            !notesOpen && (
+              <button
+                className="notes-add link"
+                data-testid="notes-add"
+                onClick={() => setNotesOpen(true)}
+              >
+                Add notes
+              </button>
+            )
+          )}
+          {notesOpen && (
+            <PageNotesBox
+              projectId={notes.projectId}
+              sheetId={page.id}
+              who={notes.who}
+              onHasNotes={setHasNotes}
+              onClose={() => setNotesOpen(false)}
+            />
+          )}
+        </div>
+      )}
       {selected && (
-        <div onClick={(e) => e.stopPropagation()}>
+        <div
+          className="card-setup"
+          data-testid="card-setup"
+          onClick={(e) => e.stopPropagation()}
+        >
           <div className="views" data-testid="views">
             <span className="views-label">Views</span>
             {views.map((v) => (
@@ -718,7 +780,7 @@ export const PageCard: React.FC<{
                         setPenMenu(!penMenu);
                       }}
                     >
-                      !{c.label}
+                      <ListTodo size={10} /> {c.label}: not set
                     </button>
                     {penMenu && (
                       <div
@@ -758,9 +820,10 @@ export const PageCard: React.FC<{
                     {c.state === "ok" ? (
                       <Check size={10} strokeWidth={3} />
                     ) : c.state === "missing" ? (
-                      "!"
+                      <ListTodo size={10} />
                     ) : null}
                     {c.label}
+                    {c.state === "missing" && ": not set"}
                   </span>
                 ),
               )}

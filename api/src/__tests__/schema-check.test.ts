@@ -6,6 +6,8 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { closeDatabaseConnection, getDb } from '../db/client.js';
 import {
   assertSchemaCurrent,
+  isDevelopment,
+  startupSchemaCheck,
   migrationFiles,
   missingFrom,
   missingMigrations,
@@ -49,6 +51,56 @@ describe('schema check', () => {
     await expect(assertSchemaCurrent(getDb(), dir)).rejects.toThrow(
       'migration 999 missing: run npm run migrate',
     );
+    fs.rmSync(dir, { recursive: true });
+  });
+});
+
+describe('startup decision: warn in development, refuse otherwise', () => {
+  // a folder whose newest migration file the database lacks (the watcher saw a new file)
+  const ahead = () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mig-'));
+    fs.writeFileSync(path.join(dir, '001_initial_schema.sql'), '');
+    fs.writeFileSync(path.join(dir, '999_not_applied_yet.sql'), '');
+    return dir;
+  };
+
+  it('only NODE_ENV=development counts as development', () => {
+    expect(isDevelopment({ NODE_ENV: 'development' })).toBe(true);
+    expect(isDevelopment({ NODE_ENV: 'production' })).toBe(false);
+    expect(isDevelopment({})).toBe(false);
+  });
+
+  it('development: a loud warning, no refusal', async () => {
+    const dir = ahead();
+    const lines: string[] = [];
+    const r = await startupSchemaCheck(getDb(), { NODE_ENV: 'development' }, dir, (l) =>
+      lines.push(l),
+    );
+    expect(r.status).toBe('warned');
+    expect(r).toMatchObject({ missing: ['999_not_applied_yet.sql'] });
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain('WARNING');
+    expect(lines[0]).toContain('migration 999 missing: run npm run migrate');
+    fs.rmSync(dir, { recursive: true });
+  });
+
+  it('a normal or production start refuses (same message, nothing logged here)', async () => {
+    const dir = ahead();
+    for (const env of [{}, { NODE_ENV: 'production' }]) {
+      const lines: string[] = [];
+      const r = await startupSchemaCheck(getDb(), env, dir, (l) => lines.push(l));
+      expect(r.status).toBe('refused');
+      expect(r).toMatchObject({ message: 'migration 999 missing: run npm run migrate' });
+      expect(lines).toHaveLength(0);
+    }
+    fs.rmSync(dir, { recursive: true });
+  });
+
+  it('a current database is current in both modes; assertSchemaCurrent itself stays strict', async () => {
+    for (const env of [{}, { NODE_ENV: 'development' }])
+      expect((await startupSchemaCheck(getDb(), env)).status).toBe('current');
+    const dir = ahead();
+    await expect(assertSchemaCurrent(getDb(), dir)).rejects.toThrow(/migration 999 missing/);
     fs.rmSync(dir, { recursive: true });
   });
 });

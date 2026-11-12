@@ -1356,7 +1356,6 @@ export const Canvas: React.FC<CanvasProps> = (props) => {
           <CircleHelp size={16} />
         </button>
       </div>
-      <StatusLegend />
       {help && (
         <div
           className="shortcuts"
@@ -1383,6 +1382,9 @@ export const Canvas: React.FC<CanvasProps> = (props) => {
               ))}
             </tbody>
           </table>
+          <div className="legend-block">
+            <StatusLegend />
+          </div>
         </div>
       )}
       {tool === "pick" && (

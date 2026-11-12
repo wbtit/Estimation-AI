@@ -1213,7 +1213,10 @@ like any other) with `parent_member_id` = its beam.
   manual items, counted apart.
 - **Startup schema check.** The API (`api/src/db/schema-check.ts`) and the worker
   (`worker/src/schema_check.py`) compare `db/migrations` with `schema_migrations` and refuse to start with
-  "migration 032 missing: run npm run migrate".
+  "migration 032 missing: run npm run migrate". Exception: the API in development / watch mode
+  (`NODE_ENV=development`, which `npm run dev` sets) logs a loud warning and keeps running, so a watcher that
+  restarts when a new migration file appears before `npm run migrate` ran does not go down; `npm start`,
+  production and any start without that variable stay strict. The worker is always strict (it writes data).
 - **"Not built: N things to set"** names each missing item ("Set the beam line style (Pen)", "Confirm the
   scale", ...) and each jumps to its step; a failed Build shows its error as a problem. "Use this pen"
   confirms a suggested pen that is already right.
@@ -1299,9 +1302,13 @@ Pre-registration: `worker/prereg/PHASE0_PROFILE_CALLOUT_PREREGISTRATION.md`.
 
 **Workspace layout (Option B "Graphite", one dark theme):** a slim icon rail on the left (Pages, Members, Profile search, Project details; Inspector at the bottom) opens ONE panel at a time beside the canvas; Esc closes the open panel. The inspector (Properties) is docked at the right or floats over the canvas (the "float" / "dock" button in its header): floating, it can be dragged by its header and collapsed to the header; Fit, Zoom to selection (the cross-hair button), Next / Prev and a field's source jump keep what they show beside it, never under it. The panel, the inspector's mode, collapse and position and the open sections are remembered per person in the browser (`web/src/lib/ui-state.ts`, wrapped in try / catch).
 
+**Resizable panels and page cards:** a drag handle between the left panel (Pages / Members / Profile search) and the canvas, and on the left edge of the docked inspector, resizes it (min 280 px, max 45% of the window; double-click or Enter resets; arrow keys, Home / End work on the focused handle); the width is remembered per person (`panel.left.width`, `panel.inspector.width`) and clamped to the window. The canvas starts where the panel ends. Page cards are compact (small thumbnail, page name, sheet, status, notes action) and only the SELECTED card shows its setup (views, role, scale, beam lines, setup chips); Up / Down move through the pages. Panel content wraps or truncates with a tooltip, form rows stack label-over-field in a narrow panel (container query), and setup chips are steps: done = green with a tick, to do = amber outline ("Crop: not set"), red only for a real failure.
+
 **Colour and visibility:** the tokens are in `web/src/styles.css` `:root`; `npm run contrast` (in `web/`, `scripts/contrast.mjs`) checks every pair (text 4.5:1, icons, control borders and marks 3:1). Marks on the drawing are drawn as white halo + dark casing + colour core; a state is never colour alone: approved = a green check badge, check = a dashed core and an amber "?" badge, problem = a thicker dotted core and a red "!" badge (a badge for approved shows from 50 % zoom); selection = yellow ring with a black casing and square handles; Find similar = teal dashed rings; the capture box = dashed blue with its tag. A small status legend sits on the canvas. Nothing is under 12 px, controls are at least 28 px.
 
 ### (i) Cover details and the drawing index check
+
+> **Project intake (migration 040):** project details are not part of the estimation workspace any more (no Project button or drawer there; the drawing index check is switched off in the worker, `INDEX_CHECK = False` in `worker/src/details/read.py`, its code and tables stay). After an upload, once the Scan step is done, a "Project details" step opens in the project list (once; Skip saves nothing and does not ask again) with exactly four fields: project name, client, location, building type. The reader's suggestion is grey placeholder text; Save stores what is shown (suggestion where untouched, typed where typed, empty where cleared) via `PUT /api/projects/:id/details`, each change also a person edit in `project_detail_edits`; the name can never be empty (empty keeps the current name). "Edit details" is in each project card's menu; a card with no client, location or building type shows a muted "details not set". **Page notes:** per page, "Add notes" on the page card opens a plain-text box that autosaves about 1 s after typing stops; a note icon marks pages with notes; `sheet_notes` keeps who / when and a version, a save over a note that changed since you opened it answers 409 and the box offers Keep mine / Load theirs. Not in the BOM or the report. The status legend moved from the canvas into the "?" help popover.
 
 > The panel shows four fields only: project name, client, location and building type (the building type is a keyword suggestion shown "suggested"). The reader still reads the other fields and the database keeps them; they are hidden. Labels can sit above, below or beside their value.
 

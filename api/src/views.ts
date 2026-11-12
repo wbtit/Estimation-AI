@@ -19,6 +19,8 @@ export function projectView(
     design_standard: project.design_standard,
     unit_system: project.unit_system,
     location: project.location,
+    client: project.client,
+    building_type: project.building_type,
     created_at: project.created_at,
     updated_at: project.updated_at,
     document: file && {
