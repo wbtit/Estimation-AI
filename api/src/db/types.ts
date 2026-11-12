@@ -53,6 +53,9 @@ export type BuildStatus = 'not_built' | 'building' | 'built' | 'failed';
 export interface SheetsTable {
   id: Generated<string>;
   project_id: string;
+  /** Migration 038: when the size labels were read; text lines on the page (0 = no text layer) */
+  labels_read_at: Timestamp | null;
+  labels_text_lines: number | null;
   sheet_number: string | null;
   title: string | null;
   kind: ColumnType<SheetKind, SheetKind | undefined, SheetKind>;
@@ -312,6 +315,14 @@ export interface MembersTable {
   mark: string | null;
   profile_raw: string | null;
   profile: string | null;
+  /** Migration 038: where the profile came from, the label row and the link evidence */
+  profile_source: ColumnType<
+    'label' | 'typical' | 'example' | 'person' | null,
+    string | null | undefined,
+    string | null
+  >;
+  profile_label_id: string | null;
+  profile_link: ColumnType<unknown, string | null | undefined, string | null>;
   material: string | null;
   grade: string | null;
   start_grid_x: string | null;
@@ -484,6 +495,8 @@ export type CountState = 'suggested' | 'confirmed' | 'rejected';
 export type CountSource = 'human_click' | 'suggestion_accepted';
 export type SizeSource = 'linked_label' | 'nearest_label' | 'manual' | 'none';
 export type CountActionName =
+  | 'profile_mark'
+  | 'profile_apply'
   | 'create'
   | 'accept'
   | 'reject'
@@ -906,7 +919,29 @@ export interface ViewUndoTable {
   undone_by: string | null;
 }
 
+export interface PageLabelsTable {
+  id: Generated<string>;
+  sheet_id: string;
+  view_id: string;
+  text: string;
+  raw: string;
+  canonical: string | null;
+  family: string | null;
+  kind: 'profile' | 'joist';
+  valid: boolean;
+  catalog_name: string | null;
+  flags: string[];
+  tag: string | null;
+  x0: Numeric;
+  y0: Numeric;
+  x1: Numeric;
+  y1: Numeric;
+  leaders: ColumnType<unknown, string | undefined, string>;
+  created_at: Generated<Timestamp>;
+}
+
 export interface Database {
+  page_labels: PageLabelsTable;
   page_symbols: PageSymbolsTable;
   projects: ProjectsTable;
   sheets: SheetsTable;

@@ -54,6 +54,7 @@ from src.build.page import (
     column_mode_default,
 )
 from src.build.pieces import build_state, length_mm, plan_mm, stable_member_id
+from src.build.profile_store import label_key, store_labels
 from src.build.segments import TextLine
 from src.build.snapshots import person_snapshot
 from src.build.views import View, load_views, pick_view, view_as_sheet
@@ -432,7 +433,15 @@ def _overlaps(a: Pt, b: Pt, row: dict[str, Any]) -> bool:
     return shared >= OVERLAP_SHARE * min(math.dist(a, b), math.dist(c, d))
 
 
-def _size_fields(att: Attached) -> dict[str, Any]:
+def _size_fields(
+    att: Attached,
+    ids: dict[Any, str] | None = None,
+    valid: dict[Any, bool] | None = None,
+    example: str | None = None,
+) -> dict[str, Any]:
+    """The size columns of a member from its attached label, plus where the profile came from
+    (profile_source: label | typical | example) and the link evidence (profile_link). `example`:
+    the profile of the confirmed example a column was matched from (used only with no label)."""
     lb = att.label
     if att.size_state == "joist":
         # a joist keeps its designation as written and never a W / HSS size
@@ -445,7 +454,23 @@ def _size_fields(att: Attached) -> dict[str, Any]:
             "camber_mm": None,
             "size_state": "undefined",
             "label_evidence": Jsonb(att.evidence()),
+            "profile_source": None,
+            "profile_label_id": None,
+            "profile_link": None,
         }
+    key = label_key(lb.text.box, lb.canonical, lb.raw) if lb else None
+    source = att.source
+    link: dict[str, Any] | None = None
+    if source and lb is not None:
+        link = {
+            "rule": att.rule, "confidence": att.confidence, "reason": att.reason,
+            "competitor": att.competitor, "existing": lb.existing,
+            "valid": (valid or {}).get(key),
+        }  # fmt: skip
+        if example and example != lb.canonical:
+            link["note"] = f"label {lb.canonical}, example {example}"
+    elif example:
+        source, link = "example", {"reason": "no label for this column: the example's profile"}
     return {
         "profile_raw": lb.raw if lb else None,
         "profile": lb.canonical if lb else None,
@@ -455,6 +480,9 @@ def _size_fields(att: Attached) -> dict[str, Any]:
         "camber_mm": None if lb is None or lb.camber_mm is None else round(lb.camber_mm, 2),
         "size_state": att.size_state,
         "label_evidence": Jsonb(att.evidence()),
+        "profile_source": source,
+        "profile_label_id": (ids or {}).get(key) if source in ("label", "typical") else None,
+        "profile_link": None if link is None else Jsonb(link),
     }
 
 
@@ -568,6 +596,13 @@ def store(
         counts["updated"] += 1
         return str(row["id"])
 
+    # Phase 0 profile from callout: the view's size labels are stored (the profile search and the
+    # API read them) and every member says where its profile came from
+    label_rows, label_ids = store_labels(
+        conn, sheet_id, view.id, pb.text,
+        [tuple(map(float, r)) for r in pb.segments.seg] if len(pb.segments) else [],
+    )  # fmt: skip
+    label_valid = {label_key(x.box, x.canonical, x.raw): x.valid for x in label_rows}
     # Phase 14b: the candidate symbols of a column plan, for Find similar
     if pb.setup.role == "column_plan":
         store_symbols(conn, sheet_id, run_id, view.id, pb)
@@ -584,7 +619,7 @@ def store(
             "type": "column",
             "kind": column_kind,
             "kind_evidence": Jsonb({"source": "line_first_build", **info}),
-            **_size_fields(att),
+            **_size_fields(att, label_ids, label_valid, info.get("profile")),
             "build_run_id": run_id,
             "page_x0": round(g.centre[0], 2),
             "page_y0": round(g.centre[1], 2),
@@ -613,7 +648,7 @@ def store(
                 symbol_flag=info["flag"],
                 symbol_real_in=Jsonb(info["real_in"]),
             )
-            if info.get("profile") and att.size_state != "sized":
+            if info.get("profile") and att.size_state == "undefined":
                 fields.update(profile=info["profile"], profile_raw=info["profile"],
                               size_state="sized")  # fmt: skip
                 fields["build_state"] = "found" if not info["flag"] else "attention"
@@ -685,7 +720,7 @@ def store(
             "type": member_type,
             "kind": kind,
             "kind_evidence": Jsonb(evidence),
-            **_size_fields(att),
+            **_size_fields(att, label_ids, label_valid),
             "build_run_id": run_id,
             "beam_line_id": line_uuid[p.line],
             "piece_index": p.index,

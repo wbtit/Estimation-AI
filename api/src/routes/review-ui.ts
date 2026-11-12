@@ -14,6 +14,7 @@
 //   GET  /api/projects/:projectId/answer-key.json                  the saved final as an answer key
 // Member edits are member_edits rows grouped by one action id (multi-select = one action), so the
 // existing undo (POST /undo) works on them; every action is also a count_actions row with time.
+import { loadLabels, resolveProfile } from '../review/profile-link.js';
 import { randomUUID } from 'node:crypto';
 import type { FastifyPluginAsync } from 'fastify';
 import { sql, type Kysely, type Selectable } from 'kysely';
@@ -98,7 +99,7 @@ import { takeTagNumbers } from '../review/tag-counter.js';
 import { projectDuplicateTags, renumberPreview, renumberTags } from '../review/renumber-tags.js';
 import { HttpError } from './http-error.js';
 import { loadMemberViews } from '../review/member-views.js';
-import { ftIn, setupReasons } from './build.js';
+import { firstId, ftIn, setupReasons } from './build.js';
 
 export interface ReviewUiRouteOptions {
   db?: Kysely<Database>;
@@ -194,6 +195,10 @@ export function drawnValues(p: {
   tos: number | null;
   symbol: string | null;
   symbolSource: 'drawn' | 'find_similar' | null;
+  /** Phase 0 profile from callout: where the profile came from (profile-link.ts) */
+  profileSource?: 'label' | 'typical' | 'example' | 'person' | null;
+  profileLabelId?: string | null;
+  profileLink?: Record<string, unknown> | null;
   rotation: number | null;
   realIn: [number, number] | null;
   /** Phase 0: the column's web direction (see orientation.ts) and how it was read */
@@ -220,6 +225,9 @@ export function drawnValues(p: {
     quantity: 1,
     profile_raw: p.text,
     profile: p.profile,
+    profile_source: p.profileSource ?? null,
+    profile_label_id: p.profileLabelId ?? null,
+    profile_link: p.profileLink ? JSON.stringify(p.profileLink) : null,
     tag_prefix: p.prefix,
     tag_number: p.number,
     build_run_id: p.runId,
@@ -541,6 +549,10 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
                 .find((r) => r.startsWith('text_read_failed: '))
                 ?.slice('text_read_failed: '.length) ?? null,
             lines_ready: withLines.has(s.id),
+            // Phase 0 profile from callout: the labels were read (null: not yet) and the page's
+            // text lines (0: no text layer, e.g. outlined text)
+            labels_read: s.labels_read_at !== null,
+            labels_text_lines: s.labels_text_lines,
             width_pt: num(s.width_pt),
             height_pt: num(s.height_pt),
             rotation: s.rotation,
@@ -1126,6 +1138,16 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
       const text = body.profile_text?.trim() || null;
       const parsed = text ? parseProfile(text) : null;
       const tos = num(s.tos_mm);
+      // Phase 0 profile from callout: the profile sent with a placed column is the palette's
+      // DEFAULT (source example, amber): the column's own label (green), else the view's TYP
+      // label (amber), replaces it. Only a profile typed on the member afterwards (the member
+      // panel, a separate edit) is the person's and is never replaced.
+      const fromLabel = column
+        ? resolveProfile(body.a, await loadLabels(db(), s.id, view.row.id), {
+            profile: parsed?.canonical ?? null,
+            raw: text,
+          })
+        : null;
       const out = await db()
         .transaction()
         .execute(async (trx) => {
@@ -1169,8 +1191,11 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
                 prefix: info.prefix,
                 number,
                 type,
-                text,
-                profile: parsed?.canonical ?? null,
+                text: fromLabel?.profile_raw ?? text,
+                profile: fromLabel?.profile ?? parsed?.canonical ?? null,
+                profileSource: fromLabel?.source ?? (parsed ? 'example' : null),
+                profileLabelId: fromLabel?.label_id ?? null,
+                profileLink: fromLabel?.link ?? null,
                 a: body.a,
                 b,
                 ratio,
@@ -1665,11 +1690,24 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
       if (ratio === null) throw new HttpError(409, { error: 'set the scale of the page first' });
       const runId = piece.build_run_id;
       if (!runId) throw new HttpError(409, { error: 'the column has no build' });
+      // Phase 0 profile from callout: a match takes the profile of ITS OWN label (green), else the
+      // view's TYP label (amber), else the example's profile (amber): never just the example's
+      const labelRows = await loadLabels(
+        db(),
+        sheetId,
+        piece.build_view_id ?? firstId(await viewsOf(db(), sheetId)) ?? null,
+      );
+      const sources: Record<string, number> = {};
       const created = await db()
         .transaction()
         .execute(async (trx) => {
           const ids: string[] = [];
           for (const m of chosen) {
+            const got = resolveProfile(m.centre, labelRows, {
+              profile: piece.profile,
+              raw: piece.profile_raw,
+            });
+            sources[got.source ?? 'none'] = (sources[got.source ?? 'none'] ?? 0) + 1;
             const number = await takeTagNumbers(trx, projectId, sheetId, info.prefix);
             const row = await trx
               .insertInto('members')
@@ -1684,8 +1722,11 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
                   prefix: info.prefix,
                   number,
                   type: 'column',
-                  text: piece.profile_raw,
-                  profile: piece.profile,
+                  text: got.profile_raw ?? piece.profile_raw,
+                  profile: got.profile ?? piece.profile,
+                  profileSource: got.source,
+                  profileLabelId: got.label_id,
+                  profileLink: got.link,
                   a: m.centre,
                   b: null,
                   ratio,
@@ -1733,6 +1774,7 @@ export const reviewUiRoutes: FastifyPluginAsync<ReviewUiRouteOptions> = async (a
               real_in: example.real_in,
               snap: snapInfo,
               member_ids: ids,
+              profile_sources: sources,
               // Phase 0-column-capture: how many matches were read clear / unsure, the capture box
               // when a person changed it, and the time of the search that was previewed (ms)
               refined: refinedCount,

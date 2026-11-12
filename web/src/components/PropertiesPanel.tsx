@@ -1,3 +1,4 @@
+import { sourceChip } from "../lib/profile-callout";
 import React, { useEffect, useRef, useState } from "react";
 import {
   Check,
@@ -121,6 +122,33 @@ export const SummaryList: React.FC<{
 
 /** Properties: a Summary tab (sheet and project summary, crop) and a Member tab (the selection).
  * Selecting a member opens the Member tab; clearing the selection goes back to Summary. */
+/** Where the profile came from: green = its own label, amber = a TYP label or the example. */
+export const ProfileSourceChip: React.FC<{ piece: Piece }> = ({ piece }) => {
+  const chip = sourceChip(piece);
+  return (
+    <>
+      {chip && (
+        <span
+          className={`chip ${chip.tone}`}
+          data-testid="profile-source"
+          title={chip.title}
+        >
+          {chip.text}
+        </span>
+      )}
+      {piece.existing && (
+        <span
+          className="chip grey"
+          data-testid="existing-chip"
+          title="An (E) label: existing steel, kept out of new-steel weight"
+        >
+          existing
+        </span>
+      )}
+    </>
+  );
+};
+
 export const PropertiesPanel: React.FC<{
   bomRows: BomRow[];
   sheetId: string | null;
@@ -580,6 +608,7 @@ const MemberSection: React.FC<{
           value={show(size)}
           onPick={(name) => onEdit({ profile_text: name })}
         />
+        {selected.length === 1 && <ProfileSourceChip piece={selected[0]!} />}
       </Field>
       <div className="two">
         <Field label="Camber">

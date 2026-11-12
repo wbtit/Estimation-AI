@@ -39,10 +39,10 @@ FROM build_views v
 JOIN sheets s ON s.id = v.sheet_id
 JOIN projects p ON p.id = s.project_id
 JOIN project_files f ON f.project_id = s.project_id
-JOIN role_names r ON r.name = v.role_name AND r.behaviour = 'framing'
+JOIN role_names r ON r.name = v.role_name AND r.behaviour = %(behaviour)s
 WHERE (p.purpose = 'real' OR s.id::text LIKE ANY(%(extra)s))
   AND v.scale_ratio IS NOT NULL AND v.box IS NOT NULL
-  AND EXISTS (SELECT 1 FROM view_pens vp WHERE vp.view_id = v.id)
+  AND (%(behaviour)s <> 'framing' OR EXISTS (SELECT 1 FROM view_pens vp WHERE vp.view_id = v.id))
 ORDER BY f.sha256, s.page_index, s.created_at, v.position
 """
 
@@ -57,10 +57,16 @@ def _connect(database_url: str):
 
 
 def select_pages(
-    conn, ids: list[str], exclude: list[str], extra: list[str] | None = None
+    conn,
+    ids: list[str],
+    exclude: list[str],
+    extra: list[str] | None = None,
+    behaviour: str = "framing",
 ) -> list[dict]:
     """`extra`: sheet id prefixes of pages of NON-real projects to include too (e.g. session 1)."""
-    rows = conn.execute(SELECT_PAGES, {"extra": [e + "%" for e in (extra or [])]}).fetchall()
+    rows = conn.execute(
+        SELECT_PAGES, {"extra": [e + "%" for e in (extra or [])], "behaviour": behaviour}
+    ).fetchall()
     out = []
     for r in rows:
         sid = str(r["sheet_id"])
@@ -74,6 +80,7 @@ def select_pages(
                 "view_id": str(r["view_id"]),
                 "page_index": r["page_index"],
                 "stored_path": r["stored_path"],
+                "behaviour": behaviour,
             }  # fmt: skip
         )
     return out
@@ -94,9 +101,10 @@ def run_pages(database_url: str, upload_dir: Path, pages: list[dict], forced: bo
             box = view.row["box"]
             crop = (float(box["x0"]), float(box["y0"]), float(box["x1"]), float(box["y1"]))
             pens = tuple(p["pen_class"] for p in view.pens)
+            role = pg.get("behaviour", "framing")
             setup = Setup(
-                crop, float(view.row["scale_ratio"]), None, pens[0], "framing", pens=pens,
-                excludes=tuple(view.excludes), deselected=tuple(view.deselected),
+                crop, float(view.row["scale_ratio"]), None, pens[0] if pens else None, role,
+                pens=pens, excludes=tuple(view.excludes), deselected=tuple(view.deselected),
                 column_mode="click_first",
             )  # fmt: skip
             res: dict[str, Any] = {"sheet_id": pg["sheet_id"], "pens": list(pens)}
@@ -111,6 +119,12 @@ def run_pages(database_url: str, upload_dir: Path, pages: list[dict], forced: bo
                     + [p.support_state, a.size_state, a.label.canonical if a.label else None]
                     for p, a in zip(pb.supports.pieces, pb.piece_labels, strict=True)
                 ]
+                # Phase 0 profile from callout: the label each column took (state, profile)
+                res["columns"] = [
+                    [round(g.centre[0], 1), round(g.centre[1], 1), a.size_state,
+                     a.label.canonical if a.label else None]
+                    for g, a in zip(pb.columns, pb.column_labels, strict=True)
+                ]  # fmt: skip
                 res["notes"] = list(pb.notes)
                 res["counts"] = {
                     k: v for k, v in pb.counts().items() if not k.startswith("double_")
@@ -216,7 +230,9 @@ def run_ref(ref: str, work: Path, url: str, upload_dir: Path, pages: list[dict])
 def compare(old: list[dict], new: list[dict]) -> dict:
     diff = []
     for o, n in zip(old, new, strict=True):
-        keys = [k for k in ("lines", "pieces", "notes", "counts") if o[k] != n[k]]
+        keys = [
+            k for k in ("lines", "pieces", "columns", "notes", "counts") if o.get(k) != n.get(k)
+        ]
         if keys:
             diff.append({"sheet_id": o["sheet_id"], "differs": keys})
     return {"pages": len(old), "identical": len(old) - len(diff), "different": diff}
@@ -231,6 +247,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--work-dir")
     ap.add_argument("--json")
     ap.add_argument("--forced-double", action="store_true")
+    ap.add_argument("--behaviour", default="framing", choices=["framing", "column_plan"])
     ap.add_argument("--sweep", default="", help="sheet id prefixes: forced double on thin pens")
     args = ap.parse_args(argv)
     import os
@@ -253,6 +270,7 @@ def main(argv: list[str] | None = None) -> int:
             [x for x in args.ids.split(",") if x],
             [x for x in args.exclude.split(",") if x],
             [x for x in args.extra.split(",") if x],
+            args.behaviour,
         )
     work = Path(args.work_dir) if args.work_dir else Path(tempfile.mkdtemp(prefix="beam-regress-"))
     old = run_ref(args.ref, work, url, upload_dir, pages)

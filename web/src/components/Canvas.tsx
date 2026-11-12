@@ -10,6 +10,8 @@ import {
 } from "../lib/columns";
 import { ColumnPalette } from "./ColumnPalette";
 import { SimilarMatches, type SimilarOverlay } from "./SimilarMatches";
+import { ProfileMarks } from "./ProfileMarks";
+import type { MarkProposal, Occurrence } from "../lib/profile-callout";
 import React, {
   useCallback,
   useEffect,
@@ -211,6 +213,19 @@ export interface CanvasProps {
   onApprove?: () => void;
   /** Phase 14e: the Find similar preview's matches (ticked / unticked), drawn over the page. */
   similar?: SimilarOverlay | null;
+  /** Phase 0 profile from callout: the searched profile's occurrences and the Mark all proposals */
+  profileMarks?: {
+    occurrences: Occurrence[];
+    proposals: MarkProposal[];
+    unticked: ReadonlySet<string>;
+    onToggle: (labelId: string) => void;
+    pickable?: {
+      label_id: string;
+      canonical: string | null;
+      box: [number, number, number, number];
+    }[];
+    onPick?: (canonical: string) => void;
+  } | null;
   /** Phase 0-14g: the page's column symbols (the Draw column snap targets) and THE snap radius */
   symbols?: ColumnSymbols | null;
   /** Phase 0-14g: the column an arrow key nudges (the one just placed, before Find similar) */
@@ -1522,6 +1537,9 @@ export const Canvas: React.FC<CanvasProps> = (props) => {
               ))}
             {props.similar && (
               <SimilarMatches overlay={props.similar} px={px} />
+            )}
+            {props.profileMarks && (
+              <ProfileMarks {...props.profileMarks} px={px} />
             )}
             {single && single.a && tool === "select" && (
               <g>

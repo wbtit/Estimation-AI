@@ -1,0 +1,522 @@
+{
+ "note": "label centre = (x, y); a label box is 20 x 8 around it",
+ "cases": [
+  {
+   "name": "nearest, no rival",
+   "fn": "link",
+   "point": [
+    100,
+    100
+   ],
+   "box": null,
+   "labels": [
+    {
+     "canonical": "W12X65",
+     "family": "W",
+     "x": 130,
+     "y": 100,
+     "typical": false,
+     "leaders": [],
+     "valid": true
+    }
+   ],
+   "expect": {
+    "method": "beside",
+    "canonical": "W12X65",
+    "confidence": "high"
+   }
+  },
+  {
+   "name": "nearest far, no rival -> medium",
+   "fn": "link",
+   "point": [
+    100,
+    100
+   ],
+   "box": null,
+   "labels": [
+    {
+     "canonical": "W12X65",
+     "family": "W",
+     "x": 150,
+     "y": 100,
+     "typical": false,
+     "leaders": [],
+     "valid": true
+    }
+   ],
+   "expect": {
+    "method": "beside",
+    "canonical": "W12X65",
+    "confidence": "medium"
+   }
+  },
+  {
+   "name": "rival clearly farther -> high",
+   "fn": "link",
+   "point": [
+    100,
+    100
+   ],
+   "box": null,
+   "labels": [
+    {
+     "canonical": "W12X65",
+     "family": "W",
+     "x": 120,
+     "y": 100,
+     "typical": false,
+     "leaders": [],
+     "valid": true
+    },
+    {
+     "canonical": "W12X53",
+     "family": "W",
+     "x": 100,
+     "y": 150,
+     "typical": false,
+     "leaders": [],
+     "valid": true
+    }
+   ],
+   "expect": {
+    "method": "beside",
+    "canonical": "W12X65",
+    "confidence": "high"
+   }
+  },
+  {
+   "name": "rival close -> low, competitor named",
+   "fn": "link",
+   "point": [
+    100,
+    100
+   ],
+   "box": null,
+   "labels": [
+    {
+     "canonical": "W12X65",
+     "family": "W",
+     "x": 130,
+     "y": 100,
+     "typical": false,
+     "leaders": [],
+     "valid": true
+    },
+    {
+     "canonical": "W12X53",
+     "family": "W",
+     "x": 100,
+     "y": 135,
+     "typical": false,
+     "leaders": [],
+     "valid": true
+    }
+   ],
+   "expect": {
+    "method": "beside",
+    "canonical": "W12X65",
+    "confidence": "low",
+    "competitor": "W12X53"
+   }
+  },
+  {
+   "name": "same profile twice is not a rival",
+   "fn": "link",
+   "point": [
+    100,
+    100
+   ],
+   "box": null,
+   "labels": [
+    {
+     "canonical": "W12X65",
+     "family": "W",
+     "x": 130,
+     "y": 100,
+     "typical": false,
+     "leaders": [],
+     "valid": true
+    },
+    {
+     "canonical": "W12X65",
+     "family": "W",
+     "x": 100,
+     "y": 130,
+     "typical": false,
+     "leaders": [],
+     "valid": true
+    }
+   ],
+   "expect": {
+    "method": "beside",
+    "canonical": "W12X65",
+    "confidence": "high"
+   }
+  },
+  {
+   "name": "a leader beats a nearer label",
+   "fn": "link",
+   "point": [
+    100,
+    100
+   ],
+   "box": [
+    95,
+    95,
+    105,
+    105
+   ],
+   "labels": [
+    {
+     "canonical": "W12X53",
+     "family": "W",
+     "x": 120,
+     "y": 100,
+     "typical": false,
+     "leaders": [],
+     "valid": true
+    },
+    {
+     "canonical": "W12X65",
+     "family": "W",
+     "x": 400,
+     "y": 100,
+     "typical": false,
+     "leaders": [
+      [
+       103,
+       104
+      ]
+     ],
+     "valid": true
+    }
+   ],
+   "expect": {
+    "method": "leader",
+    "canonical": "W12X65",
+    "confidence": "high"
+   }
+  },
+  {
+   "name": "beam family labels are not column labels",
+   "fn": "link",
+   "point": [
+    100,
+    100
+   ],
+   "box": null,
+   "labels": [
+    {
+     "canonical": "L3X3X1/4",
+     "family": "L",
+     "x": 110,
+     "y": 100,
+     "typical": false,
+     "leaders": [],
+     "valid": true
+    }
+   ],
+   "expect": {
+    "method": null,
+    "canonical": null
+   }
+  },
+  {
+   "name": "nothing within 60 pt",
+   "fn": "link",
+   "point": [
+    100,
+    100
+   ],
+   "box": null,
+   "labels": [
+    {
+     "canonical": "W12X65",
+     "family": "W",
+     "x": 200,
+     "y": 100,
+     "typical": false,
+     "leaders": [],
+     "valid": true
+    }
+   ],
+   "expect": {
+    "method": null,
+    "canonical": null
+   }
+  },
+  {
+   "name": "nearest TYP wins",
+   "fn": "typical",
+   "point": [
+    100,
+    100
+   ],
+   "labels": [
+    {
+     "canonical": "W12X65",
+     "family": "W",
+     "x": 300,
+     "y": 100,
+     "typical": true,
+     "leaders": [],
+     "valid": true
+    },
+    {
+     "canonical": "W12X53",
+     "family": "W",
+     "x": 150,
+     "y": 100,
+     "typical": true,
+     "leaders": [],
+     "valid": true
+    }
+   ],
+   "expect": {
+    "method": "typical",
+    "canonical": "W12X53"
+   }
+  },
+  {
+   "name": "exact tie between different profiles stays unset",
+   "fn": "typical",
+   "point": [
+    100,
+    100
+   ],
+   "labels": [
+    {
+     "canonical": "W12X65",
+     "family": "W",
+     "x": 200,
+     "y": 100,
+     "typical": true,
+     "leaders": [],
+     "valid": true
+    },
+    {
+     "canonical": "W12X53",
+     "family": "W",
+     "x": 100,
+     "y": 200,
+     "typical": true,
+     "leaders": [],
+     "valid": true
+    }
+   ],
+   "expect": {
+    "method": null,
+    "canonical": null
+   }
+  },
+  {
+   "name": "tie of the same profile is fine",
+   "fn": "typical",
+   "point": [
+    100,
+    100
+   ],
+   "labels": [
+    {
+     "canonical": "W12X65",
+     "family": "W",
+     "x": 200,
+     "y": 100,
+     "typical": true,
+     "leaders": [],
+     "valid": true
+    },
+    {
+     "canonical": "W12X65",
+     "family": "W",
+     "x": 100,
+     "y": 200,
+     "typical": true,
+     "leaders": [],
+     "valid": true
+    }
+   ],
+   "expect": {
+    "method": "typical",
+    "canonical": "W12X65"
+   }
+  },
+  {
+   "name": "a beam-family TYP is not a column TYP",
+   "fn": "typical",
+   "point": [
+    100,
+    100
+   ],
+   "labels": [
+    {
+     "canonical": "L3X3X1/4",
+     "family": "L",
+     "x": 150,
+     "y": 100,
+     "typical": true,
+     "leaders": [],
+     "valid": true
+    }
+   ],
+   "expect": {
+    "method": null,
+    "canonical": null
+   }
+  },
+  {
+   "name": "no TYP label",
+   "fn": "typical",
+   "point": [
+    100,
+    100
+   ],
+   "labels": [
+    {
+     "canonical": "W12X65",
+     "family": "W",
+     "x": 150,
+     "y": 100,
+     "typical": false,
+     "leaders": [],
+     "valid": true
+    }
+   ],
+   "expect": {
+    "method": null,
+    "canonical": null
+   }
+  },
+  {
+   "name": "resolve: own label wins over the example, with a note",
+   "fn": "resolve",
+   "point": [
+    100,
+    100
+   ],
+   "example": "W12X53",
+   "labels": [
+    {
+     "canonical": "W12X65",
+     "family": "W",
+     "x": 130,
+     "y": 100,
+     "typical": false,
+     "valid": true,
+     "leaders": []
+    }
+   ],
+   "expect": {
+    "source": "label",
+    "canonical": "W12X65",
+    "note": "label W12X65, example W12X53"
+   }
+  },
+  {
+   "name": "resolve: same profile as the example has no note",
+   "fn": "resolve",
+   "point": [
+    100,
+    100
+   ],
+   "example": "W12X65",
+   "labels": [
+    {
+     "canonical": "W12X65",
+     "family": "W",
+     "x": 130,
+     "y": 100,
+     "typical": false,
+     "valid": true,
+     "leaders": []
+    }
+   ],
+   "expect": {
+    "source": "label",
+    "canonical": "W12X65",
+    "note": null
+   }
+  },
+  {
+   "name": "resolve: a label not in the catalog is not used",
+   "fn": "resolve",
+   "point": [
+    100,
+    100
+   ],
+   "example": "W12X53",
+   "labels": [
+    {
+     "canonical": "W12X999",
+     "family": "W",
+     "x": 130,
+     "y": 100,
+     "typical": false,
+     "valid": false,
+     "leaders": []
+    }
+   ],
+   "expect": {
+    "source": "example",
+    "canonical": "W12X53",
+    "note": "label W12X999 is not in the AISC catalog: not used"
+   }
+  },
+  {
+   "name": "resolve: a TYP label when there is no own label",
+   "fn": "resolve",
+   "point": [
+    100,
+    100
+   ],
+   "example": "W12X53",
+   "labels": [
+    {
+     "canonical": "W12X40",
+     "family": "W",
+     "x": 300,
+     "y": 100,
+     "typical": true,
+     "valid": true,
+     "leaders": []
+    }
+   ],
+   "expect": {
+    "source": "typical",
+    "canonical": "W12X40",
+    "note": "label W12X40, example W12X53"
+   }
+  },
+  {
+   "name": "resolve: no label at all is today's behaviour (the example)",
+   "fn": "resolve",
+   "point": [
+    100,
+    100
+   ],
+   "example": "W12X53",
+   "labels": [],
+   "expect": {
+    "source": "example",
+    "canonical": "W12X53",
+    "note": null
+   }
+  },
+  {
+   "name": "resolve: no label and no example stays empty",
+   "fn": "resolve",
+   "point": [
+    100,
+    100
+   ],
+   "example": null,
+   "labels": [],
+   "expect": {
+    "source": null,
+    "canonical": null,
+    "note": null
+   }
+  }
+ ]
+}

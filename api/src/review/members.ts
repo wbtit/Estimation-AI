@@ -151,6 +151,9 @@ export interface MemberView {
   not_member: { reason: string } | null;
   /** A person said this is EXISTING steel: it keeps its profile and length but is not counted. */
   existing: boolean;
+  /** Phase 0 profile from callout: where the profile came from and how the link was made */
+  profile_source: 'label' | 'typical' | 'example' | 'person' | null;
+  profile_link: Record<string, unknown> | null;
   plan_point: { x_mm: number | null; y_mm: number | null } | null;
   /** Phase 6a: the kind (the estimators' scope list), how it was found, and the tag. */
   kind: KindState;
@@ -455,7 +458,9 @@ export function memberView(
     fieldEdited('merged_into', null) ||
     fieldEdited('typical', null);
   const notMember = (e.get('not_member') as { reason: string } | null | undefined) ?? null;
-  const existing = e.get('existing') === true;
+  // an "(E)" size label makes the member existing until a person says otherwise
+  const labelExisting = (row.profile_link as { existing?: boolean } | null)?.existing === true;
+  const existing = e.has('existing') ? e.get('existing') === true : labelExisting;
   const human: HumanState =
     reviewStatus === 'rejected'
       ? 'deleted'
@@ -594,6 +599,17 @@ export function memberView(
     merged_into: (e.get('merged_into') as string | null | undefined) ?? null,
     not_member: (e.get('not_member') as { reason: string } | null | undefined) ?? null,
     existing,
+    // the source follows the person: a typed profile is theirs; an applied label proposal says so
+    profile_source:
+      (e.has('profile_source')
+        ? (e.get('profile_source') as never)
+        : fieldEdited('profile', row.profile) || fieldEdited('profile_raw', row.profile_raw)
+          ? 'person'
+          : (row.profile_source as never)) ?? null,
+    profile_link:
+      (e.has('profile_link')
+        ? (e.get('profile_link') as Record<string, unknown> | null)
+        : (row.profile_link as Record<string, unknown> | null)) ?? null,
     plan_point:
       row.origin === 'manual' && row.plan_start_x_mm !== null
         ? { x_mm: num(row.plan_start_x_mm), y_mm: num(row.plan_start_y_mm) }

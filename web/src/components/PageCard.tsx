@@ -1,3 +1,4 @@
+import { NO_TEXT_NOTE, noText } from "../lib/profile-callout";
 import React, { useEffect, useRef, useState } from "react";
 import {
   Bell,
@@ -797,6 +798,11 @@ export const PageCard: React.FC<{
                   ))}
                 </>
               )}
+            </div>
+          )}
+          {noText(page) && !page.text_problem && (
+            <div className="card-note" data-testid="card-no-text">
+              {NO_TEXT_NOTE}
             </div>
           )}
           {!!page.text_problem && (

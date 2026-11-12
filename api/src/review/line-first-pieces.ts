@@ -83,6 +83,11 @@ export interface PieceView {
   /** clear (read from the symbol), unsure (amber), manual (a person set it), none. */
   orientation_state: 'clear' | 'unsure' | 'manual' | 'none' | null;
   orientation_source: 'click' | 'match' | 'manual' | 'backfill' | null;
+  /** Phase 0 profile from callout: where the profile came from (label green; typical / example
+   * amber; person) and how the label was linked (method, confidence, reason, note) */
+  profile_source: 'label' | 'typical' | 'example' | 'person' | null;
+  profile_link: Record<string, unknown> | null;
+  existing: boolean;
   /** Phase 0 count rule: a column is COUNTED in the BOM only on a page whose role counts columns
    * (a role with the behaviour column_plan: Foundation / column plan, Pile plan). On any other
    * page it is shown but is "Reference: counted on the column plan", unless the person ticked
@@ -426,6 +431,9 @@ export async function loadPieces(
       orientation_deg: effOri.deg,
       orientation_state: effOri.state,
       orientation_source: effOri.source,
+      profile_source: v.profile_source,
+      profile_link: v.profile_link,
+      existing: v.existing,
       count_column: countColumn,
       page_counts_columns: pageCounts0,
       reference: v.type === 'column' && !(countColumn ?? pageCounts0),

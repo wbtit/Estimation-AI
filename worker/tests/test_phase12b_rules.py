@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 
 import pymupdf
+import pytest
 from build_factory import XS, YS, bubble, column, line, pieces
 
 from src.build.dimension_scale import scale_from_dimensions, scale_from_ratios
@@ -136,7 +137,14 @@ def test_without_a_column_like_glyph_there_are_no_columns():
 
 
 # ---- rules column_label_leader and typical_column_size -----------------------------------------
-def test_a_leader_gives_a_column_its_size_and_a_typ_note_sizes_the_same_glyphs():
+@pytest.mark.parametrize(
+    ("scope", "third_rule"),
+    [("glyph_signature", "typical_note"), ("view_family", "typical_view_family")],
+)
+def test_a_leader_gives_a_column_its_size_and_a_typ_note_sizes_the_same_glyphs(
+    monkeypatch, scope, third_rule
+):
+    monkeypatch.setattr("src.build.profile_config.TYP_SCOPE", scope)
     labels = find_labels(
         [
             TextLine("HSS8X8X1/2", (600, 100, 660, 108)),
@@ -152,7 +160,7 @@ def test_a_leader_gives_a_column_its_size_and_a_typ_note_sizes_the_same_glyphs()
     ]
     sig = ["square", "square", "square"]
     out = attach_to_columns(pts, labels, boxes, leaders, sig)
-    assert [a.rule for a in out] == ["leader", "leader", "typical_note"]
+    assert [a.rule for a in out] == ["leader", "leader", third_rule]
     assert out[0].label.canonical == "HSS8X8X1/2" and out[2].label.canonical == "W12X40"
     assert out[2].size_state == "inferred"  # needs review
 

@@ -93,6 +93,16 @@ export interface ScaleFound {
   count: number;
 }
 
+export interface ProfileLink {
+  method?: string | null;
+  confidence?: "high" | "medium" | "low" | null;
+  reason?: string;
+  competitor?: string | null;
+  note?: string;
+  existing?: boolean;
+  valid?: boolean | null;
+}
+
 export interface Page {
   id: string;
   page_index: number;
@@ -111,6 +121,10 @@ export interface Page {
   page_kind: string;
   /** The text step failed on this page: "page N: <step>: <reason>" (null when it did not). */
   text_problem?: string | null;
+  /** Phase 0 profile from callout: the size labels were read; the text lines of the page (0 = no
+   * text layer: outlined text, the profile comes from the example). */
+  labels_read?: boolean;
+  labels_text_lines?: number | null;
   width_pt: number | null;
   height_pt: number | null;
   rotation: number | null;
@@ -276,6 +290,10 @@ export interface Piece {
   /** clear (green), unsure (amber), manual (a person set it), none (round). */
   orientation_state?: "clear" | "unsure" | "manual" | "none" | null;
   orientation_source?: "click" | "match" | "manual" | "backfill" | null;
+  /** Phase 0 profile from callout: where the profile came from and how its label was linked. */
+  profile_source?: "label" | "typical" | "example" | "person" | null;
+  profile_link?: ProfileLink | null;
+  existing?: boolean;
   /** Phase 0 count rule: the person's tick (null = the page's default), the default (true on a
    * column / foundation plan) and the result: a column that is NOT counted (Reference). */
   count_column?: boolean | null;

@@ -34,7 +34,9 @@ import math
 import re
 from dataclasses import dataclass
 
+from src.build import profile_config as cfg
 from src.build.geom import Pt, angle_deg, angle_diff, point_seg_dist, project
+from src.build.profile_labels import _leader_ends, link_point, typical_for
 from src.build.segments import TextLine
 from src.text_layer.parsers.profile import find_profiles
 from src.text_layer.parsers.studs_camber import find_camber, find_studs
@@ -53,6 +55,7 @@ JOIST_RE = re.compile(
     re.IGNORECASE,
 )
 TYPICAL_RE = re.compile(r"\bTYP(?:ICAL)?\b\.?", re.IGNORECASE)
+EXISTING_RE = re.compile(r"\(\s*E\s*\)|\bEXIST(?:ING)?\b", re.IGNORECASE)
 CELL = 100.0
 
 
@@ -73,6 +76,10 @@ class Label:
     def typical(self) -> bool:
         return bool(TYPICAL_RE.search(self.text.text))
 
+    @property
+    def existing(self) -> bool:
+        return bool(EXISTING_RE.search(self.text.text))
+
 
 @dataclass
 class Attached:
@@ -80,6 +87,16 @@ class Attached:
     rule: str | None
     label: Label | None
     distance_pt: float | None
+    confidence: str | None = None  # high | medium | low: how clear the link is
+    reason: str = ""
+    competitor: str | None = None  # another profile that was close
+
+    @property
+    def source(self) -> str | None:
+        """Where the profile came from: label (its own), typical (a TYP label), or None."""
+        if self.label is None or self.size_state in ("undefined", "joist"):
+            return None
+        return "typical" if (self.rule or "").startswith("typical") else "label"
 
     def evidence(self) -> dict:
         if self.label is None:
@@ -89,6 +106,10 @@ class Attached:
             "size": {
                 "state": self.size_state,
                 "rule": self.rule,
+                "confidence": self.confidence,
+                "reason": self.reason,
+                "competitor": self.competitor,
+                "existing": lb.existing,
                 "kind": lb.kind,
                 "distance_pt": None if self.distance_pt is None else round(self.distance_pt, 1),
                 "box": [round(v, 1) for v in lb.text.box],
@@ -173,7 +194,8 @@ def attach_to_pieces(pieces: list[tuple[Pt, Pt]], labels: list[Label]) -> list[A
                 out.append(Attached("joist", "joist_label", labels[li], perp))
                 continue
             rule = "legend_mark" if labels[li].kind == "mark" else "parallel_on_piece"
-            out.append(Attached("sized", rule, labels[li], perp))
+            why = f"the label runs along the beam, {perp:.0f} pt off the line"
+            out.append(Attached("sized", rule, labels[li], perp, "high", why))
             continue
         best = None
         for li in _near(cells, a, b, INFER_MAX_PT):
@@ -185,8 +207,48 @@ def attach_to_pieces(pieces: list[tuple[Pt, Pt]], labels: list[Label]) -> list[A
         elif labels[best[1]].kind == "joist":
             out.append(Attached("joist", "joist_label", labels[best[1]], best[0]))
         else:
-            out.append(Attached("inferred", "nearest_any", labels[best[1]], best[0]))
+            why = f"nearest label, {best[0]:.0f} pt from the line, not along it"
+            out.append(Attached("inferred", "nearest_any", labels[best[1]], best[0], "low", why))
+    _typical_beams(out, pieces, labels)
     return out
+
+
+class _L:
+    """A label as profile_labels.link_point / typical_for read it."""
+
+    def __init__(self, lb: Label, leaders: list[Pt] | None = None) -> None:
+        self.label = lb
+        self.centre = lb.text.centre
+        self.canonical = lb.canonical
+        self.typical = lb.typical
+        self.kind = "profile" if lb.kind in ("profile", "mark") else lb.kind
+        self.family = lb.family or ("W" if lb.kind == "mark" else "")
+        self.leaders = leaders or []
+
+    @property
+    def column_family(self) -> bool:
+        return is_column_label(self.label)
+
+
+def _typical_beams(out: list["Attached"], pieces: list[tuple[Pt, Pt]], labels: list[Label]) -> None:
+    """Rule "typical_beam_size": a beam with no label takes the nearest TYP label of a beam family
+    (profile_config.TYP_SCOPE view_family; the page's labels are those of the view)."""
+    if cfg.TYP_SCOPE != "view_family":
+        return
+    typ = [
+        _L(lb) for lb in labels if lb.kind == "profile" and lb.typical and not is_column_label(lb)
+    ]
+    if not typ:
+        return
+    for pi, (a, b) in enumerate(pieces):
+        if out[pi].size_state != "undefined":
+            continue
+        got = typical_for(((a[0] + b[0]) / 2, (a[1] + b[1]) / 2), typ, "beam")
+        if got.label is not None:
+            out[pi] = Attached(
+                "inferred", "typical_view_family", got.label.label, None,
+                got.confidence, got.reason, got.competitor,
+            )  # fmt: skip
 
 
 def _box_dist(p: Pt, box: tuple[float, float, float, float]) -> float:
@@ -206,52 +268,44 @@ def attach_to_columns(
     segments: list[tuple[float, float, float, float]] | None = None,
     signatures: list[object] | None = None,
 ) -> list[Attached]:
-    """Column sizes (module note): nearest column label, then a leader, then TYP notes. `boxes`,
+    """Column sizes (module note): a leader that ends at the column, else the nearest column label,
+    then TYP notes. Each link has a confidence and a reason (profile_labels.link_point). `boxes`,
     `segments` and `signatures` are optional (without them only the nearest rule runs)."""
     idx = [i for i, lb in enumerate(labels) if is_column_label(lb)]
-    centres = [labels[i].text.centre for i in idx]
-    cells = _cells(centres)
+    cols = [
+        _L(labels[i], _leader_ends(labels[i].text.box, segments) if segments else None) for i in idx
+    ]
     out: list[Attached] = []
-    for p in points:
-        best = None
-        for k in _near(cells, p, p, COLUMN_LABEL_MAX_PT):
-            d = math.dist(centres[k], p)
-            if d <= COLUMN_LABEL_MAX_PT and (best is None or (d, k) < best):
-                best = (d, k)
-        if best is None:
+    for k, p in enumerate(points):
+        box = boxes[k] if boxes is not None else None
+        got = link_point(p, box, cols)
+        if got.label is None:
             out.append(Attached("undefined", None, None, None))
-        else:
-            out.append(Attached("sized", "nearest_to_column", labels[idx[best[1]]], best[0]))
-    if boxes is not None and segments:
-        _leaders(out, labels, idx, boxes, segments)
-    if signatures is not None:
-        _typical(out, labels, idx, signatures)
+            continue
+        rule = "leader" if got.method == "leader" else "nearest_to_column"
+        lb = got.label.label
+        d = math.dist(lb.text.centre, p)
+        out.append(Attached("sized", rule, lb, d, got.confidence, got.reason, got.competitor))
+    if cfg.TYP_SCOPE == "glyph_signature":
+        if signatures is not None:
+            _typical_signature(out, labels, idx, signatures)
+    else:
+        for k, p in enumerate(points):
+            if out[k].size_state != "undefined":
+                continue
+            got = typical_for(p, cols, "column")
+            if got.label is not None:
+                out[k] = Attached(
+                    "inferred", "typical_view_family", got.label.label, None,
+                    got.confidence, got.reason, got.competitor,
+                )  # fmt: skip
     return out
 
 
-def _leaders(out, labels, idx, boxes, segments) -> None:
-    """Rule "column_label_leader": a segment from a label's box to an unsized column's box."""
-    for ci, box in enumerate(boxes):
-        if out[ci].size_state != "undefined":
-            continue
-        best = None
-        for x0, y0, x1, y1 in segments:
-            if math.hypot(x1 - x0, y1 - y0) < LEADER_MIN_PT:
-                continue
-            for a, b in (((x0, y0), (x1, y1)), ((x1, y1), (x0, y0))):
-                if _box_dist(b, box) > LEADER_COLUMN_PT:
-                    continue
-                for i in idx:
-                    d = _box_dist(a, labels[i].text.box)
-                    if d <= LEADER_LABEL_PT and (best is None or (d, i) < best):
-                        best = (d, i)
-        if best is not None:
-            out[ci] = Attached("sized", "leader", labels[best[1]], best[0])
-
-
-def _typical(out, labels, idx, signatures) -> None:
-    """Rule "typical_column_size": a TYP label's size goes to the unsized columns of its glyph
-    signature (or of the only signature when it is attached to no column)."""
+def _typical_signature(out, labels, idx, signatures) -> None:
+    """Rule "typical_column_size" (TYP_SCOPE glyph_signature, Phase 12b): a TYP label's size goes
+    to the unsized columns of its glyph signature (or of the only signature when it is attached to
+    no column)."""
     typ = [i for i in idx if labels[i].typical]
     if not typ:
         return
@@ -266,4 +320,6 @@ def _typical(out, labels, idx, signatures) -> None:
         targets = by_label.get(i) or (sigs if len(sigs) == 1 else set())
         for ci, a in enumerate(out):
             if a.size_state == "undefined" and signatures[ci] in targets:
-                out[ci] = Attached("inferred", "typical_note", labels[i], None)
+                out[ci] = Attached(
+                    "inferred", "typical_note", labels[i], None, "medium", "a TYP note"
+                )

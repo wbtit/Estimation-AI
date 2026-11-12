@@ -2340,3 +2340,26 @@ table.grid tr.total td {
 .amber {
   color: var(--review, #b7791f);
 }
+
+/* Phase 0 profile from callout */
+.chip.green, .chip.amber, .chip.grey {
+  display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 10px;
+  font-size: 11px; font-weight: 600; vertical-align: middle;
+}
+.chip.green { background: rgba(22, 163, 74, 0.15); color: #15803d; }
+.chip.amber { background: rgba(255, 145, 0, 0.18); color: #b45309; }
+.chip.grey { background: rgba(107, 114, 128, 0.18); color: #4b5563; }
+.profile-panel { border-top: 1px solid var(--border, #e5e7eb); padding: 4px 8px; font-size: 12px; }
+.profile-toggle { background: none; border: 0; font-weight: 600; cursor: pointer; padding: 2px 0; }
+.profile-toggle .count { margin-left: 6px; background: var(--amber, #ff9100); color: #fff; border-radius: 9px; padding: 0 6px; }
+.profile-body { display: flex; flex-direction: column; gap: 6px; max-height: 40vh; overflow: auto; }
+.profile-row { display: flex; gap: 6px; }
+.profile-row input { flex: 1; }
+.profile-note, .profile-problem { color: #6b7280; }
+.profile-problem { color: #b91c1c; }
+.profile-proposals { list-style: none; padding: 0; margin: 4px 0; }
+.profile-proposals li.off { opacity: 0.5; }
+.profile-proposals .muted { color: #6b7280; }
+.profile-head { font-weight: 600; margin-top: 4px; }
+.profile-sheets { margin: 2px 0; padding-left: 16px; }
+button.link { background: none; border: 0; color: var(--select, #2563eb); cursor: pointer; padding: 0; text-decoration: underline; }

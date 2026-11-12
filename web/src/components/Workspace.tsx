@@ -19,6 +19,8 @@ import React, {
 import { Download, House, PanelLeft, Save } from "lucide-react";
 import { api, ApiError, send } from "../lib/api";
 import { undoAsking } from "../lib/undo";
+import { ProfilePanel, type ProfileOverlay } from "./ProfilePanel";
+import { noText } from "../lib/profile-callout";
 import { formatFtIn } from "../lib/ftin";
 import { fullPageBox } from "../lib/tools";
 import {
@@ -129,6 +131,9 @@ export const Workspace: React.FC<{
   lastColumnRef.current = lastColumn;
   // Phase 14e: the Find similar preview the person corrects (strictness, unticked matches)
   const [simPreview, setSimPreview] = useState<SimilarPreview | null>(null);
+  // Phase 0 profile from callout: the search highlights / Mark all proposals drawn on the page
+  const [profileOverlay, setProfileOverlay] = useState<ProfileOverlay | null>(null);
+  const [profileTick, setProfileTick] = useState(0);
   const [strictness, setStrictness] = useState(STRICTNESS_DEFAULT);
   const [unticked, setUnticked] = useState<Set<string>>(new Set());
   // Phase 0-14g: how the last column was placed (Shift = no snap) and its pending arrow-key nudges
@@ -972,6 +977,23 @@ export const Workspace: React.FC<{
               )}
             </div>
           </div>
+          {page && (
+            <ProfilePanel
+              key={page.id}
+              projectId={projectId}
+              sheetId={page.id}
+              who={who}
+              noText={noText(page)}
+              version={profileTick + pieces.length}
+              onOverlay={setProfileOverlay}
+              onChanged={(m) => {
+                say(m);
+                setProfileTick((t) => t + 1);
+                void refresh();
+              }}
+              onError={fail}
+            />
+          )}
           {showColumnHint(page, pieces, !!lastColumn) && (
             <ColumnHint text={COLUMN_HINT} />
           )}
@@ -1034,6 +1056,7 @@ export const Workspace: React.FC<{
                     : `${ids.length} columns rotated (Ctrl+Z undoes)`,
                 )
               }
+              profileMarks={profileOverlay}
               similar={
                 simPreview
                   ? {
