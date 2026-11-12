@@ -241,6 +241,36 @@ export async function lastViewChange(db: Db, projectId: string, who: string) {
   );
 }
 
+/** What undoing an "add view" would remove, or null when it removes nothing a person built:
+ * the view must still exist, not be View 1, and hold at least one piece. Read-only. */
+export async function addUndoRemoves(
+  db: Db,
+  viewId: string,
+): Promise<{ name: string; pieces_removed: number; pieces_kept: number } | null> {
+  const v = await db
+    .selectFrom('build_views')
+    .select(['name', 'position'])
+    .where('id', '=', viewId)
+    .executeTakeFirst();
+  if (!v || v.position === 1) return null;
+  const { untouched, touched } = await viewPieces(db, viewId);
+  if (untouched.length + touched.length === 0) return null;
+  return { name: v.name, pieces_removed: untouched.length, pieces_kept: touched.length };
+}
+
+/** The question asked before an undo removes a view that has built pieces. */
+export function addUndoQuestion(r: {
+  name: string;
+  pieces_removed: number;
+  pieces_kept: number;
+}): string {
+  const n = r.pieces_removed;
+  const kept = r.pieces_kept
+    ? ` ${r.pieces_kept} piece${r.pieces_kept === 1 ? '' : 's'} you edited move to View 1.`
+    : '';
+  return `Remove ${r.name} and its ${n} piece${n === 1 ? '' : 's'}?${kept}`;
+}
+
 export interface ViewUndoResult {
   undone_view_change: string;
   kind: ViewUndoKind;

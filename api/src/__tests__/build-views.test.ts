@@ -967,4 +967,78 @@ describe('view routes (test database)', () => {
     expect(s.pen_class).toBe('1.5-2.5|black|solid');
     expect(s.crop_region).toEqual({ x0: 0, y0: 0, x1: 500, y1: 800 });
   });
+
+  it('undo of an added view that has built pieces asks first; smaller undos are unchanged', async () => {
+    const run = await db
+      .selectFrom('build_runs')
+      .select('id')
+      .where('sheet_id', '=', sheetId)
+      .executeTakeFirstOrThrow();
+    // an empty added view is undone with no question
+    const empty = await post(`/sheets/${sheetId}/build-views`, {
+      box: { x0: 20, y0: 500, x1: 300, y1: 780 },
+      who: WHO,
+    });
+    const u0 = await post('/undo', { who: WHO });
+    expect(u0.statusCode).toBe(200);
+    expect(u0.json().view).toMatchObject({ kind: 'add', view_id: empty.json().id, applied: true });
+    // a view with one built piece
+    const added = await post(`/sheets/${sheetId}/build-views`, {
+      box: { x0: 20, y0: 500, x1: 300, y1: 780 },
+      who: WHO,
+    });
+    const vid = added.json().id as string;
+    const name = added.json().name as string;
+    await db
+      .insertInto('members')
+      .values({
+        project_id: projectId,
+        sheet_id: sheetId,
+        build_view_id: vid,
+        member_id: 'LF-B-ask',
+        origin: 'extracted',
+        type: 'beam',
+        kind: 'Beams',
+        build_run_id: run.id,
+        size_state: 'undefined',
+        build_state: 'attention',
+        support_state: 'both',
+        page_x0: 60,
+        page_y0: 600,
+        page_x1: 240,
+        page_y1: 600,
+        plan_scale_ratio: 48,
+      } as never)
+      .execute();
+    const ask = await post('/undo', { who: WHO });
+    expect(ask.statusCode).toBe(409);
+    expect(ask.json()).toMatchObject({
+      code: 'confirm_undo_view',
+      error: `Remove ${name} and its 1 piece?`,
+      view_id: vid,
+      pieces_removed: 1,
+    });
+    // nothing changed: the view and its piece are still there, the undo row is still open
+    expect(await firstViewOrNull(vid)).not.toBeNull();
+    expect(
+      (await db.selectFrom('members').select('id').where('build_view_id', '=', vid).execute())
+        .length,
+    ).toBe(1);
+    const open = await db
+      .selectFrom('view_undo')
+      .select('undone_at')
+      .where('view_id', '=', vid)
+      .executeTakeFirstOrThrow();
+    expect(open.undone_at).toBeNull();
+    // the same call with confirm removes it
+    const yes = await post('/undo', { who: WHO, confirm: true });
+    expect(yes.statusCode).toBe(200);
+    expect(yes.json().view).toMatchObject({
+      kind: 'add',
+      view_id: vid,
+      applied: true,
+      pieces_removed: 1,
+    });
+    expect(await firstViewOrNull(vid)).toBeNull();
+  });
 });
