@@ -18,6 +18,7 @@ import React, {
 } from "react";
 import { Download, House, PanelLeft, Save } from "lucide-react";
 import { api, ApiError, send } from "../lib/api";
+import { undoAsking } from "../lib/undo";
 import { formatFtIn } from "../lib/ftin";
 import { fullPageBox } from "../lib/tools";
 import {
@@ -1193,12 +1194,17 @@ export const Workspace: React.FC<{
                 )
               }
               onUndo={() =>
-                void send<{ view?: UndoneView }>(
-                  "POST",
-                  `/api/projects/${projectId}/undo`,
-                  { who },
+                void undoAsking(
+                  (confirm) =>
+                    send<{ view?: UndoneView }>(
+                      "POST",
+                      `/api/projects/${projectId}/undo`,
+                      confirm ? { who, confirm: true } : { who },
+                    ),
+                  (q) => window.confirm(q),
                 )
                   .then((r) => {
+                    if (!r) return;
                     say(r.view ? undoneViewText(r.view) : "Undone");
                     return refresh();
                   })

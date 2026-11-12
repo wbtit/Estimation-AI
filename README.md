@@ -1243,6 +1243,11 @@ a beam, so a double-line page counted every beam twice. Pre-registration:
 - **Harnesses** (`worker/measure/`): `beam_regress.py` (single-line pages must build identically to a
   base ref; `--forced-double` reports pairs made on single-line pages: must be zero) and
   `double_line_measure.py` (before/after counts and, with truth, matching).
+- **Undo of an added view asks first.** `POST /api/projects/:projectId/undo` (body `{who, confirm?}`):
+  when the newest undoable change is "add view" and the view holds built pieces, it answers 409
+  `confirm_undo_view` with the question ("Remove View 4 and its 44 pieces?", plus a note on edited
+  pieces that move to View 1) and changes nothing; the web app asks and repeats with `confirm: true`.
+  An empty added view and every other undo (box, delete, piece edits) run as before.
 - Future: junk filter for short thin lines at section marks / callouts is proposed in the report, not
   applied.
 

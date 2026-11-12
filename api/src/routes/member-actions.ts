@@ -6,7 +6,12 @@ import { logCountAction } from '../review/count-log.js';
 import { lastUndoableAction, undoLastAction, redoLastUndo } from '../review/member-ops.js';
 import { loadKinds } from '../review/kinds.js';
 import { loadMemberViews } from '../review/member-views.js';
-import { lastViewChange, undoViewChange } from '../review/view-undo.js';
+import {
+  addUndoQuestion,
+  addUndoRemoves,
+  lastViewChange,
+  undoViewChange,
+} from '../review/view-undo.js';
 import { HttpError } from './http-error.js';
 
 export interface MemberActionOptions {
@@ -18,6 +23,15 @@ const projectParams = {
   type: 'object',
   required: ['projectId'],
   properties: { projectId: uuid },
+} as const;
+const undoBody = {
+  type: 'object',
+  required: ['who'],
+  additionalProperties: false,
+  properties: {
+    who: { type: 'string', minLength: 1, maxLength: 100 },
+    confirm: { type: 'boolean' },
+  },
 } as const;
 const whoOnly = {
   type: 'object',
@@ -49,9 +63,9 @@ export const memberActionRoutes: FastifyPluginAsync<MemberActionOptions> = async
 
   /** How many other pieces share this piece's tag: shown before the "apply to all" click. */
 
-  app.post<{ Params: { projectId: string }; Body: { who: string } }>(
+  app.post<{ Params: { projectId: string }; Body: { who: string; confirm?: boolean } }>(
     '/api/projects/:projectId/undo',
-    { schema: { params: projectParams, body: whoOnly } },
+    { schema: { params: projectParams, body: undoBody } },
     async (request) => {
       const { projectId } = request.params;
       const who = request.body.who.trim();
@@ -60,8 +74,21 @@ export const memberActionRoutes: FastifyPluginAsync<MemberActionOptions> = async
       const view = await lastViewChange(db(), projectId, who);
       if (view) {
         const member = await lastUndoableAction(db(), projectId, who);
-        if (!member || new Date(view.created_at as unknown as Date) >= new Date(member.at))
+        if (!member || new Date(view.created_at as unknown as Date) >= new Date(member.at)) {
+          // Undoing an "add view" that holds built pieces removes them: ask first (409, the
+          // question is the error text); the same call with confirm: true does it.
+          if (view.kind === 'add' && request.body.confirm !== true) {
+            const removes = await addUndoRemoves(db(), view.view_id);
+            if (removes)
+              throw new HttpError(409, {
+                error: addUndoQuestion(removes),
+                code: 'confirm_undo_view',
+                view_id: view.view_id,
+                ...removes,
+              });
+          }
           return { undone: null, rows: 0, view: await undoViewChange(db(), view, who) };
+        }
       }
       const result = await undoLastAction(db(), projectId, who, async (id) => {
         const [m] = await loadMemberViews(db(), projectId, { memberIds: [id] });
