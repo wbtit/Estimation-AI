@@ -834,6 +834,15 @@ export interface BuildViewsTable {
   setup_changed_at: Timestamp | null;
   built_at: Timestamp | null;
   registration: Json | null;
+  // migration 037: the page beam style (null = single)
+  beam_style: 'single' | 'double' | 'both' | null;
+  beam_gap_min_pt: Numeric | null;
+  beam_gap_max_pt: Numeric | null;
+  beam_centreline_required: Generated<boolean>;
+  beam_style_source: 'learned' | 'person' | null;
+  beam_style_evidence: Json | null;
+  beam_style_by: string | null;
+  beam_style_at: Timestamp | null;
   created_by: string | null;
   created_at: Generated<Date>;
   updated_at: Generated<Date>;

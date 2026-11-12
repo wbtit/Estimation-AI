@@ -23,6 +23,7 @@ import {
   type Page,
   type PageViewInfo,
   type RoleName,
+  BEAM_STYLE_LABEL,
 } from "../lib/lf";
 import { RoleSelect } from "./RoleSelect";
 
@@ -43,6 +44,12 @@ export interface PageActions {
   ) => void;
   /** "No beams": beam pen = none (a person's choice); the next build makes no beams. */
   noBeams: (p: Page, viewId: string | null) => void;
+  /** Review 4: set the page beam style of a view (overrides the learned one). */
+  setBeamStyle?: (
+    p: Page,
+    viewId: string | null,
+    style: "single" | "double" | "both",
+  ) => void;
   /** Phase 14f: open the page with the Pick beam tool (from the red Pen chip). */
   pickPen?: (p: Page, viewId: string | null) => void;
   createRole?: (
@@ -654,6 +661,45 @@ export const PageCard: React.FC<{
                 )}
               </div>
             </>
+          )}
+          {actions.setBeamStyle && view.pens.length > 0 && (
+            <div className="field">
+              <label>
+                Beam lines{" "}
+                <select
+                  aria-label="beam style"
+                  data-testid="beam-style"
+                  value={view.beam_style ?? "single"}
+                  title={
+                    view.beam_style_source === "person"
+                      ? "Set by a person"
+                      : (view.beam_style_evidence?.reason ??
+                        "Learned from the beam you picked")
+                  }
+                  onClick={(e) => e.stopPropagation()}
+                  onChange={(e) =>
+                    actions.setBeamStyle!(
+                      page,
+                      vid,
+                      e.target.value as "single" | "double" | "both",
+                    )
+                  }
+                >
+                  {(["single", "double", "both"] as const).map((k) => (
+                    <option key={k} value={k}>
+                      {BEAM_STYLE_LABEL[k]}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {view.beam_style_source === "learned" &&
+                view.beam_style === "double" && (
+                  <span className="muted" data-testid="beam-style-note">
+                    {" "}
+                    learned: two thin lines with a dashed centreline
+                  </span>
+                )}
+            </div>
           )}
           <div className="field setup">
             <span className="chips" data-testid="setup-chips">

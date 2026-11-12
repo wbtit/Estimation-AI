@@ -27,6 +27,7 @@ from src.build.columns import (
     column_plan_columns,
     find_glyphs,
 )
+from src.build.double_line import BeamStyle, centrelines, is_thin_pen, pair_lines
 from src.build.geom import Box, Pt, in_box
 from src.build.grids import Bubble, Crossing, GridLine, crossings, find_bubbles, find_grid_lines
 from src.build.inputs import deselect, drop_text, exclude
@@ -66,6 +67,8 @@ class Setup:
     col_rules: frozenset[str] = V3_RULES
     # Phase 14d: "glyph" here keeps a bare Setup as before; the app's Builds pass the setting
     column_mode: str = "glyph"
+    # Review 4: the page beam style (None or style "single" = every pen line is a beam, as before)
+    beam_style: BeamStyle | None = None
 
     def beam_pens(self) -> list[str]:
         if self.pens:
@@ -107,6 +110,8 @@ class PageBuild:
     removed: dict[str, int] = field(default_factory=dict)
     plates: list[BasePlate] = field(default_factory=list)
     text: list[TextLine] = field(default_factory=list)  # the page's text lines in the crop
+    # Review 4: double-line counts (pairs, amber, unpaired thin lines, ...), empty for style single
+    double_line: dict[str, int] = field(default_factory=dict)
 
     def column_info(self, k: int) -> dict:
         """How column k was found: the rule, and for a base plate its section type and grid."""
@@ -157,6 +162,8 @@ class PageBuild:
             c["exclude_boxes"] = len(self.setup.excludes)
             c["deselections"] = len(self.setup.deselected)
             c["deselections_unmatched"] = self.deselections_unmatched
+        for key, n in self.double_line.items():
+            c[f"double_{key}"] = n
         c.update(self.supports.counts)
         for state in ("sized", "inferred", "undefined"):
             c[f"pieces_{state}"] = sum(a.size_state == state for a in self.piece_labels)
@@ -206,8 +213,25 @@ def build_page(
         beam_keep[sorted(off)] = False
     lines: list[BeamLine] = []
     line_pens: dict[int, str] = {}
+    style = setup.beam_style
+    dashed = centrelines(ps) if style is not None and style.pairs else []
+    double: dict[str, int] = {}
     for pen in pens:
-        for ln in beam_lines(ps, beam_keep, pen, removed):
+        found = beam_lines(ps, beam_keep, pen, removed)
+        if style is not None and style.pairs and is_thin_pen(pen):
+            # Review 4: the thin lines of a double-line page are flange edges; a pair is one beam
+            res = pair_lines(found, style, setup.ratio, dashed)
+            found = res.lines
+            for key, n in (
+                ("pairs", len(res.pairs)),
+                ("pairs_amber", sum(bool(p.amber) for p in res.pairs)),
+                ("pairs_cut_end", sum(p.cut_ends > 0 for p in res.pairs)),
+                ("unpaired_thin_lines", len(res.unpaired)),
+                ("kept_single", res.kept_single),
+                ("ambiguous", res.ambiguous),
+            ):
+                double[key] = double.get(key, 0) + n
+        for ln in found:
             line_pens[len(lines)] = pen
             lines.append(replace(ln, id=len(lines)))
     if setup.role == "framing" and not pens:
@@ -316,6 +340,7 @@ def build_page(
         removed=removed,
         plates=plates,
         text=text,
+        double_line=double,
     )
 
 

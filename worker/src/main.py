@@ -12,6 +12,8 @@ from src.build.auto import JOB_TYPE as AUTO_BUILD
 from src.build.auto import run_auto_build
 from src.build.job import JOB_TYPE as BUILD_SHEET
 from src.build.job import run_build_sheet
+from src.build.learn_style_job import JOB_TYPE as LEARN_STYLE
+from src.build.learn_style_job import run_learn_style
 from src.build.similar_job import JOB_TYPE as FIND_SIMILAR
 from src.build.similar_job import run_find_similar
 from src.config import WorkerConfig, load_config
@@ -38,6 +40,7 @@ HANDLERS: dict[str, Handler] = {
     BUILD_SHEET: run_build_sheet,
     AUTO_BUILD: run_auto_build,
     FIND_SIMILAR: run_find_similar,
+    LEARN_STYLE: run_learn_style,
     COPY_PROJECT: run_copy_project,
 }
 

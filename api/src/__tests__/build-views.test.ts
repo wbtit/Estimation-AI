@@ -353,6 +353,127 @@ describe('view routes (test database)', () => {
     await post(`/sheets/${sheetId}/build-setup/pick-pen`, { x: 200, y: 101, who: WHO });
   });
 
+  it('beam style: a pen pick queues the learning job; a person override sticks and is logged', async () => {
+    const jobs = () =>
+      db
+        .selectFrom('jobs')
+        .select(['id', 'payload'])
+        .where('type', '=', 'learn_style')
+        .execute()
+        .then((rows) => rows.filter((j) => (j.payload as { view_id?: string }).view_id === v2));
+    const before = (await jobs()).length;
+    // a learned style is cleared by a new pen pick until the worker has learned the new one
+    await db
+      .updateTable('build_views')
+      .set({
+        beam_style: 'double',
+        beam_style_source: 'learned',
+        beam_gap_min_pt: 3.9,
+        beam_gap_max_pt: 3.9,
+      })
+      .where('id', '=', v2)
+      .execute();
+    const pick = await post(`/sheets/${sheetId}/build-setup/pick-pen`, {
+      x: 200,
+      y: 301,
+      view_id: v2,
+      who: WHO,
+    });
+    expect(pick.statusCode).toBe(200);
+    const queued = await jobs();
+    expect(queued.length).toBe(before + 1);
+    expect(queued[queued.length - 1]!.payload).toMatchObject({
+      sheet_id: sheetId,
+      view_id: v2,
+      x: 200,
+      y: 301,
+      pen_class: '0.5-1|black|solid',
+      mode: 'replace',
+    });
+    const cleared = await db
+      .selectFrom('build_views')
+      .select(['beam_style', 'beam_style_source', 'beam_gap_min_pt'])
+      .where('id', '=', v2)
+      .executeTakeFirstOrThrow();
+    expect(cleared).toEqual({ beam_style: null, beam_style_source: null, beam_gap_min_pt: null });
+
+    // a person's choice: stored as such, logged as one setup action, shown in the view
+    const logged = (await log()).filter((r) => r.action === 'setup').length;
+    const set = await post(`/sheets/${sheetId}/build-setup/beam-style`, {
+      style: 'both',
+      view_id: v2,
+      who: WHO,
+    });
+    expect(set.json()).toEqual({ ok: true, beam_style: 'both' });
+    const row = await db
+      .selectFrom('build_views')
+      .select(['beam_style', 'beam_style_source', 'beam_style_by'])
+      .where('id', '=', v2)
+      .executeTakeFirstOrThrow();
+    expect(row).toEqual({ beam_style: 'both', beam_style_source: 'person', beam_style_by: WHO });
+    expect((await log()).filter((r) => r.action === 'setup').length).toBe(logged + 1);
+    const edit = await db
+      .selectFrom('sheet_edits')
+      .select(['field_name', 'original_value', 'corrected_value'])
+      .where('sheet_id', '=', sheetId)
+      .where('field_name', 'like', '%beam_style')
+      .orderBy('created_at', 'desc')
+      .executeTakeFirstOrThrow();
+    expect(edit.corrected_value).toBe('both');
+    const page = (
+      (await app.inject({ method: 'GET', url: `/api/projects/${projectId}/pages` })).json()
+        .pages as {
+        id: string;
+        views: { id: string; beam_style: string; beam_style_source: string }[];
+      }[]
+    ).find((p) => p.id === sheetId)!;
+    expect(page.views.find((v) => v.id === v2)).toMatchObject({
+      beam_style: 'both',
+      beam_style_source: 'person',
+    });
+
+    // a later pen pick learns nothing over a person's choice: no job, the style stays
+    await post(`/sheets/${sheetId}/build-setup/pick-pen`, {
+      x: 200,
+      y: 101,
+      view_id: v2,
+      who: WHO,
+    });
+    expect((await jobs()).length).toBe(before + 1);
+    expect(
+      (
+        await db
+          .selectFrom('build_views')
+          .select('beam_style')
+          .where('id', '=', v2)
+          .executeTakeFirstOrThrow()
+      ).beam_style,
+    ).toBe('both');
+    expect(
+      (
+        await post(`/sheets/${sheetId}/build-setup/beam-style`, {
+          style: 'weird',
+          view_id: v2,
+          who: WHO,
+        })
+      ).statusCode,
+    ).toBe(400);
+    // restore for the tests that follow
+    await db
+      .updateTable('build_views')
+      .set({ beam_style: null, beam_style_source: null, beam_style_by: null, beam_style_at: null })
+      .where('id', '=', v2)
+      .execute();
+    for (const j of await jobs()) await db.deleteFrom('jobs').where('id', '=', j.id).execute();
+    await post(`/sheets/${sheetId}/build-setup/pick-pen`, {
+      x: 200,
+      y: 101,
+      view_id: v2,
+      who: WHO,
+    });
+    for (const j of await jobs()) await db.deleteFrom('jobs').where('id', '=', j.id).execute();
+  });
+
   it("confirm-pen: a suggested pen that is already right becomes a person's (one setup action)", async () => {
     await db
       .updateTable('view_pens')

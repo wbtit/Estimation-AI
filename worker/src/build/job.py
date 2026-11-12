@@ -39,6 +39,8 @@ from psycopg.types.json import Jsonb
 
 from src.build import RULES_VERSION, col_image
 from src.build.col_symbols import find_symbols, symbol_json
+from src.build.double_line import beam_style_of
+from src.build.double_width import FlangeWidths, width_check
 from src.build.duplicates import mark_duplicate_columns
 from src.build.geom import Pt, angle_deg, angle_diff, project
 from src.build.grids import CROSSING_RULES, Bubble, GridLine
@@ -62,6 +64,7 @@ log = logging.getLogger("worker.build")
 
 JOB_TYPE = "build_sheet"
 BEAM_KIND, COLUMN_KIND = "Beams", "Column"
+BRACE_KIND = "Horizontal Brace"  # Review 4: a double-line angle member (an existing kind)
 JOIST_KIND, PILE_KIND = "Joist", "Piles"  # Phase 12b rules "joist_label" and "pile_plan"
 PILE_ROLE = "Pile plan"
 OVERLAP_ANGLE_DEG, OVERLAP_PERP_PT, OVERLAP_SHARE = 2.0, 2.0, 0.5
@@ -323,6 +326,7 @@ def build_sheet(conn: psycopg.Connection, config: WorkerConfig, run_id: str) -> 
         excludes=tuple(view.excludes),
         deselected=tuple(view.deselected),
         column_mode=mode,
+        beam_style=beam_style_of(view.row),
     )
     if setup.crossing_rule not in CROSSING_RULES:
         return _refuse(conn, run_id, [f"unknown crossing rule {setup.crossing_rule!r}"])
@@ -653,6 +657,8 @@ def store(
         ).fetchone()  # fmt: skip
         line_uuid[ln.id] = str(got["id"])
 
+    pair_of_line = {ln.id: ln.evidence for ln in pb.lines if ln.evidence}
+    widths: FlangeWidths | None = None
     for p, att in zip(pb.supports.pieces, pb.piece_labels, strict=True):
         sx, sy = plan_mm(p.a, ratio)
         ex, ey = plan_mm(p.b, ratio)
@@ -660,12 +666,25 @@ def store(
         # a joist is identified by its label: its state follows its supports only
         state = build_state("sized" if joist else att.size_state, p.support_state)
         kind = JOIST_KIND if joist else BEAM_KIND
+        member_type = "joist" if joist else "beam"
+        evidence: dict[str, Any] = {
+            "source": "line_first_build",
+            **({"rule": "joist_label"} if joist else {}),
+        }
+        pair = (pair_of_line.get(p.line) or {}).get("pair")
+        if pair is not None:  # Review 4: the midline of a double-line pair
+            widths = widths or FlangeWidths(conn)
+            bf = widths.bf_in(att.label.canonical if att.label else None)
+            amber = [*pair["amber"], *width_check(pair["gap_in"], att.label, bf)]
+            evidence["double_line"] = {**pair, "amber": amber, "bf_in": bf}
+            if att.label is not None and att.label.family == "L" and not joist:
+                member_type, kind = "brace", BRACE_KIND  # a double-line angle: one brace
+            if amber and state == "found":
+                state = "needs_review"
         fields = {
-            "type": "joist" if joist else "beam",
+            "type": member_type,
             "kind": kind,
-            "kind_evidence": Jsonb(
-                {"source": "line_first_build", **({"rule": "joist_label"} if joist else {})}
-            ),
+            "kind_evidence": Jsonb(evidence),
             **_size_fields(att),
             "build_run_id": run_id,
             "beam_line_id": line_uuid[p.line],
