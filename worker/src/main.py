@@ -25,6 +25,7 @@ from src.review.copy_job import JOB_TYPE as COPY_PROJECT
 from src.review.copy_job import run_copy_project
 from src.review.sheet_lines_job import JOB_TYPE as SHEET_LINES
 from src.review.sheet_lines_job import run_sheet_lines
+from src.schema_check import assert_schema_current
 
 log = logging.getLogger("worker")
 
@@ -61,6 +62,17 @@ def run() -> None:
 
     signal.signal(signal.SIGINT, stop)
     signal.signal(signal.SIGTERM, stop)
+
+    # Refuse to run newer code on an older database (migration files vs schema_migrations). A
+    # database that cannot be reached yet is left to the retry loop below.
+    try:
+        with connect(config.database_url) as check_conn:
+            assert_schema_current(check_conn)
+    except RuntimeError as err:
+        log.error("the database schema is out of date: %s", err)
+        raise SystemExit(f"the database schema is out of date: {err}") from err
+    except Exception:
+        log.warning("could not check the database schema; will retry in the job loop")
 
     # Only claim types this worker can handle, so it never takes jobs meant for others.
     types = sorted(HANDLERS)

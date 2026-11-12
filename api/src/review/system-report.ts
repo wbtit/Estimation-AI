@@ -73,6 +73,9 @@ export interface PageReport {
   /** Perimeter angles and bent plates: manual-only items, never detected, so they stay out of
    * every detection number above and in the sizes table; counted here (not deleted, not ignored). */
   manual_items: number;
+  /** Final pieces a person approved although the system flagged them (attention): in the totals,
+   * listed here so they stay visible. */
+  approved_despite_warning: number;
   setup_changed: (keyof SetupValues)[];
   setup: { [K in keyof SetupValues]: { system: SetupValues[K]; final: SetupValues[K] } };
   minutes: number;
@@ -293,6 +296,14 @@ export function systemReport(
       added_by_rebuild: 0,
       added_then_deleted: 0,
       manual_items: manualOf.get(pg.sheet_id) ?? 0,
+      approved_despite_warning: final.filter(
+        (f) =>
+          !f.parent_member_id &&
+          !f.deleted &&
+          !f.ignored &&
+          f.approved &&
+          f.build_state === 'attention',
+      ).length,
       setup_changed: setupChanged(pg.system_setup, pg.final_setup),
       setup: Object.fromEntries(
         (Object.keys(pg.system_setup) as (keyof SetupValues)[]).map((k) => [
@@ -348,6 +359,7 @@ export function systemReport(
     added_by_rebuild: sum('added_by_rebuild'),
     added_then_deleted: sum('added_then_deleted'),
     manual_items: sum('manual_items'),
+    approved_despite_warning: sum('approved_despite_warning'),
     minutes: Math.round(sum('minutes') * 10) / 10,
     pages_with_setup_changes: out.filter((p) => p.setup_changed.length > 0).length,
     pages_reviewed: out.filter((p) => p.reviewed_at !== null).length,

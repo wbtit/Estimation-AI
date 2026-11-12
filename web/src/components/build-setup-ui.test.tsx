@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   COLUMN_PLAN_HINT,
   notBuiltNote,
+  setupNeeds,
   PEN_HINT,
   setupChips,
   type Page,
@@ -121,7 +122,9 @@ describe("the red Pen chip", () => {
     card(a, page(view()));
     const chip = screen.getByTestId("pen-chip");
     expect(chip.getAttribute("title")).toBe(PEN_HINT);
-    expect(screen.getByText(`Not built: ${PEN_HINT}`)).toBeTruthy();
+    expect(screen.getByTestId("need-pen").textContent).toBe(
+      "Set the beam line style (Pen)",
+    );
     fireEvent.click(chip);
     expect(screen.getByTestId("pen-menu").textContent).toContain(PEN_HINT);
     fireEvent.click(screen.getByText("Pick a beam pen"));
@@ -147,14 +150,51 @@ describe("the red Pen chip", () => {
 });
 
 describe("the card note", () => {
-  it("names the pen first and counts the rest", () => {
-    expect(notBuiltNote(["no beam pen class"])).toBe(`Not built: ${PEN_HINT}`);
+  it("names every missing item by name, never just a count", () => {
+    expect(notBuiltNote(["no beam pen class"])).toBe(
+      "Not built: Set the beam line style (Pen)",
+    );
     expect(notBuiltNote(["no crop", "View 2: no beam pen class"])).toBe(
-      `Not built: ${PEN_HINT} (+1 more to set)`,
+      "Not built: Confirm the crop; Set the beam line style (Pen)",
     );
-    expect(notBuiltNote(["no crop", "no scale"])).toBe(
-      "Not built: 2 things to set",
+    expect(notBuiltNote(["scale not confirmed", "no scale"])).toBe(
+      "Not built: Confirm the scale",
     );
+    expect(
+      notBuiltNote([
+        "page role not set (column plan or framing)",
+        "build the foundation / column plan page first, or say the job has none",
+      ]),
+    ).toBe(
+      "Not built: Set the page role; Choose the foundation / column plan page, or None (⋮ menu)",
+    );
+  });
+
+  it("a failed Build's error is shown as a problem, not as a thing to set", () => {
+    expect(notBuiltNote(["UndefinedColumn"])).toBe(
+      "Not built: Build problem: UndefinedColumn",
+    );
+    expect(setupNeeds(["UndefinedColumn"])[0]!.key).toBe("other");
+  });
+
+  it("each named item on the card jumps to its step", () => {
+    const a = actions();
+    card(
+      a,
+      page(
+        view({
+          badge: "Not built",
+          reasons: ["no beam pen class", "scale not confirmed"],
+        }),
+      ),
+    );
+    expect(screen.getByTestId("card-note").textContent).toContain(
+      "Set the beam line style (Pen)",
+    );
+    fireEvent.click(screen.getByTestId("need-pen"));
+    expect(a.pickPen).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByTestId("need-scale"));
+    expect(document.activeElement).toBe(screen.getByLabelText("scale"));
   });
 });
 
@@ -189,11 +229,89 @@ describe("missing chip tooltips", () => {
     );
     expect(chips.find((c) => c.key === "pen")!.tip).toBe(PEN_HINT);
     expect(chips.find((c) => c.key === "column_plan")!.tip).toBe(
-      "Choose the column plan page or None (⋮ menu)",
+      "Choose the foundation / column plan page or None (⋮ menu)",
     );
     expect(COLUMN_PLAN_HINT).toBe(
-      "Choose the column plan page or None (⋮ menu)",
+      "Choose the foundation / column plan page or None (⋮ menu)",
     );
     expect(chips.find((c) => c.key === "role")!.tip).toBe("Role: confirmed");
+  });
+});
+
+describe("Foundation / column plan: the chip links by itself", () => {
+  const chipOf = (choices?: number) =>
+    setupChips(
+      view({
+        system_values: ["column_plan"],
+        pens: [{ pen_class: "a|b|c" } as never],
+      }),
+      choices === undefined ? {} : { columnPlanChoices: choices },
+    ).find((c) => c.key === "column_plan")!;
+
+  it("exactly one built page: linked automatically (not red); none: built without supports (not red)", () => {
+    const one = chipOf(1);
+    expect(one.state).toBe("system");
+    expect(one.tip).toContain("only foundation / column plan page");
+    expect(chipOf(0).state).toBe("system");
+    expect(chipOf(0).tip).toContain("without column supports");
+  });
+
+  it("several built pages and no choice: red, and it asks; the old rule when the count is unknown", () => {
+    expect(chipOf(2).state).toBe("missing");
+    expect(chipOf(2).tip).toBe(COLUMN_PLAN_HINT);
+    expect(chipOf(undefined).state).toBe("missing");
+    expect(chipOf(2).label).toBe("Column page");
+  });
+});
+
+describe("Cover / Title page suggestion", () => {
+  const roles = [
+    { name: "Cover / Title page", behaviour: "none", built_in: true },
+    { name: "Notes", behaviour: "none", built_in: true },
+  ] as never[];
+  const renderCard = (a: PageActions, role: string | null) =>
+    render(
+      <PageCard
+        page={page(view({ role_name: role, behaviour: role ? "none" : null }), {
+          page_type: "cover_sheet",
+        })}
+        columnPlans={[]}
+        selected
+        roles={roles}
+        onSelect={() => undefined}
+        actions={a}
+        activeViewId="v1"
+        onActiveView={() => undefined}
+      />,
+    );
+
+  it("a cover-sheet guess offers the role with one click; it never sets it by itself", () => {
+    const a = actions();
+    renderCard(a, null);
+    expect(a.setRole).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText("Cover / Title page: use"));
+    expect(a.setRole).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "s1" }),
+      "v1",
+      "Cover / Title page",
+    );
+  });
+
+  it("no suggestion once the page has a role", () => {
+    renderCard(actions(), "Notes");
+    expect(screen.queryByTestId("cover-suggestion")).toBeNull();
+  });
+});
+
+describe("a page whose text could not be read", () => {
+  it("shows 'page N: step: reason' on the card, and nothing when the text was read", () => {
+    const msg = "page 12: reading text: RuntimeError: broken font";
+    card(actions(), page(view(), { text_problem: msg }));
+    expect(screen.getByTestId("card-text-problem").textContent).toBe(
+      `⚠ Text not read — ${msg}`,
+    );
+    cleanup();
+    card(actions(), page(view()));
+    expect(screen.queryByTestId("card-text-problem")).toBeNull();
   });
 });

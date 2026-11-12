@@ -241,12 +241,14 @@ describe('view routes (test database)', () => {
 
   it('roles: built-in names, a custom name with a behaviour (logged), edited later', async () => {
     const list = (await app.inject({ method: 'GET', url: '/api/role-names' })).json().roles;
-    expect(list.slice(0, 4).map((r: { name: string }) => r.name)).toEqual([
-      'Column plan',
+    // Review 3: one role for foundation and column plans, first in the list
+    expect(list.slice(0, 3).map((r: { name: string }) => r.name)).toEqual([
+      'Foundation / column plan',
       'Framing plan',
       'Roof framing',
-      'Foundation plan',
     ]);
+    expect(list.some((r: { name: string }) => r.name === 'Column plan')).toBe(false);
+    expect(list.map((r: { name: string }) => r.name)).toContain('Cover / Title page');
     const name = uniqueLabel('Mezzanine framing');
     roleNames.push(name);
     const add = await app.inject({
@@ -349,6 +351,35 @@ describe('view routes (test database)', () => {
       { position: 2, pen_class: '0.5-1|black|solid' },
     ]);
     await post(`/sheets/${sheetId}/build-setup/pick-pen`, { x: 200, y: 101, who: WHO });
+  });
+
+  it("confirm-pen: a suggested pen that is already right becomes a person's (one setup action)", async () => {
+    await db
+      .updateTable('view_pens')
+      .set({ source: 'suggested', confirmed_by: null, confirmed_at: null })
+      .where('view_id', '=', v2)
+      .execute();
+    const before = (await log()).filter((r) => r.action === 'setup').length;
+    const res = await post(`/sheets/${sheetId}/build-setup/confirm-pen`, { view_id: v2, who: WHO });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().pens.length).toBeGreaterThan(0);
+    const rows = await db
+      .selectFrom('view_pens')
+      .select(['source', 'confirmed_by'])
+      .where('view_id', '=', v2)
+      .execute();
+    expect(rows.every((r) => r.source === 'person' && r.confirmed_by === WHO)).toBe(true);
+    expect((await log()).filter((r) => r.action === 'setup').length).toBe(before + 1);
+    // no pen: nothing to confirm
+    const v1Pens = await db.selectFrom('view_pens').selectAll().where('view_id', '=', v1).execute();
+    await db.deleteFrom('view_pens').where('view_id', '=', v1).execute();
+    const none = await post(`/sheets/${sheetId}/build-setup/confirm-pen`, {
+      view_id: v1,
+      who: WHO,
+    });
+    expect(none.statusCode).toBe(409);
+    expect(none.json().code).toBe('no_pen');
+    if (v1Pens.length > 0) await db.insertInto('view_pens').values(v1Pens).execute();
   });
 
   it('exclusions: drawn boxes count at once; suggestions only once accepted', async () => {

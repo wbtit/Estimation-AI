@@ -153,6 +153,7 @@ def analyze_page(page: pymupdf.Page) -> PageScan:
             found.kind,
             text_chars,
             path_count,
+            page.number,
         )
         scan.page_type_guess, scan.page_type_reason, scan.level_guess = (
             guess.page_type,

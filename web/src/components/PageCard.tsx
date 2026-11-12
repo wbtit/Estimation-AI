@@ -12,7 +12,9 @@ import {
 import { formatFtIn, parseFtIn } from "../lib/ftin";
 import {
   activeView,
-  notBuiltNote,
+  COVER_ROLE,
+  setupNeeds,
+  type Need,
   PAGE_TYPE_SHORT,
   PEN_HINT,
   setupChips,
@@ -207,7 +209,9 @@ export const PageCard: React.FC<{
   if (view.scale_ratio !== null && !ratios.has(view.scale_ratio))
     ratios.set(view.scale_ratio, view.scale_text ?? "");
 
-  const chips = setupChips(view);
+  const chips = setupChips(view, {
+    columnPlanChoices: columnPlans.filter((c) => c.id !== page.id).length,
+  });
   const saved =
     page.reviewed_by && page.badge === "Reviewed"
       ? `Saved by ${page.reviewed_by}, ${new Date(page.reviewed_at as string).toLocaleString()}`
@@ -217,13 +221,27 @@ export const PageCard: React.FC<{
   const [renaming, setRenaming] = useState<string | null>(null);
   const [newName, setNewName] = useState("");
 
+  // "Not built: ..." names each missing item and jumps to its step (null: nothing to jump to)
+  const goTo = (n: Need, vid: string | null): (() => void) | null => {
+    const focus = (sel: string) =>
+      (ref.current?.querySelector(sel) as HTMLElement | null)?.click();
+    const focusEl = (sel: string) =>
+      (ref.current?.querySelector(sel) as HTMLElement | null)?.focus();
+    if (n.key === "pen") return () => actions.pickPen?.(page, vid);
+    if (n.key === "scale") return () => focusEl('[aria-label="scale"]');
+    if (n.key === "role") return () => focus('[aria-label="role"]');
+    if (n.key === "crop")
+      return actions.editBox && vid ? () => actions.editBox!(page, vid) : null;
+    if (n.key === "column_plan" && vid) return () => setMenu(true);
+    return null;
+  };
   const second = pageBuilds ? "Estimating" : "Skip";
   const title =
     views.length > 1
       ? `${views.length} views`
       : (first.role_name ??
         (first.behaviour === "column_plan"
-          ? "Column plan"
+          ? "Foundation / column plan"
           : first.behaviour === "framing"
             ? "Framing"
             : (PAGE_TYPE_SHORT[page.page_type ?? "other"] ?? "Other")));
@@ -293,7 +311,7 @@ export const PageCard: React.FC<{
               {behaviour === "framing" && (
                 <>
                   <hr />
-                  <span className="label">Column plan</span>
+                  <span className="label">Foundation / column plan page</span>
                   {[...columnPlans.filter((c) => c.id !== page.id), null].map(
                     (c) => (
                       <button
@@ -547,6 +565,23 @@ export const PageCard: React.FC<{
               onEdit={actions.editRole}
             />
           </div>
+          {view.role_name === null &&
+            page.page_type === "cover_sheet" &&
+            roles.some((r) => r.name === COVER_ROLE) && (
+              <div className="field" data-testid="cover-suggestion">
+                <span>Suggested</span>
+                <button
+                  className="link"
+                  title="The first page with no plan text, or a page titled COVER / TITLE SHEET / drawing index. A suggestion only."
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    actions.setRole(page, vid, COVER_ROLE);
+                  }}
+                >
+                  {COVER_ROLE}: use
+                </button>
+              </div>
+            )}
           {builds(behaviour) && (
             <>
               {SHOW_ELEVATIONS && (
@@ -686,8 +721,45 @@ export const PageCard: React.FC<{
           </div>
           {(saved ||
             (view.badge === "Not built" && view.reasons.length > 0)) && (
-            <div className="card-note" title={view.reasons.join("; ")}>
-              {saved ?? notBuiltNote(view.reasons)}
+            <div
+              className="card-note"
+              data-testid="card-note"
+              title={view.reasons.join("; ")}
+            >
+              {saved ?? (
+                <>
+                  Not built:{" "}
+                  {setupNeeds(view.reasons).map((n, i) => (
+                    <React.Fragment key={n.key + n.reason}>
+                      {i > 0 && "; "}
+                      {goTo(n, vid) ? (
+                        <button
+                          className="link need"
+                          data-testid={`need-${n.key}`}
+                          title="Go to this step"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            goTo(n, vid)!();
+                          }}
+                        >
+                          {n.text}
+                        </button>
+                      ) : (
+                        <span data-testid={`need-${n.key}`}>{n.text}</span>
+                      )}
+                    </React.Fragment>
+                  ))}
+                </>
+              )}
+            </div>
+          )}
+          {!!page.text_problem && (
+            <div
+              className="card-note warning"
+              data-testid="card-text-problem"
+              title={page.text_problem}
+            >
+              ⚠ Text not read — {page.text_problem}
             </div>
           )}
           {!saved && view.badge !== "Not built" && !!view.warnings?.length && (

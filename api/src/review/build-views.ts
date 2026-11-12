@@ -42,7 +42,7 @@ export interface LoadedView {
 
 /** Built-in names a page role maps to (the old role values and auto mode). */
 export const NAME_OF_ROLE: Record<string, string> = {
-  column_plan: 'Column plan',
+  column_plan: 'Foundation / column plan',
   framing: 'Framing plan',
 };
 export const SKIP_NAME = 'Other';

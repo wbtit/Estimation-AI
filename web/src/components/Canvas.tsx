@@ -169,6 +169,10 @@ export interface CanvasProps {
   pendingEdits: number;
   onCrop: (box: Box) => void;
   onPick: (p: Pt2, mode: PickMode) => void;
+  /** Confirm the view's pens as they are (a suggested pen that is already right). */
+  onConfirmPen?: () => void;
+  /** The view's pen is still the system's suggestion (no person confirmed it). */
+  penNeedsConfirm?: boolean;
   onDraw: (
     kind: "Beams" | "Column" | "Stud/Post",
     a: Pt2,
@@ -1263,6 +1267,16 @@ export const Canvas: React.FC<CanvasProps> = (props) => {
               Add pen
             </button>
           </div>
+          {pens.length > 0 && props.penNeedsConfirm && (
+            <button
+              className="primary"
+              data-testid="use-pen"
+              title="The pen shown is only the system's suggestion: confirm it"
+              onClick={() => props.onConfirmPen?.()}
+            >
+              Use this pen
+            </button>
+          )}
           {pens.map((pen) => (
             <span key={pen} className="pen-chip" title={pen}>
               {pen.split("|").slice(0, 2).join(" ")}

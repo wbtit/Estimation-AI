@@ -114,7 +114,7 @@ describe('column orientation (test database)', () => {
     projectId = await insertProject(db);
     sheetId = await insertSheet(db, projectId, { page_index: 0, width_pt: 1000, height_pt: 800 });
     await setFirstView(db, sheetId, {
-      role_name: 'Column plan',
+      role_name: 'Foundation / column plan',
       box: JSON.stringify({ x0: 0, y0: 0, x1: 1000, y1: 800 }),
       scale_ratio: RATIO,
     });

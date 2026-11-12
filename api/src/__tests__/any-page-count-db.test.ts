@@ -97,7 +97,7 @@ describe('any page and the count rule (test database)', () => {
     projectId = await insertProject(db);
     for (const [key, role, idx] of [
       ['framing', 'Framing plan', 0],
-      ['plan', 'Column plan', 1],
+      ['plan', 'Foundation / column plan', 1],
       ['roof', 'Roof framing', 2],
     ] as const) {
       sheets[key] = await insertSheet(db, projectId, {

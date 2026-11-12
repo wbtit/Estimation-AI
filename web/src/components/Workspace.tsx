@@ -50,6 +50,7 @@ import { PropertiesPanel, type Kind, type PieceEdit } from "./PropertiesPanel";
 import { ReportTab } from "./ReportTab";
 import type { PerimeterApi } from "./PerimeterAngle";
 import type { AngleOptions } from "../lib/perimeter-angle";
+import type { ColumnHeightApi } from "../lib/column-height";
 import { SessionControl } from "./SessionControl";
 import { useTagRenumber } from "./TagRenumber";
 import { pingDue } from "../lib/session";
@@ -96,6 +97,9 @@ export const Workspace: React.FC<{
   const [bom, setBom] = useState<Bom | null>(null);
   const [kinds, setKinds] = useState<Kind[]>([]);
   const [angleOptions, setAngleOptions] = useState<AngleOptions | null>(null);
+  const [defaultColumnHeight, setDefaultColumnHeight] = useState<number | null>(
+    null,
+  );
   const [roles, setRoles] = useState<RoleName[]>([]);
   const loadRoles = useCallback(
     () =>
@@ -239,6 +243,12 @@ export const Workspace: React.FC<{
     api<AngleOptions>(
       `/api/projects/${projectId}/perimeter-angles/options`,
     ).then(setAngleOptions, () => undefined);
+    api<{ default_height_mm: number | null }>(
+      `/api/projects/${projectId}/column-height`,
+    ).then(
+      (r) => setDefaultColumnHeight(r.default_height_mm),
+      () => undefined,
+    );
   }, [projectId]);
 
   const pickPen = (p: Pt2, mode: PickMode) => {
@@ -639,6 +649,36 @@ export const Workspace: React.FC<{
           ? `${selected.size} unapproved`
           : undefined,
     );
+  // Review 3 item 4: a column's height (its BOM length); one or many columns = one undoable action
+  const columnHeight: ColumnHeightApi = {
+    defaultMm: defaultColumnHeight,
+    onSet: (ids, patch) =>
+      void act(
+        send("POST", `/api/projects/${projectId}/line-first/columns/height`, {
+          who,
+          member_ids: ids,
+          ...patch,
+        }),
+        ids.length > 1
+          ? `Height set on ${ids.length} columns (Undo takes it back)`
+          : "Column height set (Undo takes it back)",
+      ),
+    onSetDefault: (mm) =>
+      void send("POST", `/api/projects/${projectId}/column-height-default`, {
+        who,
+        height_mm: mm,
+      }).then((r) => {
+        setDefaultColumnHeight(
+          (r as { default_height_mm: number | null }).default_height_mm,
+        );
+        say(
+          mm === null
+            ? "Default column height cleared"
+            : "Default column height set",
+        );
+        return loadBom();
+      }, fail),
+  };
   // Phase 0 perimeter angle: every add / edit / remove is one recorded, undoable action
   const loadAngleOptions = () =>
     api<AngleOptions>(
@@ -1026,6 +1066,20 @@ export const Workspace: React.FC<{
                 )
               }
               onPick={(p: Pt2, mode: PickMode) => void pickPen(p, mode)}
+              penNeedsConfirm={
+                page?.views
+                  ?.find((v) => v.id === view?.id)
+                  ?.system_values.includes("pen_class") ?? false
+              }
+              onConfirmPen={() =>
+                act(
+                  send("POST", sheetUrl(page, "build-setup/confirm-pen"), {
+                    ...(view ? { view_id: view.id } : {}),
+                    who,
+                  }),
+                  "Beam pen confirmed",
+                )
+              }
               drawing={drawing}
               onDrawing={setDrawing}
               activeViewId={view?.id ?? null}
@@ -1159,6 +1213,7 @@ export const Workspace: React.FC<{
             onEdit={(e) => void editSelected(e)}
             onDelete={deleteSelected}
             perimeter={perimeter}
+            columnHeight={columnHeight}
             onCropTool={() => askTool("crop")}
             onResetCrop={
               page ? () => resetFullPage(page, view?.id ?? null) : undefined

@@ -109,6 +109,8 @@ export interface Page {
   sheet_number_source?: string | null;
   page_type: string | null;
   page_kind: string;
+  /** The text step failed on this page: "page N: <step>: <reason>" (null when it did not). */
+  text_problem?: string | null;
   width_pt: number | null;
   height_pt: number | null;
   rotation: number | null;
@@ -309,6 +311,13 @@ export interface Piece {
   angle_start_offset_mm?: number | null;
   slab_edge_side?: "left" | "right" | null;
   vertical_leg?: "long" | "short" | null;
+  /** Review 3 item 4 (columns): own height, optional top and base elevations (mm), the height that
+   * results and where it came from; null = none. */
+  column_height_mm?: number | null;
+  column_top_mm?: number | null;
+  column_base_mm?: number | null;
+  height_mm?: number | null;
+  height_source?: "schedule" | "column" | "project" | null;
 }
 
 export interface GridLine {
@@ -348,6 +357,11 @@ export interface BomRow {
   piece_id?: string;
   sheet_id: string | null;
   approved?: boolean;
+  /** Review 3: approved by a person although the system flagged it (counts in the total). */
+  approved_despite_warning?: boolean;
+  /** Review 3 item 4: where a column's length came from (null: not a column, or no height). */
+  length_source?: "schedule" | "column" | "project" | null;
+  no_height?: boolean;
   build_state: string | null;
   in_main_total: boolean;
   /** Phase 0 count rule: "Reference: counted on the column plan" (shown, in no total). */
@@ -703,23 +717,64 @@ export interface SetupChip {
 
 /** Phase 14f: what a missing chip asks for (its tooltip; the pen one also on the card note). */
 export const PEN_HINT = "Pick a beam pen or choose No beams";
-export const COLUMN_PLAN_HINT = "Choose the column plan page or None (⋮ menu)";
+export const COLUMN_PLAN_HINT =
+  "Choose the foundation / column plan page or None (⋮ menu)";
 /** The Build refusals that mean "no beam pen" (API build.ts setupReasons). */
 const PEN_REASONS = ["no beam pen class", "beam pen class not confirmed"];
 export const isPenReason = (r: string): boolean =>
   PEN_REASONS.some((x) => r === x || r.endsWith(`: ${x}`));
 
-/** The note under a card that was not built: the pen hint when the pen is missing, else a count. */
+/** What a Build refusal asks for, by name, and where to go to do it. */
+export type NeedKey =
+  "pen" | "scale" | "crop" | "role" | "column_plan" | "scan" | "other";
+export interface Need {
+  key: NeedKey;
+  /** The ask, as a sentence ("Set the beam line style (Pen)"). */
+  text: string;
+  /** The refusal as the API sent it (for "other" it is shown as it is). */
+  reason: string;
+}
+
+const NEEDS: [RegExp, NeedKey, string][] = [
+  [
+    /no beam pen class|beam pen class not confirmed/,
+    "pen",
+    "Set the beam line style (Pen)",
+  ],
+  [/(^|: )(no scale|scale not confirmed)$/, "scale", "Confirm the scale"],
+  [/(^|: )(no crop|crop not confirmed)$/, "crop", "Confirm the crop"],
+  [/(^|: )page role not set/, "role", "Set the page role"],
+  [
+    /column plan page/,
+    "column_plan",
+    "Choose the foundation / column plan page, or None (⋮ menu)",
+  ],
+  [/PDF scan is not finished/, "scan", "Wait for the PDF scan to finish"],
+];
+
+/** The refusals of a view as named asks: each known reason says what to set; an unknown one (a
+ * failed Build's error, for example) is shown as it is, never as "N things to set". */
+export function setupNeeds(reasons: readonly string[]): Need[] {
+  const out: Need[] = [];
+  for (const reason of reasons) {
+    const hit = NEEDS.find(([re]) => re.test(reason));
+    const need: Need = hit
+      ? { key: hit[1], text: hit[2], reason }
+      : { key: "other", text: `Build problem: ${reason}`, reason };
+    if (!out.some((n) => n.key !== "other" && n.key === need.key))
+      out.push(need);
+  }
+  return out;
+}
+
+/** The note under a card that was not built: the missing items by name. */
 export function notBuiltNote(reasons: readonly string[]): string {
-  const pen = reasons.some(isPenReason);
-  const others = reasons.filter((r) => !isPenReason(r)).length;
-  if (pen)
-    return `Not built: ${PEN_HINT}${others ? ` (+${others} more to set)` : ""}`;
-  return `Not built: ${reasons.length} thing${reasons.length === 1 ? "" : "s"} to set`;
+  const needs = setupNeeds(reasons);
+  return `Not built: ${needs.map((n) => n.text).join("; ")}`;
 }
 
 /** The setup of a view as chips: green when a person confirmed it, grey when the system set it,
- * red when missing. Pen, Column plan (and T.O.S. when elevations are shown) only for framing; only
+ * red when missing. Pen, Column page (and T.O.S. when elevations are shown) only for framing; only
  * Role when nothing builds. */
 export function setupChips(
   v: Pick<
@@ -735,6 +790,10 @@ export function setupChips(
     | "tos_mm"
     | "system_values"
   >,
+  /** Review 3 item 2: how many OTHER foundation / column plan pages are built. The chip links by
+   * itself when exactly one is (or none: built without column supports); it asks only when several
+   * are. Left out = the old rule (red until a page or None is chosen). */
+  opts: { columnPlanChoices?: number } = {},
 ): SetupChip[] {
   const sys = new Set(v.system_values);
   const chip = (
@@ -778,15 +837,21 @@ export function setupChips(
     // "None" is a valid column plan once a person chose it; unchosen and empty is missing
     const linked =
       v.column_plan_sheet_id !== null || v.column_plan_view_id !== null;
-    out.push(
-      chip(
-        "column_plan",
-        "Column plan",
-        linked || !sys.has("column_plan"),
-        "column_plan",
-        "Column plan",
-      ),
+    const auto =
+      opts.columnPlanChoices !== undefined && opts.columnPlanChoices <= 1;
+    const c = chip(
+      "column_plan",
+      "Column page",
+      linked || auto || !sys.has("column_plan"),
+      "column_plan",
+      "Foundation / column plan page",
     );
+    if (auto && !linked)
+      c.tip =
+        opts.columnPlanChoices === 1
+          ? "Linked automatically to the only foundation / column plan page"
+          : "No foundation / column plan page is built: built without column supports";
+    out.push(c);
     if (SHOW_ELEVATIONS)
       out.push(chip("tos", "T.O.S.", v.tos_mm !== null, "tos", "Top of Steel"));
   }
@@ -1097,9 +1162,13 @@ export function nameFromFile(file: string): string {
     .trim();
 }
 
+/** Review 3 item 1: the built-in role a cover-sheet guess SUGGESTS (never set by itself). */
+export const COVER_ROLE = "Cover / Title page";
+
 export const PAGE_TYPE_SHORT: Record<string, string> = {
   framing_plan: "Framing",
   foundation_plan: "Foundation",
+  cover_sheet: "Cover",
   elevation: "Elevation",
   detail: "Detail",
   schedule_legend: "Schedule",

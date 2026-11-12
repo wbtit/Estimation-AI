@@ -22,12 +22,37 @@ from src.pdf_scan.pagetype import guess_level, guess_page_type
         ("COLUMN SCHEDULE", [], 0, "schedule_legend"),
         ("LEGEND AND SYMBOLS", [], 0, "schedule_legend"),
         ("GENERAL NOTES", [], 0, "general_notes"),
-        ("COVER SHEET", [], 0, "general_notes"),
+        ("COVER SHEET", [], 0, "cover_sheet"),
+        ("TITLE SHEET", [], 0, "cover_sheet"),
+        ("DRAWING INDEX", [], 0, "cover_sheet"),
+        ("SHEET INDEX", [], 0, "cover_sheet"),
+        ("INDEX OF DRAWINGS", [], 0, "cover_sheet"),
+        ("DRAWING LIST", [], 0, "cover_sheet"),
         ("SITE UTILITIES", [], 0, "other"),
     ],
 )
 def test_title_keywords(title: str, views: list[str], profiles: int, expected: str) -> None:
     assert guess_page_type(title, views, profiles).page_type == expected
+
+
+def test_the_first_page_without_plan_text_is_a_cover_suggestion_only_there() -> None:
+    # page 1, nothing that names a plan: a cover
+    assert guess_page_type(None, [], 0, page_index=0).page_type == "cover_sheet"
+    first_notes = guess_page_type("GENERAL NOTES", [], 0, page_index=0)
+    assert first_notes.page_type == "cover_sheet" and "first page" in first_notes.reason
+    # the same text on any other page is what it was
+    assert guess_page_type(None, [], 0, page_index=3).page_type == "other"
+    assert guess_page_type("GENERAL NOTES", [], 0, page_index=3).page_type == "general_notes"
+    # plan text on the first page: never a cover guess
+    assert guess_page_type("ROOF FRAMING PLAN", [], 3, page_index=0).page_type == "framing_plan"
+    assert (
+        guess_page_type(None, ["FOUNDATION PLAN"], 0, page_index=0).page_type == "foundation_plan"
+    )
+    assert guess_page_type("SITE PLAN", [], 0, page_index=0).page_type == "other"
+    # a detail / schedule / elevation first page keeps its type
+    assert guess_page_type("TYPICAL DETAILS", [], 0, page_index=0).page_type == "detail"
+    # the reason never repeats the page text
+    assert "NOTES" not in first_notes.reason.split("(")[0]
 
 
 def test_view_titles_decide_when_there_is_no_title() -> None:
