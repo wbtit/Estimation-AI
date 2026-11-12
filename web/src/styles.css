@@ -1,57 +1,68 @@
 /* All colours of the app, in one place. The shell and the side panels are dark navy; the canvas
    area is light grey with the white page on it; the toolbar is a white floating card. */
 :root {
-  /* shell (top bar, Navigation, Properties) */
-  --shell: #0d1220;
-  --shell-2: #121827;
-  --shell-3: #222c42;
-  --shell-bar: #24345a;
-  --shell-on: #3b5584;
-  --shell-line: rgba(255, 255, 255, 0.08);
-  --shell-text: #e9edf5;
-  --shell-muted: #9aa5ba;
-  --shell-input: #1a2233;
-  /* canvas and light surfaces */
-  --canvas: #eeeff2;
+  /* Option B "Graphite": ONE dark theme for the whole app. Every text/background pair is checked by
+     web/scripts/contrast.mjs (text 4.5:1, icons and control borders 3:1). */
+  --shell: #1b1f27;
+  --shell-2: #1b1f27;
+  --shell-3: #2b3240;
+  --shell-bar: #2b3445;
+  --shell-on: #3b4e75;
+  --shell-line: rgba(255, 255, 255, 0.16);
+  --shell-text: #f2f4f8;
+  --shell-muted: #b4bccb;
+  --shell-input: #242933;
+  /* canvas surround, text, controls */
+  --canvas: #323843;
   --page: #ffffff;
-  --card: #ffffff;
-  --line: #dde1ea;
-  --text: #1b2333;
-  --muted: #687389;
-  --icon: #374151;
+  --panel: #1b1f27;
+  --panel2: #242933;
+  --card: #242933;
+  --line: rgba(255, 255, 255, 0.16);
+  --control-border: #8590a4;
+  --text: #f2f4f8;
+  --muted: #b4bccb;
+  --icon: #dce2ee;
+  --border: rgba(255, 255, 255, 0.16);
   /* accents */
-  --accent: #3d6bf5;
-  --accent-soft: #e8eeff;
-  --active: #dfe7ff;
-  /* marks on the drawing (Phase 11c): saturated, full strength, each with a white halo. A member
-     is drawn whole in its state colour (attention, review) or else its kind colour. */
-  --beam: #d500f9;
-  --column: #2979ff;
-  --review: #ff9100;
-  --attention: #ff1744;
-  /* approved by a person: a calm solid blue, no glow */
-  --approved: #2962ff;
-  --ok: #00c853;
-  --mark-ignored: #9aa1b2;
-  --beam-label: #6a007f;
+  --accent: #7fb0ff;
+  --on-accent: #0b1220;
+  --accent-soft: #263652;
+  --active: #2e4268;
+  /* status, used the same way everywhere: green = approved/done, amber = check, red = problem.
+     Light variants on the dark panels; the marks on the (white) drawing use their own dark set. */
+  --ok-text: #5fd38a;
+  --warn-text: #ffb84d;
+  --bad-text: #ff8a80;
+  /* marks on the drawing: halo + casing + colour core, each state also has a glyph or line style.
+     Dark, saturated colours that hold on white, faded and grey drawings. */
+  --beam: #1747c9;
+  --column: #7a1fa2;
+  --review: #a85400;
+  --attention: #c62828;
+  --approved: #136b2e;
+  --ok: #136b2e;
+  --mark-ignored: #6b7385;
+  --beam-label: #0f2f8f;
   --beam-undef: var(--attention);
   --beam-ignored: var(--mark-ignored);
-  --column-id: #1b3f8f;
-  /* Phase 14b: a stud / post (counted apart from columns) */
-  --stud: #0f9d8a;
-  /* Phase 0 perimeter angle: a thin line beside its beam, in its own colour */
-  --angle: #8d5524;
-  --pick: #00b8d4;
-  --crop: #3d6bf5;
+  --column-id: #5b1778;
+  --stud: #00695c;
+  --angle: #7a4a1e;
+  --pick: #00695c;
+  --find: #00695c;
+  --capture: #1747c9;
+  --crop: #1747c9;
   --grid: #2b8a3e;
-  --select: #ffcf33;
+  --select: #ffd400;
+  --casing: #0b1020;
   /* states */
-  --amber: #f5a524;
-  --orange: #f97316;
+  --amber: #a85400;
+  --orange: #a85400;
   --slate: #475569;
-  --red: #e03131;
-  --green: #2f9e44;
-  --found: #2f9e44;
+  --red: #c62828;
+  --green: #136b2e;
+  --found: #136b2e;
   font-family:
     "Inter",
     system-ui,
@@ -267,7 +278,7 @@ h4 {
 }
 
 .topbar .project small {
-  font-size: 10px;
+  font-size: 12px;
   letter-spacing: 0.6px;
   color: var(--shell-muted);
   text-transform: uppercase;
@@ -510,7 +521,7 @@ h4 {
 
 .badge {
   display: inline-block;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   border-radius: 999px;
   padding: 2px 8px;
@@ -728,7 +739,7 @@ h4 {
 }
 
 .page-card .sheet-no {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--shell-muted);
   margin-top: -5px;
 }
@@ -753,11 +764,11 @@ h4 {
 .page-card .names-edit input {
   flex: 1 1 100%;
   min-width: 0;
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .sheet-name {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   margin: 0 0 4px;
   overflow: hidden;
@@ -813,7 +824,7 @@ h4 {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   padding: 3px 7px;
   border-radius: 4px;
@@ -901,7 +912,7 @@ h4 {
 
 .menu .label {
   padding: 6px 10px 2px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0.4px;
@@ -1303,7 +1314,7 @@ button.link {
   background: var(--accent);
   color: #fff;
   border-radius: 99px;
-  font-size: 10px;
+  font-size: 12px;
   line-height: 15px;
   min-width: 15px;
   padding: 0 4px;
@@ -1326,7 +1337,7 @@ button.link {
 }
 
 .layers .label {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.5px;
   text-transform: uppercase;
@@ -1575,7 +1586,7 @@ button.link {
 .count-pill {
   background: var(--slate);
   color: #fff;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   border-radius: 999px;
   padding: 2px 8px;
@@ -1638,7 +1649,7 @@ table.grid th {
   top: 0;
   background: #fff;
   font-weight: 600;
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 0.4px;
   text-transform: uppercase;
   color: var(--muted);
@@ -1703,7 +1714,7 @@ table.grid tr.total td {
   padding: 1px 6px;
   border-radius: 999px;
   color: #fff;
-  font-size: 11px;
+  font-size: 12px;
   text-align: center;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
 }
@@ -1726,7 +1737,7 @@ table.grid tr.total td {
 }
 
 .page-card .views-label {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.4px;
   text-transform: uppercase;
@@ -1781,7 +1792,7 @@ table.grid tr.total td {
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   line-height: 1;
   border-radius: 999px;
@@ -1808,7 +1819,7 @@ table.grid tr.total td {
 }
 
 .page-card .card-note {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--shell-muted);
 }
 
@@ -1879,7 +1890,7 @@ table.grid tr.total td {
 }
 
 .built-as {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--shell-muted);
 }
 
@@ -1898,7 +1909,7 @@ table.grid tr.total td {
 }
 
 .behaviour {
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 700;
   border-radius: 999px;
   padding: 1px 6px;
@@ -2208,7 +2219,7 @@ table.grid tr.total td {
   flex-wrap: wrap;
 }
 .column-palette .group .label {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--muted);
   width: 64px;
 }
@@ -2299,7 +2310,7 @@ table.grid tr.total td {
   margin-left: 6px;
   padding: 0 6px;
   border-radius: 8px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--muted, #6b7280);
   border: 1px solid var(--muted, #6b7280);
 }
@@ -2344,7 +2355,7 @@ table.grid tr.total td {
 /* Phase 0 profile from callout */
 .chip.green, .chip.amber, .chip.grey {
   display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 10px;
-  font-size: 11px; font-weight: 600; vertical-align: middle;
+  font-size: 12px; font-weight: 600; vertical-align: middle;
 }
 .chip.green { background: rgba(22, 163, 74, 0.15); color: #15803d; }
 .chip.amber { background: rgba(255, 145, 0, 0.18); color: #b45309; }
@@ -2378,14 +2389,6 @@ button.link { background: none; border: 0; color: var(--select, #2563eb); cursor
 .ws-body { min-width: 0; overflow: hidden; }
 .left[hidden] { display: none; }
 .left, .props { min-width: 0; max-width: 40vw; overflow: hidden; }
-.rail {
-  flex: none; width: 22px; border: 0; padding: 0; cursor: pointer;
-  background: var(--shell-2); color: var(--shell-text);
-  display: flex; align-items: center; justify-content: center;
-}
-.rail:hover { background: var(--shell-3); }
-.rail-left { border-right: 1px solid var(--shell-line); }
-.rail-right { border-left: 1px solid var(--shell-line); }
 .ws-main { flex: 1; min-width: 0; display: flex; position: relative; }
 .ws-stage { flex: 1; min-width: 0; display: flex; position: relative; }
 .ws-stage > .center { min-width: 0; }
@@ -2403,7 +2406,7 @@ button.link { background: none; border: 0; color: var(--select, #2563eb); cursor
 .drawer input { max-width: 100%; box-sizing: border-box; }
 .drawer .details-fields li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; padding: 5px 0;
   border-bottom: 1px solid var(--line, #eef0f3); }
-.drawer .details-label { flex: 0 0 100%; width: auto; font-size: 11px; }
+.drawer .details-label { flex: 0 0 100%; width: auto; font-size: 12px; }
 .drawer .details-value { flex: 0 0 100%; }
 .drawer .details-value { white-space: normal; text-align: left; max-width: 100%; }
 .drawer .chip { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;

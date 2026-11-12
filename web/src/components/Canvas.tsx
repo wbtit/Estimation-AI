@@ -29,6 +29,7 @@ import {
   Filter,
   Hand,
   LoaderCircle,
+  Crosshair,
   Maximize,
   Minus,
   MousePointer2,
@@ -112,6 +113,7 @@ import {
   clampZoom,
   parseZoom,
   viewOfBox,
+  freeSpan,
   wheelFactor,
   wheelPan,
   zoomAround,
@@ -213,6 +215,9 @@ export interface CanvasProps {
   onApprove?: () => void;
   /** Phase 14e: the Find similar preview's matches (ticked / unticked), drawn over the page. */
   similar?: SimilarOverlay | null;
+  /** The client rectangle of a floating panel over the canvas (the inspector), or null. Fit, zoom to
+   * selection, Next/Prev and a field's source keep what they show clear of it. */
+  obstacle?: () => { left: number; right: number } | null;
   /** Phase 0 cover details: a box to show (a field's source); the page scrolls to it */
   jumpBox?: [number, number, number, number] | null;
   /** Phase 0 profile from callout: the searched profile's occurrences and the Mark all proposals */
@@ -394,15 +399,28 @@ export const Canvas: React.FC<CanvasProps> = (props) => {
     pendingScroll.current = null;
   }, [zoom]);
 
+  /** The part of the viewport a floating panel leaves free (all of it when there is none). */
+  const obstacleRef = useRef(props.obstacle);
+  obstacleRef.current = props.obstacle;
+  const freeOf = useCallback((el: HTMLElement) => {
+    const o = obstacleRef.current?.() ?? null;
+    const r = el.getBoundingClientRect();
+    return freeSpan(
+      el.clientWidth,
+      o ? { left: o.left - r.left, right: o.right - r.left } : null,
+    );
+  }, []);
+
   // Phase 0 cover details: show the box of a field's source (zoom to it, scroll to its centre)
   useEffect(() => {
     const b = props.jumpBox;
     const el = viewport.current;
     if (!b || !el) return;
+    const span = freeOf(el);
     const z = clampZoom(
       Math.min(
         2,
-        (el.clientWidth * 0.5) / Math.max(b[2] - b[0], 40),
+        ((span.x1 - span.x0) * 0.5) / Math.max(b[2] - b[0], 40),
         (el.clientHeight * 0.5) / Math.max(b[3] - b[1], 20),
       ),
     );
@@ -410,27 +428,31 @@ export const Canvas: React.FC<CanvasProps> = (props) => {
       zoom: z,
       left: Math.max(
         0,
-        ((b[0] + b[2]) / 2) * z + PAGE_OFFSET.x - el.clientWidth / 2,
+        ((b[0] + b[2]) / 2) * z +
+          PAGE_OFFSET.x -
+          (span.x0 + (span.x1 - span.x0) / 2),
       ),
       top: Math.max(
         0,
         ((b[1] + b[3]) / 2) * z + PAGE_OFFSET.y - el.clientHeight / 2,
       ),
     });
-     
   }, [props.jumpBox]);
 
   const fit = useCallback(() => {
     const el = viewport.current;
     if (!el) return;
+    // a floating panel on the right (span from 0) leaves the page the width beside it
+    const span = freeOf(el);
+    const avail = span.x0 === 0 ? span.x1 : el.clientWidth;
     const z = clampZoom(
       Math.min(
-        (el.clientWidth - PAGE_MARGIN.x) / w,
+        (avail - PAGE_MARGIN.x) / w,
         (el.clientHeight - PAGE_MARGIN.y) / h,
       ),
     );
     show({ zoom: z, left: 0, top: 0 });
-  }, [w, h, show]);
+  }, [w, h, show, freeOf]);
 
   /** Zoom around a point of the viewport (CSS px from its corner); the centre by default. */
   const zoomTo = useCallback(
@@ -520,12 +542,74 @@ export const Canvas: React.FC<CanvasProps> = (props) => {
           pieceBox(it.piece),
           { w: el.clientWidth, h: el.clientHeight },
           PAGE_OFFSET,
+          240,
+          80,
+          4,
+          freeOf(el),
         ),
       );
       props.onSelect([it.piece.id], false);
     },
-    [issueList, lastIssue, show, props],
+    [issueList, lastIssue, show, props, freeOf],
   );
+
+  /** Zoom to the selected members, kept clear of a floating inspector. */
+  const zoomToSelection = useCallback(() => {
+    const el = viewport.current;
+    const sel = pieces.filter((q) => props.selected.has(q.id) && q.a);
+    if (!el || sel.length === 0) return;
+    const boxes = sel.map(pieceBox);
+    const box: Box = {
+      x0: Math.min(...boxes.map((b) => b.x0)),
+      y0: Math.min(...boxes.map((b) => b.y0)),
+      x1: Math.max(...boxes.map((b) => b.x1)),
+      y1: Math.max(...boxes.map((b) => b.y1)),
+    };
+    show(
+      viewOfBox(
+        box,
+        { w: el.clientWidth, h: el.clientHeight },
+        PAGE_OFFSET,
+        240,
+        80,
+        4,
+        freeOf(el),
+      ),
+    );
+  }, [pieces, props.selected, show, freeOf]);
+
+  // a member picked in the list (or anywhere) must not sit under the floating inspector or off the
+  // screen: scroll it into the free part (the zoom stays)
+  useEffect(() => {
+    const el = viewport.current;
+    if (!el || el.clientWidth < 100 || props.selected.size === 0) return;
+    const sel = pieces.filter((q) => props.selected.has(q.id) && q.a);
+    if (sel.length === 0) return;
+    const boxes = sel.map(pieceBox);
+    const cx =
+      (Math.min(...boxes.map((b) => b.x0)) +
+        Math.max(...boxes.map((b) => b.x1))) /
+      2;
+    const cy =
+      (Math.min(...boxes.map((b) => b.y0)) +
+        Math.max(...boxes.map((b) => b.y1))) /
+      2;
+    const z = zoomRef.current;
+    const sx = cx * z + PAGE_OFFSET.x - el.scrollLeft;
+    const sy = cy * z + PAGE_OFFSET.y - el.scrollTop;
+    const span = freeOf(el);
+    const inside =
+      sx >= span.x0 + 24 &&
+      sx <= span.x1 - 24 &&
+      sy >= 24 &&
+      sy <= el.clientHeight - 24;
+    if (inside) return;
+    el.scrollLeft = Math.max(
+      0,
+      cx * z + PAGE_OFFSET.x - (span.x0 + (span.x1 - span.x0) / 2),
+    );
+    el.scrollTop = Math.max(0, cy * z + PAGE_OFFSET.y - el.clientHeight / 2);
+  }, [props.selected]);
 
   /** Esc: cancel what is being drawn (a box, a beam, an Edit box drag), then back to Select. */
   const cancel = useCallback(() => {
@@ -1254,6 +1338,14 @@ export const Canvas: React.FC<CanvasProps> = (props) => {
           >
             <Maximize size={14} /> Fit
           </button>
+          <button
+            aria-label="zoom to selection"
+            title="Zoom to the selected members (beside the inspector)"
+            disabled={props.selected.size === 0}
+            onClick={zoomToSelection}
+          >
+            <Crosshair size={15} />
+          </button>
         </div>
         <button
           className="help"
@@ -1264,6 +1356,7 @@ export const Canvas: React.FC<CanvasProps> = (props) => {
           <CircleHelp size={16} />
         </button>
       </div>
+      <StatusLegend />
       {help && (
         <div
           className="shortcuts"
@@ -1567,17 +1660,26 @@ export const Canvas: React.FC<CanvasProps> = (props) => {
               <SimilarMatches overlay={props.similar} px={px} />
             )}
             {props.jumpBox && (
-              <rect
-                data-testid="jump-box"
-                x={props.jumpBox[0] - 3 * px}
-                y={props.jumpBox[1] - 3 * px}
-                width={props.jumpBox[2] - props.jumpBox[0] + 6 * px}
-                height={props.jumpBox[3] - props.jumpBox[1] + 6 * px}
-                fill="rgba(255,145,0,0.18)"
-                stroke="var(--amber, #ff9100)"
-                strokeWidth={2 * px}
-                pointerEvents="none"
-              />
+              <g data-testid="jump-box" pointerEvents="none">
+                <rect
+                  x={props.jumpBox[0] - 3 * px}
+                  y={props.jumpBox[1] - 3 * px}
+                  width={props.jumpBox[2] - props.jumpBox[0] + 6 * px}
+                  height={props.jumpBox[3] - props.jumpBox[1] + 6 * px}
+                  fill="rgba(255,212,0,0.25)"
+                  stroke="var(--casing)"
+                  strokeWidth={6 * px}
+                />
+                <rect
+                  x={props.jumpBox[0] - 3 * px}
+                  y={props.jumpBox[1] - 3 * px}
+                  width={props.jumpBox[2] - props.jumpBox[0] + 6 * px}
+                  height={props.jumpBox[3] - props.jumpBox[1] + 6 * px}
+                  fill="none"
+                  stroke="var(--select)"
+                  strokeWidth={3 * px}
+                />
+              </g>
             )}
             {props.profileMarks && (
               <ProfileMarks {...props.profileMarks} px={px} />
@@ -2030,6 +2132,7 @@ export const PieceMark: React.FC<{
           ? "var(--stud)"
           : colour;
     const tf = `translate(${p.a[0]} ${p.a[1]}) rotate(${rot})`;
+    const colGlyph = p.symbol_flag && !p.ignored ? "!" : stateGlyph(p, zoom);
     const showTag = labels && p.tag && (allSizes || wide);
     return (
       <g
@@ -2063,14 +2166,24 @@ export const PieceMark: React.FC<{
           />
         )}
         {on && (
-          <circle
-            cx={p.a[0]}
-            cy={p.a[1]}
-            r={t * 1.7}
-            fill="none"
-            stroke="var(--select)"
-            strokeWidth={2.5 * px}
-          />
+          <g pointerEvents="none" data-testid="select-ring">
+            <circle
+              cx={p.a[0]}
+              cy={p.a[1]}
+              r={t * 1.7}
+              fill="none"
+              stroke="var(--casing)"
+              strokeWidth={7 * px}
+            />
+            <circle
+              cx={p.a[0]}
+              cy={p.a[1]}
+              r={t * 1.7}
+              fill="none"
+              stroke="var(--select)"
+              strokeWidth={4 * px}
+            />
+          </g>
         )}
         <path
           d={I}
@@ -2078,7 +2191,16 @@ export const PieceMark: React.FC<{
           data-testid="column-symbol"
           data-symbol={fam ?? "unknown"}
           stroke="#fff"
-          strokeWidth={cw + 2 * px}
+          strokeWidth={cw + 5 * px}
+          fill="none"
+          strokeLinecap="square"
+        />
+        <path
+          d={I}
+          transform={tf}
+          stroke="var(--casing)"
+          strokeOpacity={0.6}
+          strokeWidth={cw + 2.5 * px}
           fill="none"
           strokeLinecap="square"
         />
@@ -2090,6 +2212,13 @@ export const PieceMark: React.FC<{
           fill="none"
           strokeLinecap="square"
         />
+        {colGlyph && (
+          <StateBadge
+            at={[p.a[0] + t * 1.1, p.a[1] - t * 1.1]}
+            px={px}
+            glyph={colGlyph}
+          />
+        )}
         {off && (
           // Phase 0: more than 2 in from every grid crossing of a page that has a grid (never moved)
           <circle
@@ -2138,10 +2267,11 @@ export const PieceMark: React.FC<{
           <text
             x={p.a[0] + t + 3 * px}
             y={p.a[1] + t + 9 * px}
-            fontSize={10 * px}
+            fontSize={12 * px}
+            fontWeight={600}
             fill={p.duplicate_tag ? "var(--attention)" : "var(--column-id)"}
             stroke="#fff"
-            strokeWidth={3 * px}
+            strokeWidth={3.5 * px}
             paintOrder="stroke"
             pointerEvents={p.duplicate_tag ? "auto" : "none"}
             data-duplicate={p.duplicate_tag ? "true" : undefined}
@@ -2181,17 +2311,21 @@ export const PieceMark: React.FC<{
         data-state={state}
       >
         <title>{atip}</title>
-        {on && (
-          <line
-            {...aseg}
-            stroke="var(--select)"
-            strokeWidth={aw + 4 * px}
-            strokeOpacity={0.7}
-            strokeLinecap="round"
-          />
-        )}
-        <line {...aseg} stroke="#fff" strokeWidth={aw + 1.5 * px} />
-        <line {...aseg} stroke="var(--angle)" strokeWidth={aw} />
+        {on && <SelectRing seg={aseg} sw={aw} px={px} />}
+        <line {...aseg} stroke="#fff" strokeWidth={aw + 4 * px} />
+        <line
+          {...aseg}
+          stroke="var(--casing)"
+          strokeOpacity={0.55}
+          strokeWidth={aw + 2 * px}
+        />
+        <line
+          {...aseg}
+          stroke="var(--angle)"
+          strokeWidth={aw}
+          strokeDasharray={`${2 * px} ${4 * px}`}
+          strokeLinecap="round"
+        />
         <line {...aseg} stroke="transparent" strokeWidth={8 * px} />
       </g>
     );
@@ -2199,6 +2333,13 @@ export const PieceMark: React.FC<{
   const seg = { x1: p.a[0], y1: p.a[1], x2: p.b![0], y2: p.b![1] };
   const label =
     labels && showSizeLabel(p, { hover, on, allSizes }) ? beamLabel(p) : "";
+  const glyph = stateGlyph(p, zoom);
+  const review = glyph === "?" && !isUndefinedBeam(p);
+  const attention = glyph === "!";
+  // the core: "check" is DASHED, "problem" is thicker with a white dotted centre; both also carry a
+  // glyph badge, so a state is never told by colour alone
+  const core = attention ? sw + 2 * px : sw;
+  const dash = review ? `${9 * px} ${6 * px}` : undefined;
   return (
     <g
       data-testid={`piece-${p.tag ?? p.id}`}
@@ -2217,29 +2358,49 @@ export const PieceMark: React.FC<{
           strokeLinecap="round"
         />
       )}
-      {on && (
+      {on && <SelectRing seg={seg} sw={sw} px={px} />}
+      <line
+        {...seg}
+        stroke="#fff"
+        strokeWidth={halo + 3 * px}
+        strokeLinecap="round"
+      />
+      <line
+        {...seg}
+        stroke="var(--casing)"
+        strokeOpacity={0.55}
+        strokeWidth={core + 2.5 * px}
+        strokeLinecap="round"
+      />
+      <line
+        {...seg}
+        stroke={colour}
+        strokeWidth={core}
+        strokeLinecap={dash ? "butt" : "round"}
+        strokeDasharray={dash}
+      />
+      {attention && !isUndefinedBeam(p) && (
         <line
           {...seg}
-          stroke="var(--select)"
-          strokeWidth={sw + 5 * px}
-          strokeOpacity={0.7}
+          stroke="#fff"
+          strokeWidth={1.5 * px}
+          strokeDasharray={`${1.5 * px} ${6 * px}`}
           strokeLinecap="round"
         />
       )}
-      <line {...seg} stroke="#fff" strokeWidth={halo} strokeLinecap="round" />
-      <line {...seg} stroke={colour} strokeWidth={sw} strokeLinecap="round" />
       {/* a wide transparent line makes the beam easy to hover */}
       <line {...seg} stroke="transparent" strokeWidth={12 * px} />
       {label && (
         <text
           data-testid="size-label"
           transform={`translate(${mid[0]} ${mid[1]}) rotate(${angle})`}
-          y={11 * px}
-          fontSize={10 * px}
+          y={(glyph ? 24 : 13) * px}
+          fontSize={12 * px}
+          fontWeight={600}
           textAnchor="middle"
           fill="var(--beam-label)"
           stroke="#fff"
-          strokeWidth={3 * px}
+          strokeWidth={3.5 * px}
           paintOrder="stroke"
           pointerEvents="none"
         >
@@ -2247,32 +2408,120 @@ export const PieceMark: React.FC<{
         </text>
       )}
       {isUndefinedBeam(p) && !p.ignored && <UndefinedBadge at={mid} px={px} />}
+      {glyph && !isUndefinedBeam(p) && (
+        <StateBadge at={mid} px={px} glyph={glyph} />
+      )}
       {flag && <FlagMark at={mid} px={px} colour={flag} />}
     </g>
   );
 };
 
-/** The "?" badge at the middle of a beam without a size (Phase 12a: never a dashed line). */
-const UndefinedBadge: React.FC<{ at: Pt2; px: number }> = ({ at, px }) => (
-  <g pointerEvents="none" data-testid="undefined-badge">
-    <circle
-      cx={at[0]}
-      cy={at[1]}
-      r={6 * px}
-      fill="#fff"
-      stroke="var(--attention)"
-      strokeWidth={1.5 * px}
+/** The small legend of the status colours, the same everywhere: green ✓ approved, amber ? check,
+ * red ! problem (each also has its glyph, and on the drawing a line style). */
+export const StatusLegend: React.FC = () => (
+  <div
+    className="legend"
+    data-testid="status-legend"
+    aria-label="status legend"
+  >
+    <b>Status</b>
+    <span>
+      <i className="st ok">✓</i> approved
+    </span>
+    <span>
+      <i className="st warn">?</i> check
+    </span>
+    <span>
+      <i className="st bad">!</i> problem
+    </span>
+  </div>
+);
+
+/** The state glyph of a piece (second cue next to its colour): "✓" approved, "?" check, "!" problem.
+ * Approved shows a badge from 50 % zoom up (on a whole page of approved beams the badge would only
+ * add noise; the solid line is the cue there). Ignored pieces have none. */
+export function stateGlyph(p: Piece, zoom: number): "✓" | "?" | "!" | null {
+  if (p.ignored) return null;
+  if (p.approved) return zoom >= 0.5 ? "✓" : null;
+  if (isUndefinedBeam(p) || p.build_state === "attention") return "!";
+  if (p.build_state === "needs_review") return "?";
+  return null;
+}
+
+const GLYPH_COLOUR = {
+  "✓": "var(--approved)",
+  "?": "var(--review)",
+  "!": "var(--attention)",
+} as const;
+
+/** A round badge with the state glyph: white fill, coloured ring and glyph, 16 px on screen. */
+export const StateBadge: React.FC<{
+  at: Pt2;
+  px: number;
+  glyph: "✓" | "?" | "!";
+}> = ({ at, px, glyph }) => {
+  const col = GLYPH_COLOUR[glyph];
+  return (
+    <g pointerEvents="none" data-testid="state-badge" data-glyph={glyph}>
+      <circle
+        cx={at[0]}
+        cy={at[1]}
+        r={8.5 * px}
+        fill="#fff"
+        stroke={col}
+        strokeWidth={2.5 * px}
+      />
+      {glyph === "✓" ? (
+        <path
+          d={`M ${at[0] - 4 * px} ${at[1] + 0.5 * px} L ${at[0] - 1 * px} ${at[1] + 3.5 * px} L ${at[0] + 4.5 * px} ${at[1] - 3 * px}`}
+          fill="none"
+          stroke={col}
+          strokeWidth={2.2 * px}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      ) : (
+        <text
+          x={at[0]}
+          y={at[1] + 4.3 * px}
+          fontSize={12 * px}
+          fontWeight={800}
+          textAnchor="middle"
+          fill={col}
+        >
+          {glyph}
+        </text>
+      )}
+    </g>
+  );
+};
+
+/** The selection ring of a beam: yellow with a black casing, so it shows on white, grey and dark. */
+const SelectRing: React.FC<{
+  seg: { x1: number; y1: number; x2: number; y2: number };
+  sw: number;
+  px: number;
+}> = ({ seg, sw, px }) => (
+  <g pointerEvents="none" data-testid="select-ring">
+    <line
+      {...seg}
+      stroke="var(--casing)"
+      strokeWidth={sw + 13 * px}
+      strokeLinecap="round"
     />
-    <text
-      x={at[0]}
-      y={at[1] + 3.5 * px}
-      fontSize={9.5 * px}
-      fontWeight={700}
-      textAnchor="middle"
-      fill="var(--attention)"
-    >
-      ?
-    </text>
+    <line
+      {...seg}
+      stroke="var(--select)"
+      strokeWidth={sw + 9 * px}
+      strokeLinecap="round"
+    />
+  </g>
+);
+
+/** The "!" badge at the middle of a beam without a size (a problem; Phase 12a: never a dashed line). */
+const UndefinedBadge: React.FC<{ at: Pt2; px: number }> = ({ at, px }) => (
+  <g data-testid="undefined-badge">
+    <StateBadge at={at} px={px} glyph="!" />
   </g>
 );
 

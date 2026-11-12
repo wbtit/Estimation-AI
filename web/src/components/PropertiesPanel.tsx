@@ -5,10 +5,15 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
+  ChevronUp,
+  GripHorizontal,
   Lock,
   PanelRight,
+  PanelRightClose,
+  PictureInPicture2,
   Trash2,
   Undo2,
+  X,
 } from "lucide-react";
 import { formatFtIn } from "../lib/ftin";
 import {
@@ -178,8 +183,15 @@ export const PropertiesPanel: React.FC<{
   perimeter?: PerimeterApi;
   /** Review 3 item 4: the height of selected columns (their BOM length) and the project default. */
   columnHeight?: ColumnHeightApi;
-  /** hide the panel (the workspace then shows a thin rail to reopen it) */
+  /** hide the panel (the rail's Inspector button shows it again) */
   onCollapse?: () => void;
+  /** floating over the canvas (else docked at the right): the dock toggle, the collapse-to-header
+   * toggle and the drag handle (the header) are shown */
+  floating?: boolean;
+  collapsed?: boolean;
+  onToggleFloat?: () => void;
+  onToggleCollapsed?: () => void;
+  onDragStart?: (e: React.PointerEvent) => void;
 }> = ({
   bomRows,
   sheetId,
@@ -199,6 +211,11 @@ export const PropertiesPanel: React.FC<{
   perimeter,
   columnHeight,
   onCollapse,
+  floating = false,
+  collapsed = false,
+  onToggleFloat,
+  onToggleCollapsed,
+  onDragStart,
 }) => {
   const [tab, setTab] = useState<"summary" | "member">(
     selected.length ? "member" : "summary",
@@ -210,120 +227,161 @@ export const PropertiesPanel: React.FC<{
     had.current = has;
   }, [selected.length]);
   return (
-    <div className="props dark">
-      <div className="panel-head">
-        <PanelRight size={16} /> Properties
+    <div className={`props dark${floating ? " floating" : ""}`}>
+      <div
+        className={`panel-head${floating ? " draggable" : ""}`}
+        onPointerDown={floating ? onDragStart : undefined}
+        title={floating ? "Drag to move" : undefined}
+      >
+        {floating ? <GripHorizontal size={16} /> : <PanelRight size={16} />}{" "}
+        Properties
         <span className="grow" />
+        {onToggleFloat && (
+          <button
+            className="icon"
+            aria-label={floating ? "dock properties right" : "float properties"}
+            aria-pressed={floating}
+            title={
+              floating
+                ? "Dock to the right (the canvas gets the rest)"
+                : "Float over the canvas (drag it anywhere)"
+            }
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={onToggleFloat}
+          >
+            {floating ? (
+              <PanelRightClose size={16} />
+            ) : (
+              <PictureInPicture2 size={16} />
+            )}
+          </button>
+        )}
+        {floating && onToggleCollapsed && (
+          <button
+            className="icon"
+            aria-label={collapsed ? "expand properties" : "collapse properties"}
+            title={collapsed ? "Show the panel" : "Collapse to the header"}
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={onToggleCollapsed}
+          >
+            {collapsed ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
+          </button>
+        )}
         {onCollapse && (
           <button
             className="icon"
             aria-label="close properties"
-            title="Hide Properties"
+            title="Hide Properties (Esc)"
+            onPointerDown={(e) => e.stopPropagation()}
             onClick={onCollapse}
           >
-            <ChevronRight size={16} />
+            <X size={16} />
           </button>
         )}
       </div>
-      <div className="seg">
-        <button
-          className={tab === "summary" ? "on" : ""}
-          onClick={() => setTab("summary")}
-        >
-          Summary
-        </button>
-        <button
-          className={tab === "member" ? "on" : ""}
-          onClick={() => setTab("member")}
-        >
-          Member
-        </button>
-      </div>
-      <div className="scroll">
-        {tab === "summary" ? (
-          <>
-            <Section title="Sheet Summary" testId="summary">
-              <SummaryList rows={bomRows} sheetId={sheetId} />
-              {onSetSizeAll && (
-                <SetSizeAll
-                  pieces={viewPieces}
-                  viewName={viewName}
-                  onSet={onSetSizeAll}
-                />
-              )}
-            </Section>
-            <Section title="Members by size" testId="by-size">
-              <MembersBySize
-                rows={bomRows}
-                sheetId={sheetId}
-                onSelectPieces={onSelectPieces}
-                onOpenPage={onOpenPage}
-                pageName={pageName}
-              />
-            </Section>
-            <Section title="Project Summary" testId="project-summary">
-              <SummaryList rows={bomRows} />
-            </Section>
-            <Section
-              title={viewName ? `Crop · ${viewName}` : "Crop"}
-              extra={
-                <>
-                  <button onClick={onCropTool}>Redraw</button>
-                  {onResetCrop && (
-                    <button
-                      onClick={onResetCrop}
-                      title="The crop becomes the whole page (Undo puts it back)"
-                    >
-                      Reset crop to full page
-                    </button>
-                  )}
-                </>
-              }
+      {floating && collapsed ? null : (
+        <>
+          <div className="seg">
+            <button
+              className={tab === "summary" ? "on" : ""}
+              onClick={() => setTab("summary")}
             >
-              {crop ? (
-                <div className="sum-list">
-                  <span>Left, top:</span>
-                  <b>
-                    {crop.x0.toFixed(0)}, {crop.y0.toFixed(0)} pt
-                  </b>
-                  <span>Right, bottom:</span>
-                  <b>
-                    {crop.x1.toFixed(0)}, {crop.y1.toFixed(0)} pt
-                  </b>
-                </div>
-              ) : (
-                <span className="muted">No crop</span>
-              )}
-            </Section>
-          </>
-        ) : selected.length > 0 && perimeter && selected.every(isAngle) ? (
-          <AngleSection selected={selected} api={perimeter} />
-        ) : selected.length > 0 ? (
-          <>
-            <MemberSection
-              selected={selected}
-              kinds={kinds}
-              onEdit={onEdit}
-              onDelete={onDelete}
-            />
-            {columnHeight && selected.every((p) => p.type === "column") && (
-              <ColumnHeightSection selected={selected} api={columnHeight} />
-            )}
-            {perimeter && canAddAngle(selected) && (
+              Summary
+            </button>
+            <button
+              className={tab === "member" ? "on" : ""}
+              onClick={() => setTab("member")}
+            >
+              Member
+            </button>
+          </div>
+          <div className="scroll">
+            {tab === "summary" ? (
               <>
-                <PerimeterAdd selected={selected} api={perimeter} />
-                {selected.length === 1 && (
-                  <AngleList beam={selected[0]!} api={perimeter} />
+                <Section title="Sheet Summary" testId="summary">
+                  <SummaryList rows={bomRows} sheetId={sheetId} />
+                  {onSetSizeAll && (
+                    <SetSizeAll
+                      pieces={viewPieces}
+                      viewName={viewName}
+                      onSet={onSetSizeAll}
+                    />
+                  )}
+                </Section>
+                <Section title="Members by size" testId="by-size">
+                  <MembersBySize
+                    rows={bomRows}
+                    sheetId={sheetId}
+                    onSelectPieces={onSelectPieces}
+                    onOpenPage={onOpenPage}
+                    pageName={pageName}
+                  />
+                </Section>
+                <Section title="Project Summary" testId="project-summary">
+                  <SummaryList rows={bomRows} />
+                </Section>
+                <Section
+                  title={viewName ? `Crop · ${viewName}` : "Crop"}
+                  extra={
+                    <>
+                      <button onClick={onCropTool}>Redraw</button>
+                      {onResetCrop && (
+                        <button
+                          onClick={onResetCrop}
+                          title="The crop becomes the whole page (Undo puts it back)"
+                        >
+                          Reset crop to full page
+                        </button>
+                      )}
+                    </>
+                  }
+                >
+                  {crop ? (
+                    <div className="sum-list">
+                      <span>Left, top:</span>
+                      <b>
+                        {crop.x0.toFixed(0)}, {crop.y0.toFixed(0)} pt
+                      </b>
+                      <span>Right, bottom:</span>
+                      <b>
+                        {crop.x1.toFixed(0)}, {crop.y1.toFixed(0)} pt
+                      </b>
+                    </div>
+                  ) : (
+                    <span className="muted">No crop</span>
+                  )}
+                </Section>
+              </>
+            ) : selected.length > 0 && perimeter && selected.every(isAngle) ? (
+              <AngleSection selected={selected} api={perimeter} />
+            ) : selected.length > 0 ? (
+              <>
+                <MemberSection
+                  selected={selected}
+                  kinds={kinds}
+                  onEdit={onEdit}
+                  onDelete={onDelete}
+                />
+                {columnHeight && selected.every((p) => p.type === "column") && (
+                  <ColumnHeightSection selected={selected} api={columnHeight} />
+                )}
+                {perimeter && canAddAngle(selected) && (
+                  <>
+                    <PerimeterAdd selected={selected} api={perimeter} />
+                    {selected.length === 1 && (
+                      <AngleList beam={selected[0]!} api={perimeter} />
+                    )}
+                  </>
                 )}
               </>
+            ) : (
+              <Section title="Member Properties">
+                <span className="muted">Click a member</span>
+              </Section>
             )}
-          </>
-        ) : (
-          <Section title="Member Properties">
-            <span className="muted">Click a member</span>
-          </Section>
-        )}
-      </div>
+          </div>
+        </>
+      )}
     </div>
   );
 };

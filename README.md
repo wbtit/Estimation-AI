@@ -1297,7 +1297,9 @@ Pre-registration: `worker/prereg/PHASE0_PROFILE_CALLOUT_PREREGISTRATION.md`.
   corrected profiles; beams on a built page), `profile_candidates.py` (held-out page candidates, read-only).
   `api/src/scripts/export-profiles.ts` exports a page's corrected profiles (read-only).
 
-**Workspace layout:** the Pages / Members panel on the left and Properties on the right collapse (a button on each, a thin rail to reopen; the canvas takes the free space); the sections of Properties open and close; the open / closed state is remembered per person in the browser (`web/src/lib/ui-state.ts`, wrapped in try / catch).
+**Workspace layout (Option B "Graphite", one dark theme):** a slim icon rail on the left (Pages, Members, Profile search, Project details; Inspector at the bottom) opens ONE panel at a time beside the canvas; Esc closes the open panel. The inspector (Properties) is docked at the right or floats over the canvas (the "float" / "dock" button in its header): floating, it can be dragged by its header and collapsed to the header; Fit, Zoom to selection (the cross-hair button), Next / Prev and a field's source jump keep what they show beside it, never under it. The panel, the inspector's mode, collapse and position and the open sections are remembered per person in the browser (`web/src/lib/ui-state.ts`, wrapped in try / catch).
+
+**Colour and visibility:** the tokens are in `web/src/styles.css` `:root`; `npm run contrast` (in `web/`, `scripts/contrast.mjs`) checks every pair (text 4.5:1, icons, control borders and marks 3:1). Marks on the drawing are drawn as white halo + dark casing + colour core; a state is never colour alone: approved = a green check badge, check = a dashed core and an amber "?" badge, problem = a thicker dotted core and a red "!" badge (a badge for approved shows from 50 % zoom); selection = yellow ring with a black casing and square handles; Find similar = teal dashed rings; the capture box = dashed blue with its tag. A small status legend sits on the canvas. Nothing is under 12 px, controls are at least 28 px.
 
 ### (i) Cover details and the drawing index check
 

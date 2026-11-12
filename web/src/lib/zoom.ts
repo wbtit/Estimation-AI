@@ -68,7 +68,9 @@ export function wheelPan(e: {
 }
 
 /** The view that shows a box (a member) with context around it: the box grown to at least
- * `minSide` page points and padded by `pad` CSS pixels, centred, never zoomed past `maxZoom`. */
+ * `minSide` page points and padded by `pad` CSS pixels, centred, never zoomed past `maxZoom`.
+ * `span` is the part of the viewport a floating panel leaves free (default: all of it): the box is
+ * centred in it, so a selected member stays beside the panel. */
 export function viewOfBox(
   box: Box,
   size: { w: number; h: number },
@@ -76,21 +78,23 @@ export function viewOfBox(
   minSide = 240,
   pad = 80,
   maxZoom = 4,
+  span: { x0: number; x1: number } = { x0: 0, x1: size.w },
 ): View {
   const cx = (box.x0 + box.x1) / 2;
   const cy = (box.y0 + box.y1) / 2;
   const bw = Math.max(box.x1 - box.x0, minSide);
   const bh = Math.max(box.y1 - box.y0, minSide);
+  const spanW = span.x1 - span.x0;
   const z = clampZoom(
     Math.min(
       maxZoom,
-      Math.max(1, size.w - 2 * pad) / bw,
+      Math.max(1, spanW - 2 * pad) / bw,
       Math.max(1, size.h - 2 * pad) / bh,
     ),
   );
   return {
     zoom: z,
-    left: cx * z + off.x - size.w / 2,
+    left: cx * z + off.x - (span.x0 + spanW / 2),
     top: cy * z + off.y - size.h / 2,
   };
 }
@@ -103,4 +107,22 @@ export function parseZoom(text: string): number | null {
   const v = Number(m[1]);
   if (!isFinite(v) || v <= 0) return null;
   return clampZoom(m[2] === "x" ? v : v / 100);
+}
+
+/** The part of a viewport (CSS px from its left edge) that a floating panel does not cover: the
+ * wider side of the panel, else the whole width when no side is wide enough (200 px) to work in. */
+export function freeSpan(
+  width: number,
+  covered: { left: number; right: number } | null,
+  least = 200,
+): { x0: number; x1: number } {
+  const full = { x0: 0, x1: width };
+  if (!covered) return full;
+  const c0 = Math.max(0, covered.left);
+  const c1 = Math.min(width, covered.right);
+  if (c1 <= c0) return full;
+  const left = { x0: 0, x1: c0 };
+  const right = { x0: c1, x1: width };
+  const best = left.x1 - left.x0 >= right.x1 - right.x0 ? left : right;
+  return best.x1 - best.x0 >= least ? best : full;
 }

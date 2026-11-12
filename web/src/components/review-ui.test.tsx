@@ -20,7 +20,7 @@ import {
 } from "../lib/lf";
 import { RoleSelect } from "./RoleSelect";
 import { BomTab } from "./BomTab";
-import { Canvas, PieceMark } from "./Canvas";
+import { Canvas, PieceMark, stateGlyph } from "./Canvas";
 import { PageCard, type PageActions } from "./PageCard";
 import {
   CreateDialog,
@@ -1039,7 +1039,7 @@ describe("canvas", () => {
     expect(container.textContent).toContain("w16x26 <12>");
   });
 
-  it("an undefined beam is a solid red line with a ? badge, never dashed", () => {
+  it("an undefined beam is a solid red line with a ! badge, never dashed", () => {
     const { container } = render(
       <svg>
         <PieceMark
@@ -1686,7 +1686,7 @@ describe("polish round: Space and the wheel outside the page", () => {
 });
 
 describe("approve and members by size", () => {
-  it("an approved member is drawn in the approved colour with no glow", () => {
+  it("an approved member is drawn in its kind colour with a check badge and no glow", () => {
     const { container } = render(
       <svg>
         <PieceMark
@@ -1703,9 +1703,56 @@ describe("approve and members by size", () => {
     expect(container.querySelectorAll("[data-testid=glow]")).toHaveLength(0);
     expect(
       [...container.querySelectorAll("line")].some(
-        (l) => l.getAttribute("stroke") === "var(--approved)",
+        (l) => l.getAttribute("stroke") === "var(--beam)",
       ),
     ).toBe(true);
+    // the second cue: a check badge (zoom 1 here), never the colour alone
+    expect(
+      container
+        .querySelector("[data-testid=state-badge]")!
+        .getAttribute("data-glyph"),
+    ).toBe("✓");
+  });
+
+  it("every state has a glyph or a line style besides its colour", () => {
+    const glyph = (over: Record<string, unknown>, zoom = 1) =>
+      stateGlyph(piece(over), zoom);
+    expect(glyph({ approved: true })).toBe("✓");
+    expect(glyph({ approved: true }, 0.3)).toBeNull(); // a whole page of ticks is noise
+    expect(glyph({ build_state: "needs_review" })).toBe("?");
+    expect(glyph({ build_state: "attention" })).toBe("!");
+    expect(glyph({ profile: null, profile_raw: null })).toBe("!");
+    expect(glyph({ ignored: true, approved: true })).toBeNull();
+    const { container } = render(
+      <svg>
+        <PieceMark
+          p={piece({ build_state: "needs_review" })}
+          px={1}
+          on={false}
+          labels
+        />
+      </svg>,
+    );
+    // check = dashed core + "?" badge
+    expect(container.querySelectorAll("[stroke-dasharray]")).toHaveLength(1);
+    expect(
+      container
+        .querySelector("[data-testid=state-badge]")!
+        .getAttribute("data-glyph"),
+    ).toBe("?");
+  });
+
+  it("a selected beam gets a yellow ring with a dark casing", () => {
+    const { container } = render(
+      <svg>
+        <PieceMark p={piece({})} px={1} on labels />
+      </svg>,
+    );
+    const ring = container.querySelector("[data-testid=select-ring]")!;
+    const strokes = [...ring.querySelectorAll("line")].map((l) =>
+      l.getAttribute("stroke"),
+    );
+    expect(strokes).toEqual(["var(--casing)", "var(--select)"]);
   });
 
   it("A approves the selection; nothing selected, nothing happens", () => {

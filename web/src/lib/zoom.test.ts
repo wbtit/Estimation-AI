@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   anchorIn,
   clampZoom,
+  freeSpan,
   pageAt,
   parseZoom,
   viewOfBox,
@@ -96,5 +97,44 @@ describe("anchorIn", () => {
     expect(anchorIn(r, 120, 20)).toEqual([20, 0]); // over the bar above the canvas
     expect(anchorIn(r, 60, 300)).toEqual([0, 250]); // left of the area
     expect(anchorIn(r, 2000, 2000)).toEqual([800, 600]);
+  });
+});
+
+describe("floating panel: the free span and the view of a box", () => {
+  it("the free span is the wider side of the covered strip, or everything", () => {
+    expect(freeSpan(1000, null)).toEqual({ x0: 0, x1: 1000 });
+    expect(freeSpan(1000, { left: 700, right: 1000 })).toEqual({
+      x0: 0,
+      x1: 700,
+    });
+    expect(freeSpan(1000, { left: 0, right: 300 })).toEqual({
+      x0: 300,
+      x1: 1000,
+    });
+    // both sides narrower than 200: the whole width (nothing sensible to keep clear)
+    expect(freeSpan(1000, { left: 150, right: 850 })).toEqual({
+      x0: 0,
+      x1: 1000,
+    });
+    expect(freeSpan(1000, { left: 1200, right: 1300 })).toEqual({
+      x0: 0,
+      x1: 1000,
+    });
+  });
+
+  it("a box is centred in the free span, so it stays beside the panel", () => {
+    const off = { x: 72, y: 16 };
+    const span = { x0: 0, x1: 700 };
+    const box = { x0: 400, y0: 300, x1: 500, y1: 340 };
+    const v = viewOfBox(box, { w: 1000, h: 600 }, off, 240, 80, 4, span);
+    // the box centre (450, 320) lands at the middle of the span (350) horizontally
+    expect(Math.round(450 * v.zoom + off.x - v.left)).toBe(350);
+    expect(Math.round(320 * v.zoom + off.y - v.top)).toBe(300);
+    // the whole box (grown to 240 pt) lies inside the span, clear of the covered strip
+    expect(380 * v.zoom + off.x - v.left).toBeGreaterThan(0);
+    expect(520 * v.zoom + off.x - v.left).toBeLessThan(700);
+    // without a span the same box centres in the whole viewport
+    const w = viewOfBox(box, { w: 1000, h: 600 }, off);
+    expect(Math.round(450 * w.zoom + off.x - w.left)).toBe(500);
   });
 });

@@ -181,9 +181,9 @@ describe("setup chips", () => {
 });
 
 describe("approve", () => {
-  it("approved is a calm blue with no glow and no flag; ignored stays grey", () => {
+  it("approved keeps its kind colour (a green check badge is the cue) with no glow and no flag; ignored stays grey", () => {
     const a = piece({ build_state: "attention", approved: true });
-    expect(markColour(a)).toBe("var(--approved)");
+    expect(markColour(a)).toBe("var(--beam)");
     // Phase 12a: a beam without a size is red whatever its state (solid, with a "?" badge)
     expect(markColour(piece({ profile: null, build_state: "found" }))).toBe(
       "var(--attention)",
@@ -195,7 +195,7 @@ describe("approve", () => {
       "var(--mark-ignored)",
     );
     expect(markColour(piece({ type: "column", approved: true, b: null }))).toBe(
-      "var(--approved)",
+      "var(--column)",
     );
   });
 

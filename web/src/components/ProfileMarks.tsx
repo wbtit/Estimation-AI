@@ -40,19 +40,28 @@ export const ProfileMarks: React.FC<{
       const [x0, y0, x1, y1] = o.box as Box4;
       const off = unticked.has(o.label_id);
       return (
-        <rect
-          key={o.label_id}
-          data-testid="profile-occurrence"
-          data-valid={o.valid ? "1" : "0"}
-          x={x0 - 2 * px}
-          y={y0 - 2 * px}
-          width={x1 - x0 + 4 * px}
-          height={y1 - y0 + 4 * px}
-          fill={o.valid ? "rgba(255,200,0,0.30)" : "rgba(150,150,150,0.25)"}
-          stroke={off ? "#9ca3af" : "var(--select, #2563eb)"}
-          strokeWidth={1.5 * px}
-          pointerEvents="none"
-        />
+        <g key={o.label_id} pointerEvents="none">
+          <rect
+            x={x0 - 2 * px}
+            y={y0 - 2 * px}
+            width={x1 - x0 + 4 * px}
+            height={y1 - y0 + 4 * px}
+            fill="none"
+            stroke="var(--casing)"
+            strokeWidth={4.5 * px}
+          />
+          <rect
+            data-testid="profile-occurrence"
+            data-valid={o.valid ? "1" : "0"}
+            x={x0 - 2 * px}
+            y={y0 - 2 * px}
+            width={x1 - x0 + 4 * px}
+            height={y1 - y0 + 4 * px}
+            fill={o.valid ? "rgba(255,212,0,0.40)" : "rgba(150,150,150,0.30)"}
+            stroke={off ? "#9ca3af" : "var(--select, #ffd400)"}
+            strokeWidth={2 * px}
+          />
+        </g>
       );
     })}
     {proposals.map((p) => {

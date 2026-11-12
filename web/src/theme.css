@@ -1,0 +1,544 @@
+/* Option B "Graphite" — one dark theme, loaded after styles.css. The tokens are in styles.css :root
+   (checked by scripts/contrast.mjs). This file: control borders (3:1), the icon rail, panels, the
+   floating inspector, the canvas bars, and the light surfaces that styles.css still hard-codes. */
+
+/* controls: a visible border (>= 3:1 against the panel), >= 28 px high ----------------------------- */
+button,
+input,
+select {
+  min-height: 28px;
+}
+button {
+  border-color: var(--control-border);
+  background: var(--card);
+  color: var(--text);
+}
+button:hover:not(:disabled) {
+  border-color: var(--text);
+  background: var(--shell-3);
+}
+button.primary,
+.dark button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
+  font-weight: 600;
+}
+button.primary:hover:not(:disabled) {
+  background: #a2c6ff;
+}
+button.icon {
+  min-width: 28px;
+  min-height: 28px;
+}
+input,
+select {
+  background: var(--shell-input);
+  border-color: var(--control-border);
+  color: var(--text);
+}
+input::placeholder {
+  color: var(--muted);
+  opacity: 1;
+}
+.dark input,
+.dark select {
+  border-color: var(--control-border);
+}
+.dark button {
+  border-color: var(--control-border);
+}
+.dark button.icon,
+.zoom-group button,
+.toolbar button {
+  border-color: transparent;
+}
+.dark button:hover:not(:disabled) {
+  border-color: var(--text);
+}
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+button.link {
+  color: var(--accent);
+}
+
+/* top bar -------------------------------------------------------------------------------------- */
+.topbar {
+  background: var(--shell);
+}
+.dark.topbar .tabs button,
+.topbar .tabs button {
+  min-height: 32px;
+  font-size: 13px;
+}
+.dark.topbar .tabs button.on,
+.topbar .tabs button.on {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+.topbar .project small {
+  font-size: 12px;
+}
+
+/* the icon rail: Pages, Members, Profile search, Project details; Inspector at the bottom -------- */
+.ws-body {
+  background: var(--canvas);
+}
+.irail {
+  flex: none;
+  width: 64px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 6px;
+  background: var(--shell);
+  border-right: 1px solid var(--shell-line);
+}
+.irail .rb {
+  width: 52px;
+  height: 52px;
+  padding: 2px 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--icon);
+  font-size: 12px;
+  line-height: 1.1;
+}
+.irail .rb:hover:not(:disabled) {
+  background: var(--shell-3);
+  border-color: transparent;
+}
+.irail .rb.on,
+.irail .rb.on:hover:not(:disabled) {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+.irail .rb span {
+  font-size: 12px;
+  font-weight: 600;
+}
+.irail .grow {
+  flex: 1;
+}
+
+/* the one open panel beside the rail: Pages / Members (.left) or a drawer ------------------------ */
+.left {
+  width: 288px;
+  background: var(--shell);
+  border-right: 1px solid var(--shell-line);
+}
+.left .panel-head,
+.drawer-head {
+  font-size: 15px;
+  font-weight: 600;
+  padding: 10px 12px;
+  margin: 0;
+  border-bottom: 1px solid var(--shell-line);
+}
+.drawer {
+  flex: none;
+  width: 340px;
+  min-width: 0;
+  max-width: 40vw;
+  order: 0;
+  background: var(--shell);
+  border: 0;
+  border-right: 1px solid var(--shell-line);
+  color: var(--text);
+}
+.drawer-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text);
+}
+.drawer .details-note,
+.drawer .details-label,
+.profile-note,
+.profile-problem,
+.profile-proposals .muted {
+  color: var(--muted);
+}
+.drawer .details-label {
+  font-size: 12px;
+}
+.details-panel,
+.profile-panel {
+  border-color: var(--shell-line);
+  color: var(--text);
+}
+.profile-problem {
+  color: var(--bad-text);
+}
+.chip.green {
+  background: rgba(95, 211, 138, 0.16);
+  color: var(--ok-text);
+}
+.chip.amber {
+  background: rgba(255, 184, 77, 0.16);
+  color: var(--warn-text);
+}
+.chip.grey {
+  background: rgba(180, 188, 203, 0.16);
+  color: var(--shell-muted);
+}
+.chip {
+  font-size: 12px;
+}
+
+/* the inspector: docked at the right, or floating over the canvas ------------------------------- */
+.props {
+  background: var(--shell);
+  border-left: 1px solid var(--shell-line);
+}
+.props .panel-head {
+  font-size: 15px;
+  font-weight: 600;
+}
+.props .panel-head.draggable {
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+.props .panel-head.draggable:active {
+  cursor: grabbing;
+}
+.inspector-float {
+  position: absolute;
+  z-index: 30;
+  width: 320px;
+  max-width: calc(100% - 16px);
+  max-height: calc(100% - 28px);
+  display: flex;
+  flex-direction: column;
+  background: var(--shell);
+  border: 1px solid var(--control-border);
+  border-radius: 12px;
+  box-shadow:
+    0 0 0 1px #000,
+    0 8px 28px rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+}
+.inspector-float .props {
+  width: 100%;
+  max-width: none;
+  border: 0;
+  flex: 1;
+  min-height: 0;
+}
+.inspector-float .props .panel-head {
+  margin-bottom: 0;
+}
+
+/* the canvas bars sit on the canvas, not on a white strip ---------------------------------------- */
+.canvas-bar {
+  background: transparent;
+  border-bottom: 0;
+  height: 48px;
+  color: var(--text);
+}
+.canvas-bar .title {
+  font-size: 15px;
+  font-weight: 700;
+}
+.zoom-group,
+.canvas-bar .help,
+.navigator,
+.canvas-bar .tool-hint {
+  background: var(--shell);
+}
+.zoom-group {
+  border-color: var(--control-border);
+}
+.zoom-group button {
+  height: 28px;
+  min-width: 28px;
+  color: var(--icon);
+}
+.zoom-group button:hover,
+.canvas-bar .help:hover {
+  background: var(--shell-3);
+}
+.zoom-group .zoom-box {
+  color: var(--text);
+}
+.navigator button {
+  background: var(--card);
+  color: var(--text);
+}
+.toolbar {
+  background: var(--shell);
+  border-color: var(--control-border);
+}
+.toolbar button {
+  color: var(--icon);
+  background: transparent;
+}
+.toolbar button:hover:not(:disabled) {
+  background: var(--shell-3);
+}
+.toolbar button.on,
+.toolbar button.on:hover:not(:disabled) {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+.layers,
+.shortcuts,
+.tool-bar {
+  background: var(--shell);
+  border-color: var(--control-border);
+  color: var(--text);
+}
+.toast {
+  background: var(--shell-3);
+  color: var(--text);
+  border: 1px solid var(--control-border);
+}
+.modal-back .modal,
+.modal,
+.menu {
+  background: var(--shell);
+  color: var(--text);
+  border: 1px solid var(--control-border);
+}
+.menu button,
+.menu a {
+  color: var(--text);
+}
+
+/* minimum text size: nothing under 12 px --------------------------------------------------------- */
+.muted,
+small,
+.badge,
+kbd,
+th,
+td,
+label,
+.hint {
+  font-size: max(12px, 1em);
+}
+
+/* light surfaces that styles.css hard-codes: BOM / report tables, badges, search options, key caps -- */
+.table-card,
+table.grid,
+table.grid th,
+.search-box .options,
+.search-box .options button {
+  background: var(--shell);
+  color: var(--text);
+}
+.table-card {
+  border: 1px solid var(--shell-line);
+}
+table.grid th {
+  color: var(--muted);
+  border-color: var(--shell-line);
+}
+table.grid td {
+  border-color: var(--shell-line);
+  color: var(--text);
+}
+table.grid tr.total td {
+  background: var(--shell-3);
+  color: var(--text);
+}
+table.grid tr:hover td {
+  background: var(--shell-3);
+}
+.search-box .options button:hover {
+  background: var(--shell-3);
+}
+.bar {
+  background: var(--shell-3);
+}
+kbd {
+  background: var(--shell-3);
+  color: var(--text);
+  border: 1px solid var(--control-border);
+}
+.tool-bar .seg.light {
+  background: var(--shell-3);
+}
+.tool-bar .seg.light button.on {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+.pen-chip {
+  background: rgba(0, 184, 212, 0.18);
+  color: #7fe3f0;
+}
+.navigator button:hover {
+  background: var(--shell-3);
+}
+/* badges: tinted dark, the status colour as text (>= 4.5:1), a glyph or word always says it too */
+.badge {
+  background: var(--shell-3);
+  color: var(--text);
+}
+.badge.Built,
+.badge.Reviewed {
+  background: rgba(95, 211, 138, 0.16);
+  color: var(--ok-text);
+}
+.badge.Building,
+.badge.Scale-needed {
+  background: rgba(255, 184, 77, 0.16);
+  color: var(--warn-text);
+}
+.badge.Not-built {
+  background: rgba(255, 138, 128, 0.16);
+  color: var(--bad-text);
+}
+.badge.Not-confirmed,
+.badge.purpose-demo,
+.badge.purpose-evaluation,
+.badge.Archived {
+  background: var(--shell-3);
+  color: var(--text);
+}
+.page-card .thumb {
+  background: #fff;
+}
+
+/* status text on the dark panels: the light variants (>= 4.5:1) */
+.navigator .n-attention,
+.profile-problem,
+.bad-text {
+  color: var(--bad-text);
+}
+.navigator .n-review,
+.find-similar .similar-warning,
+.warn-text {
+  color: var(--warn-text);
+}
+.ok-text {
+  color: var(--ok-text);
+}
+.toolbar .count,
+.profile-toggle .count {
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 700;
+}
+/* hit targets: at least 28 x 28 px */
+button,
+select {
+  min-width: 28px;
+}
+
+/* status dots (BOM): a glyph in the dot as well as its colour ------------------------------------- */
+td .dot,
+.table-card .dot {
+  position: relative;
+  width: 20px;
+  height: 20px;
+  background: transparent;
+  border: 2px solid currentColor;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font:
+    800 12px/1 Inter,
+    system-ui,
+    sans-serif;
+}
+.table-card .dot::after {
+  content: "•";
+}
+.table-card .dot.found {
+  color: var(--ok-text);
+}
+.table-card .dot.approved {
+  color: var(--ok-text);
+}
+.table-card .dot.approved::after {
+  content: "✓";
+}
+.table-card .dot.needs_review {
+  color: var(--warn-text);
+}
+.table-card .dot.needs_review::after {
+  content: "?";
+}
+.table-card .dot.attention {
+  color: var(--bad-text);
+}
+.table-card .dot.attention::after {
+  content: "!";
+}
+.table-card .dot.none {
+  color: var(--muted);
+}
+.table-card .dot.none::after {
+  content: "–";
+}
+.amber {
+  color: var(--warn-text);
+}
+
+/* the floating bars over the canvas (Find similar, column counts, hints) sit under the canvas bar,
+   never over it, and wrap instead of overflowing */
+.find-similar {
+  top: 58px;
+  max-width: min(760px, calc(100% - 140px));
+  flex-wrap: wrap;
+  background: var(--shell);
+  border: 1px solid var(--control-border);
+  color: var(--text);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+}
+
+/* the status legend, bottom left of the canvas */
+.legend {
+  position: absolute;
+  left: 76px;
+  bottom: 14px;
+  z-index: 12;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 5px 12px;
+  background: var(--shell);
+  border: 1px solid var(--control-border);
+  border-radius: 10px;
+  font-size: 12px;
+  color: var(--text);
+  pointer-events: none;
+}
+.legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.legend .st {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: 2px solid;
+  border-radius: 50%;
+  font:
+    800 12px/1 Inter,
+    system-ui,
+    sans-serif;
+  font-style: normal;
+}
+.legend .st.ok {
+  color: var(--ok-text);
+}
+.legend .st.warn {
+  color: var(--warn-text);
+}
+.legend .st.bad {
+  color: var(--bad-text);
+}

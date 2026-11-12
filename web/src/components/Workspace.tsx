@@ -17,12 +17,13 @@ import React, {
   useState,
 } from "react";
 import {
-  ChevronLeft,
-  ChevronRight,
   Download,
   FileText,
   House,
-  PanelLeft,
+  LayoutGrid,
+  X,
+  PanelRight,
+  Rows3,
   Save,
   Search,
 } from "lucide-react";
@@ -32,10 +33,15 @@ import { ProfilePanel, type ProfileOverlay } from "./ProfilePanel";
 import { ProjectDetailsPanel } from "./ProjectDetails";
 import { Drawer } from "./Drawer";
 import {
-  loadDrawer,
-  saveDrawer,
+  INSPECTOR_POS,
+  loadJson,
+  loadPanel,
+  savePanel,
+  saveJson,
   usePersistentFlag,
   type DrawerName,
+  type InspectorPos,
+  type PanelName,
 } from "../lib/ui-state";
 import { noText } from "../lib/profile-callout";
 import { formatFtIn } from "../lib/ftin";
@@ -132,7 +138,6 @@ export const Workspace: React.FC<{
   );
   const [layers, setLayers] = useState<Layers>(ALL_LAYERS);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [left, setLeft] = useState<"pages" | "members">("pages");
   const [toast, setToast] = useState<string | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
   const [memberFilter, setMemberFilter] = useState("");
@@ -157,27 +162,103 @@ export const Workspace: React.FC<{
   const [jumpBox, setJumpBox] = useState<
     [number, number, number, number] | null
   >(null);
-  // the side panels and the drawer: remembered per person (localStorage, wrapped)
-  const [leftOpen, setLeftOpen] = usePersistentFlag("left", true, who);
-  const [rightOpen, setRightOpen] = usePersistentFlag("right", true, who);
-  const [drawer, setDrawerState] = useState<DrawerName>(() => loadDrawer(who));
-  // only one drawer at a time; closing one ends what it drew on the page
-  const setDrawer = useCallback(
-    (d: DrawerName) => {
-      setDrawerState(d);
-      saveDrawer(d, who);
-      if (d !== "details") setJumpBox(null);
+  // ONE panel opens next to the rail (Pages, Members, Profile search or Project details), and it is
+  // remembered per person (localStorage, wrapped). Closing it ends what it drew on the page.
+  const [panel, setPanelState] = useState<PanelName>(() => loadPanel(who));
+  const setPanel = useCallback(
+    (p: PanelName) => {
+      setPanelState(p);
+      savePanel(p, who);
+      if (p !== "details") setJumpBox(null);
     },
     [who],
   );
+  const leftOpen = panel === "pages" || panel === "members";
+  const left: "pages" | "members" = panel === "members" ? "members" : "pages";
+  const setLeft = (l: "pages" | "members") => setPanel(l);
+  const drawer: DrawerName =
+    panel === "profile" || panel === "details" ? panel : null;
+  const setDrawer = (d: DrawerName) => setPanel(d);
+  // the inspector (Properties): shown or hidden, docked at the right or floating over the canvas
+  // (draggable, collapsible to its header); all remembered per person
+  const [rightOpen, setRightOpen] = usePersistentFlag("right", true, who);
+  const [inspFloat, setInspFloat] = usePersistentFlag(
+    "inspector.float",
+    false,
+    who,
+  );
+  const [inspCollapsed, setInspCollapsed] = usePersistentFlag(
+    "inspector.collapsed",
+    false,
+    who,
+  );
+  const [inspPos, setInspPos] = useState<InspectorPos>(() =>
+    loadJson("inspector.pos", INSPECTOR_POS, who),
+  );
+  const inspPosRef = useRef(inspPos);
+  inspPosRef.current = inspPos;
+  const stageRef = useRef<HTMLDivElement>(null);
+  const inspRef = useRef<HTMLDivElement>(null);
+  const floating = rightOpen && inspFloat;
+  /** Keep the floating inspector inside the canvas area (a smaller window, a saved position). */
+  const clampPos = useCallback((p: InspectorPos): InspectorPos => {
+    const st = stageRef.current;
+    const el = inspRef.current;
+    if (!st || !el) return p;
+    const r = st.getBoundingClientRect();
+    return {
+      right: Math.min(
+        Math.max(0, p.right),
+        Math.max(0, r.width - el.offsetWidth),
+      ),
+      top: Math.min(Math.max(0, p.top), Math.max(0, r.height - 44)),
+    };
+  }, []);
   useEffect(() => {
-    if (!drawer) return;
+    if (!floating) return;
+    const fit = () => setInspPos((p) => clampPos(p));
+    fit();
+    window.addEventListener("resize", fit);
+    return () => window.removeEventListener("resize", fit);
+  }, [floating, clampPos]);
+  const startDrag = (e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const from = { x: e.clientX, y: e.clientY, ...inspPosRef.current };
+    const move = (ev: PointerEvent) =>
+      setInspPos(
+        clampPos({
+          right: from.right - (ev.clientX - from.x),
+          top: from.top + (ev.clientY - from.y),
+        }),
+      );
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      saveJson("inspector.pos", inspPosRef.current, who);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
+  /** What the floating inspector covers (the canvas keeps what it shows clear of it). */
+  const obstacle = useCallback(() => {
+    if (!(rightOpen && inspFloat && !inspCollapsed)) return null;
+    const r = inspRef.current?.getBoundingClientRect();
+    return r ? { left: r.left, right: r.right } : null;
+  }, [rightOpen, inspFloat, inspCollapsed]);
+  // Esc closes the open panel: a drawer always; Pages / Members or a floating inspector when the
+  // focus is inside it (Esc elsewhere still belongs to the canvas: cancel a tool, clear)
+  useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !e.defaultPrevented) setDrawer(null);
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      const t = e.target as HTMLElement | null;
+      if (drawer) setPanel(null);
+      else if (leftOpen && t?.closest?.(".left")) setPanel(null);
+      else if (floating && t?.closest?.(".props")) setRightOpen(false);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [drawer, setDrawer]);
+  }, [drawer, leftOpen, floating, setPanel, setRightOpen]);
 
   const [strictness, setStrictness] = useState(STRICTNESS_DEFAULT);
   const [unticked, setUnticked] = useState<Set<string>>(new Set());
@@ -839,6 +920,61 @@ export const Workspace: React.FC<{
       );
   }, [pieces, memberFilter]);
 
+  const inspectorEl = (
+    <PropertiesPanel
+      floating={inspFloat}
+      collapsed={inspCollapsed}
+      onToggleFloat={() => setInspFloat(!inspFloat)}
+      onToggleCollapsed={() => setInspCollapsed(!inspCollapsed)}
+      onDragStart={startDrag}
+      onCollapse={() => setRightOpen(false)}
+      bomRows={bom?.rows ?? []}
+      sheetId={sheetId}
+      selected={selectedPieces}
+      kinds={kinds}
+      crop={view ? view.box : (data?.crop ?? page?.setup.crop ?? null)}
+      onEdit={(e) => void editSelected(e)}
+      onDelete={deleteSelected}
+      perimeter={perimeter}
+      columnHeight={columnHeight}
+      onCropTool={() => askTool("crop")}
+      onResetCrop={
+        page ? () => resetFullPage(page, view?.id ?? null) : undefined
+      }
+      viewPieces={pieces.filter(
+        (p) =>
+          (p.build_view_id ?? data?.views?.[0]?.id ?? null) ===
+          (view?.id ?? null),
+      )}
+      viewName={(data?.views?.length ?? 0) > 1 ? (view?.name ?? null) : null}
+      onSelectPieces={(ids) => setSelected(new Set(ids))}
+      onOpenPage={(id, ids) => {
+        if (id === sheetId) {
+          setSelected(new Set(ids));
+          return;
+        }
+        pendingSelect.current = { sheetId: id, ids };
+        selectSheet(id);
+      }}
+      pageName={(id) => {
+        const pg = pages.find((x) => x.id === id);
+        return pg
+          ? `Page ${pg.page_number}${pg.sheet_number ? ` · ${pg.sheet_number}` : ""}`
+          : "Page";
+      }}
+      onSetSizeAll={(ids, profile) =>
+        void act(
+          send("POST", `/api/projects/${projectId}/line-first/pieces/edit`, {
+            who,
+            member_ids: ids,
+            profile_text: profile,
+          }),
+          `${profile} set on ${ids.length} pieces (Undo puts them back)`,
+        )
+      }
+    />
+  );
+
   return (
     <div className="workspace">
       <div className="topbar dark">
@@ -927,25 +1063,6 @@ export const Workspace: React.FC<{
               </div>
             )}
           </span>
-          <button
-            className="icon"
-            aria-label="project details"
-            aria-pressed={drawer === "details"}
-            title="Project details and the drawing index check"
-            onClick={() => setDrawer(drawer === "details" ? null : "details")}
-          >
-            <FileText size={18} />
-          </button>
-          <button
-            className="icon"
-            aria-label="profile search"
-            aria-pressed={drawer === "profile"}
-            title="Profile search: every occurrence of a size on the pages"
-            disabled={!page}
-            onClick={() => setDrawer(drawer === "profile" ? null : "profile")}
-          >
-            <Search size={18} />
-          </button>
           <SessionControl projectId={projectId} who={who} onError={fail} />
           <span className="avatar" title={who}>
             {initials(who)}
@@ -963,27 +1080,67 @@ export const Workspace: React.FC<{
       {tab === "report" && <ReportTab projectId={projectId} who={who} />}
       {tab === "plans" && (
         <div className="ws-body">
-          {!leftOpen && (
+          <nav className="irail" aria-label="panels">
+            {(
+              [
+                ["pages", "Pages", LayoutGrid, "Pages: the page cards", false],
+                ["members", "Members", Rows3, "Members of this project", false],
+                [
+                  "profile",
+                  "Profile search",
+                  Search,
+                  "Profile search: every occurrence of a size on the pages",
+                  !page,
+                ],
+                [
+                  "details",
+                  "Project details",
+                  FileText,
+                  "Project details and the drawing index check",
+                  false,
+                ],
+              ] as const
+            ).map(([name, label, Icon, tip, off]) => (
+              <button
+                key={name}
+                className={`rb${panel === name ? " on" : ""}`}
+                aria-label={
+                  name === "pages" || name === "members"
+                    ? `${label.toLowerCase()} panel`
+                    : label.toLowerCase()
+                }
+                aria-pressed={panel === name}
+                title={`${tip} (click again to close)`}
+                disabled={off}
+                onClick={() => setPanel(panel === name ? null : name)}
+              >
+                <Icon size={22} />
+                <span>{label.split(" ")[0]}</span>
+              </button>
+            ))}
+            <span className="grow" />
             <button
-              className="rail rail-left"
-              aria-label="open navigation"
-              title="Show Pages / Members"
-              onClick={() => setLeftOpen(true)}
+              className={`rb${rightOpen ? " on" : ""}`}
+              aria-label="inspector"
+              aria-pressed={rightOpen}
+              title="Inspector: the selected member and the page summary"
+              onClick={() => setRightOpen(!rightOpen)}
             >
-              <ChevronRight size={16} />
+              <PanelRight size={22} />
+              <span>Inspect</span>
             </button>
-          )}
+          </nav>
           <div className="left dark" hidden={!leftOpen}>
             <div className="panel-head">
-              <PanelLeft size={16} /> Navigation
+              <b>{left === "pages" ? "Pages" : "Members"}</b>
               <span className="grow" />
               <button
                 className="icon"
-                aria-label="close navigation"
-                title="Hide Pages / Members"
-                onClick={() => setLeftOpen(false)}
+                aria-label="close panel"
+                title="Close (Esc)"
+                onClick={() => setPanel(null)}
               >
-                <ChevronLeft size={16} />
+                <X size={16} />
               </button>
             </div>
             <div className="seg">
@@ -1060,8 +1217,45 @@ export const Workspace: React.FC<{
               )}
             </div>
           </div>
+          {drawer === "details" && (
+            <Drawer title="Project details" onClose={() => setDrawer(null)}>
+              <ProjectDetailsPanel
+                projectId={projectId}
+                who={who}
+                onClose={() => setDrawer(null)}
+                onJump={(pageIndex, box, sid) => {
+                  const target =
+                    pages.find((p) => p.id === sid) ??
+                    pages.find((p) => p.page_number === pageIndex + 1);
+                  setJumpBox(box);
+                  if (target && target.id !== sheetId) selectSheet(target.id);
+                }}
+                onChanged={say}
+                onError={fail}
+              />
+            </Drawer>
+          )}
+          {drawer === "profile" && page && (
+            <Drawer title="Profile search" onClose={() => setDrawer(null)}>
+              <ProfilePanel
+                key={page.id}
+                projectId={projectId}
+                sheetId={page.id}
+                who={who}
+                noText={noText(page)}
+                version={profileTick + pieces.length}
+                onOverlay={setProfileOverlay}
+                onChanged={(m) => {
+                  say(m);
+                  setProfileTick((t) => t + 1);
+                  void refresh();
+                }}
+                onError={fail}
+              />
+            </Drawer>
+          )}
           <div className="ws-main">
-            <div className="ws-stage">
+            <div className="ws-stage" ref={stageRef}>
               {showColumnHint(page, pieces, !!lastColumn) && (
                 <ColumnHint text={COLUMN_HINT} />
               )}
@@ -1100,6 +1294,7 @@ export const Workspace: React.FC<{
               )}
               {page ? (
                 <Canvas
+                  obstacle={obstacle}
                   who={who}
                   symbols={colSymbols}
                   nudgeId={lastColumn}
@@ -1321,110 +1516,23 @@ export const Workspace: React.FC<{
                   <div className="empty">No pages yet</div>
                 </div>
               )}
-            </div>
-            {drawer === "details" && (
-              <Drawer title="Project details" onClose={() => setDrawer(null)}>
-                <ProjectDetailsPanel
-                  projectId={projectId}
-                  who={who}
-                  onClose={() => setDrawer(null)}
-                  onJump={(pageIndex, box, sid) => {
-                    const target =
-                      pages.find((p) => p.id === sid) ??
-                      pages.find((p) => p.page_number === pageIndex + 1);
-                    setJumpBox(box);
-                    if (target && target.id !== sheetId) selectSheet(target.id);
+              {floating && (
+                <div
+                  className="inspector-float"
+                  ref={inspRef}
+                  style={{
+                    right: inspPos.right,
+                    top: inspPos.top,
+                    maxHeight: `max(120px, calc(100% - ${inspPos.top + 12}px))`,
                   }}
-                  onChanged={say}
-                  onError={fail}
-                />
-              </Drawer>
-            )}
-            {drawer === "profile" && page && (
-              <Drawer title="Profile search" onClose={() => setDrawer(null)}>
-                <ProfilePanel
-                  key={page.id}
-                  projectId={projectId}
-                  sheetId={page.id}
-                  who={who}
-                  noText={noText(page)}
-                  version={profileTick + pieces.length}
-                  onOverlay={setProfileOverlay}
-                  onChanged={(m) => {
-                    say(m);
-                    setProfileTick((t) => t + 1);
-                    void refresh();
-                  }}
-                  onError={fail}
-                />
-              </Drawer>
-            )}
-          </div>
-          {!rightOpen && (
-            <button
-              className="rail rail-right"
-              aria-label="open properties"
-              title="Show Properties"
-              onClick={() => setRightOpen(true)}
-            >
-              <ChevronLeft size={16} />
-            </button>
-          )}
-          {rightOpen && (
-            <PropertiesPanel
-              onCollapse={() => setRightOpen(false)}
-              bomRows={bom?.rows ?? []}
-              sheetId={sheetId}
-              selected={selectedPieces}
-              kinds={kinds}
-              crop={view ? view.box : (data?.crop ?? page?.setup.crop ?? null)}
-              onEdit={(e) => void editSelected(e)}
-              onDelete={deleteSelected}
-              perimeter={perimeter}
-              columnHeight={columnHeight}
-              onCropTool={() => askTool("crop")}
-              onResetCrop={
-                page ? () => resetFullPage(page, view?.id ?? null) : undefined
-              }
-              viewPieces={pieces.filter(
-                (p) =>
-                  (p.build_view_id ?? data?.views?.[0]?.id ?? null) ===
-                  (view?.id ?? null),
+                  data-testid="inspector-float"
+                >
+                  {inspectorEl}
+                </div>
               )}
-              viewName={
-                (data?.views?.length ?? 0) > 1 ? (view?.name ?? null) : null
-              }
-              onSelectPieces={(ids) => setSelected(new Set(ids))}
-              onOpenPage={(id, ids) => {
-                if (id === sheetId) {
-                  setSelected(new Set(ids));
-                  return;
-                }
-                pendingSelect.current = { sheetId: id, ids };
-                selectSheet(id);
-              }}
-              pageName={(id) => {
-                const pg = pages.find((x) => x.id === id);
-                return pg
-                  ? `Page ${pg.page_number}${pg.sheet_number ? ` · ${pg.sheet_number}` : ""}`
-                  : "Page";
-              }}
-              onSetSizeAll={(ids, profile) =>
-                void act(
-                  send(
-                    "POST",
-                    `/api/projects/${projectId}/line-first/pieces/edit`,
-                    {
-                      who,
-                      member_ids: ids,
-                      profile_text: profile,
-                    },
-                  ),
-                  `${profile} set on ${ids.length} pieces (Undo puts them back)`,
-                )
-              }
-            />
-          )}
+            </div>
+          </div>
+          {rightOpen && !inspFloat && inspectorEl}
         </div>
       )}
       {saveAsk && page && (

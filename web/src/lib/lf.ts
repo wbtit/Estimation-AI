@@ -673,7 +673,8 @@ export function flagOf(p: Piece): "red" | "amber" | null {
  * (CSS variables, styles.css). */
 export function markColour(p: Piece): string {
   if (p.ignored) return "var(--mark-ignored)";
-  if (p.approved) return "var(--approved)";
+  // approved keeps its kind colour: a green "✓" badge is the cue (never the colour alone)
+  if (p.approved) return isColumn(p) ? "var(--column)" : "var(--beam)";
   // a beam without a size is solid red (with a "?" badge), never dashed
   if (isUndefinedBeam(p)) return "var(--attention)";
   if (p.build_state === "attention") return "var(--attention)";

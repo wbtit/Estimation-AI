@@ -22,28 +22,41 @@ export const SimilarMatches: React.FC<{
       <g data-testid="similar-example" pointerEvents="none">
         <polygon
           points={overlay.example.rect.map((q) => `${q[0]},${q[1]}`).join(" ")}
-          fill="rgba(255,145,0,0.10)"
-          stroke="var(--amber, #ff9100)"
-          strokeWidth={2 * px}
-          strokeDasharray={`${4 * px} ${2 * px}`}
-        />
-        <text
-          x={Math.max(...overlay.example.rect.map((q) => q[0])) + 3 * px}
-          y={Math.min(...overlay.example.rect.map((q) => q[1]))}
-          fontSize={11 * px}
-          fill="var(--amber, #ff9100)"
+          fill="rgba(23,71,201,0.12)"
           stroke="#fff"
-          strokeWidth={3 * px}
-          paintOrder="stroke"
+          strokeWidth={7 * px}
+        />
+        <polygon
+          points={overlay.example.rect.map((q) => `${q[0]},${q[1]}`).join(" ")}
+          fill="none"
+          stroke="var(--capture)"
+          strokeWidth={3.5 * px}
+          strokeDasharray={`${12 * px} ${7 * px}`}
+        />
+        <g
+          transform={`translate(${Math.min(...overlay.example.rect.map((q) => q[0]))} ${Math.min(...overlay.example.rect.map((q) => q[1])) - 22 * px})`}
         >
-          {overlay.example.source === "ink" ? "example (ink)" : "example"}
-        </text>
+          <rect
+            width={(overlay.example.source === "ink" ? 112 : 84) * px}
+            height={22 * px}
+            fill="var(--capture)"
+          />
+          <text
+            x={8 * px}
+            y={16 * px}
+            fontSize={12 * px}
+            fontWeight={700}
+            fill="#fff"
+          >
+            {overlay.example.source === "ink" ? "example (ink)" : "example"}
+          </text>
+        </g>
       </g>
     )}
     {overlay.matches.map((m) => {
       const key = matchKey(m);
       const on = !overlay.unticked.has(key);
-      const r = 9 * px;
+      const r = 10 * px;
       const stop = (e: React.PointerEvent) => e.stopPropagation();
       return (
         <g
@@ -63,11 +76,20 @@ export const SimilarMatches: React.FC<{
           <circle
             cx={m.centre[0]}
             cy={m.centre[1]}
-            r={r}
-            fill={on ? "rgba(37,99,235,0.18)" : "rgba(255,255,255,0.6)"}
-            stroke={on ? "var(--select, #2563eb)" : "#9ca3af"}
-            strokeWidth={2 * px}
-            strokeDasharray={on ? undefined : `${3 * px} ${2 * px}`}
+            r={r + 2 * px}
+            fill="none"
+            stroke="#fff"
+            strokeWidth={7 * px}
+          />
+          <circle
+            cx={m.centre[0]}
+            cy={m.centre[1]}
+            r={r + 2 * px}
+            fill={on ? "rgba(0,105,92,0.15)" : "rgba(255,255,255,0.6)"}
+            stroke={on ? "var(--find)" : "#5b6474"}
+            strokeWidth={3.5 * px}
+            strokeDasharray={on ? `${7 * px} ${4 * px}` : `${2 * px} ${4 * px}`}
+            strokeLinecap={on ? "butt" : "round"}
           />
           {m.orientation_deg !== null && m.orientation_deg !== undefined && (
             // Phase 0-column-capture: this match's OWN web direction (green clear, amber unsure)
@@ -98,10 +120,11 @@ export const SimilarMatches: React.FC<{
           <text
             x={m.centre[0] + r + 2 * px}
             y={m.centre[1] - r}
-            fontSize={11 * px}
-            fill={on ? "var(--select, #2563eb)" : "#6b7280"}
+            fontSize={12 * px}
+            fontWeight={700}
+            fill={on ? "var(--find)" : "#4b5563"}
             stroke="#fff"
-            strokeWidth={3 * px}
+            strokeWidth={4 * px}
             paintOrder="stroke"
           >
             {scoreLabel(m)}
