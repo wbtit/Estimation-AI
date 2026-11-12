@@ -264,7 +264,6 @@ describe("profile panel", () => {
         {...over}
       />,
     );
-    fireEvent.click(screen.getByText(/Profile search/));
     return { overlays, onChanged };
   };
 
@@ -320,7 +319,6 @@ describe("profile panel", () => {
     expect(screen.getByTestId("profile-proposals").textContent).toContain(
       "C1: W12X53 → W12X65",
     );
-    expect(screen.getByTestId("profile-proposal-count").textContent).toBe("1");
     await act(async () => {
       fireEvent.click(screen.getByTestId("apply-proposals"));
     });

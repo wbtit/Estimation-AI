@@ -2363,3 +2363,55 @@ table.grid tr.total td {
 .profile-head { font-weight: 600; margin-top: 4px; }
 .profile-sheets { margin: 2px 0; padding-left: 16px; }
 button.link { background: none; border: 0; color: var(--select, #2563eb); cursor: pointer; padding: 0; text-decoration: underline; }
+
+/* Phase 0 cover details */
+.details-panel { border-top: 1px solid var(--border, #e5e7eb); padding: 6px 10px; font-size: 12px; max-height: 45vh; overflow: auto; }
+.details-head { display: flex; align-items: center; gap: 6px; margin: 4px 0; }
+.details-note { color: #6b7280; margin: 2px 0 6px; }
+.details-fields, .details-flags { list-style: none; padding: 0; margin: 0 0 6px; }
+.details-fields li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; padding: 2px 0; }
+.details-label { width: 150px; color: #6b7280; }
+.details-value { background: none; border: 0; text-align: left; cursor: text; font-weight: 600; padding: 0; }
+.details-flags li { padding: 2px 0; }
+
+/* workspace layout: collapsible side panels with rails, a stage, and ONE drawer beside the canvas */
+.ws-body { min-width: 0; overflow: hidden; }
+.left[hidden] { display: none; }
+.left, .props { min-width: 0; max-width: 40vw; overflow: hidden; }
+.rail {
+  flex: none; width: 22px; border: 0; padding: 0; cursor: pointer;
+  background: var(--shell-2); color: var(--shell-text);
+  display: flex; align-items: center; justify-content: center;
+}
+.rail:hover { background: var(--shell-3); }
+.rail-left { border-right: 1px solid var(--shell-line); }
+.rail-right { border-left: 1px solid var(--shell-line); }
+.ws-main { flex: 1; min-width: 0; display: flex; position: relative; }
+.ws-stage { flex: 1; min-width: 0; display: flex; position: relative; }
+.ws-stage > .center { min-width: 0; }
+.drawer {
+  flex: none; width: min(380px, 38vw); min-width: 260px; display: flex; flex-direction: column;
+  background: var(--panel, #fff); border-left: 1px solid var(--line, #d0d5dd); min-height: 0;
+  overflow: hidden;
+}
+.drawer-head { display: flex; align-items: center; gap: 6px; padding: 8px 10px;
+  border-bottom: 1px solid var(--line, #d0d5dd); }
+.drawer-body { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 6px 10px 12px; }
+.drawer .details-panel, .drawer .profile-panel { border: 0; padding: 0; max-height: none; overflow: visible; }
+.drawer .profile-body { max-height: none; overflow: visible; }
+.drawer, .drawer * { overflow-wrap: anywhere; }
+.drawer input { max-width: 100%; box-sizing: border-box; }
+.drawer .details-fields li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; padding: 5px 0;
+  border-bottom: 1px solid var(--line, #eef0f3); }
+.drawer .details-label { flex: 0 0 100%; width: auto; font-size: 11px; }
+.drawer .details-value { flex: 0 0 100%; }
+.drawer .details-value { white-space: normal; text-align: left; max-width: 100%; }
+.drawer .chip { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  display: inline-block; vertical-align: middle; }
+.drawer .profile-row { flex-wrap: wrap; }
+.drawer .profile-row input { flex: 1 1 140px; min-width: 0; }
+.drawer button { max-width: 100%; }
+@media (max-width: 1500px) {
+  .left { width: 232px; }
+  .props { width: 264px; }
+}

@@ -538,4 +538,23 @@ describe('profile from callout (test database)', () => {
     expect(times[4]!).toBeLessThan(500);
     await db.deleteFrom('sheets').where('id', 'in', sheets).execute();
   });
+
+  it('a page with no columns answers the proposals, the counts and Mark all (no server error)', async () => {
+    const empty = await insertSheet(db, projectId, {
+      page_index: 70,
+      width_pt: 1000,
+      height_pt: 800,
+    });
+    const props = await get(`/sheets/${empty}/profile-proposals`);
+    expect(props.statusCode).toBe(200);
+    expect(props.json().proposals).toEqual([]);
+    expect((await get(`/profile-counts?sheet_id=${empty}`)).statusCode).toBe(200);
+    expect((await get(`/sheets/${empty}/profile-labels`)).statusCode).toBe(200);
+    const mark = await post(`/sheets/${empty}/profile-search/mark`, { q: 'W12X26', who: WHO });
+    expect(mark.statusCode).toBe(200);
+    expect(mark.json().occurrences).toBe(0);
+    expect((await post(`/sheets/${empty}/profile-proposals/apply`, { who: WHO })).statusCode).toBe(
+      200,
+    );
+  });
 });

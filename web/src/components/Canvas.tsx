@@ -213,6 +213,8 @@ export interface CanvasProps {
   onApprove?: () => void;
   /** Phase 14e: the Find similar preview's matches (ticked / unticked), drawn over the page. */
   similar?: SimilarOverlay | null;
+  /** Phase 0 cover details: a box to show (a field's source); the page scrolls to it */
+  jumpBox?: [number, number, number, number] | null;
   /** Phase 0 profile from callout: the searched profile's occurrences and the Mark all proposals */
   profileMarks?: {
     occurrences: Occurrence[];
@@ -391,6 +393,32 @@ export const Canvas: React.FC<CanvasProps> = (props) => {
     }
     pendingScroll.current = null;
   }, [zoom]);
+
+  // Phase 0 cover details: show the box of a field's source (zoom to it, scroll to its centre)
+  useEffect(() => {
+    const b = props.jumpBox;
+    const el = viewport.current;
+    if (!b || !el) return;
+    const z = clampZoom(
+      Math.min(
+        2,
+        (el.clientWidth * 0.5) / Math.max(b[2] - b[0], 40),
+        (el.clientHeight * 0.5) / Math.max(b[3] - b[1], 20),
+      ),
+    );
+    show({
+      zoom: z,
+      left: Math.max(
+        0,
+        ((b[0] + b[2]) / 2) * z + PAGE_OFFSET.x - el.clientWidth / 2,
+      ),
+      top: Math.max(
+        0,
+        ((b[1] + b[3]) / 2) * z + PAGE_OFFSET.y - el.clientHeight / 2,
+      ),
+    });
+     
+  }, [props.jumpBox]);
 
   const fit = useCallback(() => {
     const el = viewport.current;
@@ -1537,6 +1565,19 @@ export const Canvas: React.FC<CanvasProps> = (props) => {
               ))}
             {props.similar && (
               <SimilarMatches overlay={props.similar} px={px} />
+            )}
+            {props.jumpBox && (
+              <rect
+                data-testid="jump-box"
+                x={props.jumpBox[0] - 3 * px}
+                y={props.jumpBox[1] - 3 * px}
+                width={props.jumpBox[2] - props.jumpBox[0] + 6 * px}
+                height={props.jumpBox[3] - props.jumpBox[1] + 6 * px}
+                fill="rgba(255,145,0,0.18)"
+                stroke="var(--amber, #ff9100)"
+                strokeWidth={2 * px}
+                pointerEvents="none"
+              />
             )}
             {props.profileMarks && (
               <ProfileMarks {...props.profileMarks} px={px} />

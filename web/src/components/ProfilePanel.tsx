@@ -47,7 +47,6 @@ export const ProfilePanel: React.FC<{
   onChanged,
   onError,
 }) => {
-  const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const [result, setResult] = useState<SearchResult | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
@@ -74,8 +73,8 @@ export const ProfilePanel: React.FC<{
   }, [base, sheetBase, sheetId, onError]);
 
   useEffect(() => {
-    if (open) reload();
-  }, [open, reload, version]);
+    reload();
+  }, [reload, version]);
 
   const search = useCallback(
     (text: string) => {
@@ -133,7 +132,7 @@ export const ProfilePanel: React.FC<{
   }, []);
 
   useEffect(() => {
-    if (!open || (!result && !picking)) {
+    if (!result && !picking) {
       onOverlay(null);
       return;
     }
@@ -148,10 +147,9 @@ export const ProfilePanel: React.FC<{
         setPicking(false);
       },
     });
-     
-  }, [open, result, mark, unticked, picking, labels]);
+  }, [result, mark, unticked, picking, labels]);
 
-  useEffect(() => () => onOverlay(null), []);  
+  useEffect(() => () => onOverlay(null), []);
 
   const markAll = () =>
     void send<MarkPreview>("POST", `${sheetBase}/profile-search/mark`, {
@@ -205,19 +203,7 @@ export const ProfilePanel: React.FC<{
   const unread = counts ? counts.labels.sheets - counts.labels.read : 0;
   return (
     <div className="profile-panel" data-testid="profile-panel">
-      <button
-        className="profile-toggle"
-        aria-expanded={open}
-        onClick={() => setOpen(!open)}
-      >
-        Profile search {open ? "▾" : "▸"}
-        {proposals.length > 0 && (
-          <span className="count" data-testid="profile-proposal-count">
-            {proposals.length}
-          </span>
-        )}
-      </button>
-      {open && (
+      {
         <div className="profile-body">
           {noText && (
             <div className="profile-note" data-testid="no-text-note">
@@ -375,7 +361,7 @@ export const ProfilePanel: React.FC<{
             </div>
           )}
         </div>
-      )}
+      }
     </div>
   );
 };

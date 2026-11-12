@@ -8,6 +8,7 @@ import { reviewUiRoutes } from './routes/review-ui.js';
 import { healthRoutes, type HealthRouteOptions } from './routes/health.js';
 import { memberActionRoutes } from './routes/member-actions.js';
 import { profileSearchRoutes } from './routes/profile-search.js';
+import { projectDetailsRoutes } from './routes/project-details.js';
 import { projectRoutes } from './routes/projects.js';
 import { sessionRoutes } from './routes/sessions.js';
 import { sheetRoutes } from './routes/sheets.js';
@@ -34,6 +35,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
   app.register(viewRoutes, { uploadDir: options.uploadDir });
   app.register(memberActionRoutes, {});
   app.register(profileSearchRoutes, {});
+  app.register(projectDetailsRoutes, {});
   app.register(countRoutes, {});
   app.register(buildRoutes, {});
   app.register(buildViewRoutes, {});

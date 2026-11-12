@@ -940,7 +940,76 @@ export interface PageLabelsTable {
   created_at: Generated<Timestamp>;
 }
 
+export interface ProjectDetailsTable {
+  id: Generated<string>;
+  project_id: string;
+  field: string;
+  value: string;
+  page_index: number;
+  box: ColumnType<unknown, string, string>;
+  rule: string;
+  confidence: 'high' | 'medium' | 'low';
+  flags: string[];
+  alternatives: ColumnType<unknown, string | undefined, string>;
+  agreement: ColumnType<unknown, string | null | undefined, string | null>;
+  read_at: Generated<Timestamp>;
+}
+
+export interface ProjectDetailEditsTable {
+  id: Generated<string>;
+  project_id: string;
+  field: string;
+  before: ColumnType<unknown, string | null | undefined, string | null>;
+  after: ColumnType<unknown, string | null | undefined, string | null>;
+  kind: 'edit' | 'use_alternative' | 'use_as_project' | 'undo';
+  undo_of: string | null;
+  who: string;
+  reason: string | null;
+  created_at: Generated<Timestamp>;
+}
+
+export interface ProjectDetailReadsTable {
+  project_id: string;
+  read_at: Generated<Timestamp>;
+  cover_pages: number[];
+  no_text_pages: number[];
+  pages: number;
+  seconds: Numeric | null;
+  repeated: ColumnType<unknown, string | undefined, string>;
+}
+
+export interface DrawingIndexRowsTable {
+  id: Generated<string>;
+  project_id: string;
+  page_index: number;
+  number: string;
+  title: string;
+  box: ColumnType<unknown, string, string>;
+  rule: string;
+  match: 'exact' | 'equivalent' | 'none';
+  matched_page: number | null;
+  matched_sheet_id: string | null;
+}
+
+export interface DrawingIndexFlagsTable {
+  id: Generated<string>;
+  project_id: string;
+  kind: string;
+  page_index: number | null;
+  sheet_id: string | null;
+  index_page: number | null;
+  number: string | null;
+  title: string | null;
+  detail: ColumnType<unknown, string | undefined, string>;
+  created_at: Generated<Timestamp>;
+}
+
 export interface Database {
+  project_details: ProjectDetailsTable;
+  project_detail_edits: ProjectDetailEditsTable;
+  project_detail_reads: ProjectDetailReadsTable;
+  drawing_index_rows: DrawingIndexRowsTable;
+  drawing_index_flags: DrawingIndexFlagsTable;
   page_labels: PageLabelsTable;
   page_symbols: PageSymbolsTable;
   projects: ProjectsTable;

@@ -108,13 +108,13 @@ export async function columnLinks(db: Db, projectId: string, sheetId: string) {
     .where('page_x0', 'is not', null)
     .where('review_status', '<>', 'rejected')
     .execute();
+  // a page with no columns has nothing to load (an empty `id IN ()` is an SQL error: a 500)
+  if (rows.length === 0) return [];
   const eff = new Map(
     (
-      await loadMemberViews(
-        db as Kysely<Database>,
-        projectId,
-        rows.length ? { memberIds: rows.map((r) => r.id) } : { memberIds: [] },
-      )
+      await loadMemberViews(db as Kysely<Database>, projectId, {
+        memberIds: rows.map((r) => r.id),
+      })
     ).map((m) => [m.id, m]),
   );
   const out: Candidate[] = [];

@@ -16,10 +16,27 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { Download, House, PanelLeft, Save } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Download,
+  FileText,
+  House,
+  PanelLeft,
+  Save,
+  Search,
+} from "lucide-react";
 import { api, ApiError, send } from "../lib/api";
 import { undoAsking } from "../lib/undo";
 import { ProfilePanel, type ProfileOverlay } from "./ProfilePanel";
+import { ProjectDetailsPanel } from "./ProjectDetails";
+import { Drawer } from "./Drawer";
+import {
+  loadDrawer,
+  saveDrawer,
+  usePersistentFlag,
+  type DrawerName,
+} from "../lib/ui-state";
 import { noText } from "../lib/profile-callout";
 import { formatFtIn } from "../lib/ftin";
 import { fullPageBox } from "../lib/tools";
@@ -132,8 +149,36 @@ export const Workspace: React.FC<{
   // Phase 14e: the Find similar preview the person corrects (strictness, unticked matches)
   const [simPreview, setSimPreview] = useState<SimilarPreview | null>(null);
   // Phase 0 profile from callout: the search highlights / Mark all proposals drawn on the page
-  const [profileOverlay, setProfileOverlay] = useState<ProfileOverlay | null>(null);
+  const [profileOverlay, setProfileOverlay] = useState<ProfileOverlay | null>(
+    null,
+  );
   const [profileTick, setProfileTick] = useState(0);
+  // Phase 0 cover details: the panel, and the box of the source it jumped to
+  const [jumpBox, setJumpBox] = useState<
+    [number, number, number, number] | null
+  >(null);
+  // the side panels and the drawer: remembered per person (localStorage, wrapped)
+  const [leftOpen, setLeftOpen] = usePersistentFlag("left", true, who);
+  const [rightOpen, setRightOpen] = usePersistentFlag("right", true, who);
+  const [drawer, setDrawerState] = useState<DrawerName>(() => loadDrawer(who));
+  // only one drawer at a time; closing one ends what it drew on the page
+  const setDrawer = useCallback(
+    (d: DrawerName) => {
+      setDrawerState(d);
+      saveDrawer(d, who);
+      if (d !== "details") setJumpBox(null);
+    },
+    [who],
+  );
+  useEffect(() => {
+    if (!drawer) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !e.defaultPrevented) setDrawer(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [drawer, setDrawer]);
+
   const [strictness, setStrictness] = useState(STRICTNESS_DEFAULT);
   const [unticked, setUnticked] = useState<Set<string>>(new Set());
   // Phase 0-14g: how the last column was placed (Shift = no snap) and its pending arrow-key nudges
@@ -882,6 +927,25 @@ export const Workspace: React.FC<{
               </div>
             )}
           </span>
+          <button
+            className="icon"
+            aria-label="project details"
+            aria-pressed={drawer === "details"}
+            title="Project details and the drawing index check"
+            onClick={() => setDrawer(drawer === "details" ? null : "details")}
+          >
+            <FileText size={18} />
+          </button>
+          <button
+            className="icon"
+            aria-label="profile search"
+            aria-pressed={drawer === "profile"}
+            title="Profile search: every occurrence of a size on the pages"
+            disabled={!page}
+            onClick={() => setDrawer(drawer === "profile" ? null : "profile")}
+          >
+            <Search size={18} />
+          </button>
           <SessionControl projectId={projectId} who={who} onError={fail} />
           <span className="avatar" title={who}>
             {initials(who)}
@@ -899,9 +963,28 @@ export const Workspace: React.FC<{
       {tab === "report" && <ReportTab projectId={projectId} who={who} />}
       {tab === "plans" && (
         <div className="ws-body">
-          <div className="left dark">
+          {!leftOpen && (
+            <button
+              className="rail rail-left"
+              aria-label="open navigation"
+              title="Show Pages / Members"
+              onClick={() => setLeftOpen(true)}
+            >
+              <ChevronRight size={16} />
+            </button>
+          )}
+          <div className="left dark" hidden={!leftOpen}>
             <div className="panel-head">
               <PanelLeft size={16} /> Navigation
+              <span className="grow" />
+              <button
+                className="icon"
+                aria-label="close navigation"
+                title="Hide Pages / Members"
+                onClick={() => setLeftOpen(false)}
+              >
+                <ChevronLeft size={16} />
+              </button>
             </div>
             <div className="seg">
               <button
@@ -977,70 +1060,356 @@ export const Workspace: React.FC<{
               )}
             </div>
           </div>
-          {page && (
-            <ProfilePanel
-              key={page.id}
-              projectId={projectId}
-              sheetId={page.id}
-              who={who}
-              noText={noText(page)}
-              version={profileTick + pieces.length}
-              onOverlay={setProfileOverlay}
-              onChanged={(m) => {
-                say(m);
-                setProfileTick((t) => t + 1);
-                void refresh();
-              }}
-              onError={fail}
-            />
+          <div className="ws-main">
+            <div className="ws-stage">
+              {showColumnHint(page, pieces, !!lastColumn) && (
+                <ColumnHint text={COLUMN_HINT} />
+              )}
+              {page && <ColumnCounts pieces={pieces} />}
+              {page && lastColumn && (
+                <FindSimilarBar
+                  key={lastColumn}
+                  projectId={projectId}
+                  memberId={lastColumn}
+                  who={who}
+                  preview={simPreview}
+                  snap={!(placedNoSnap || nudged > 0 || nudgeOffset !== null)}
+                  beforeSearch={flushNudges}
+                  box={capture?.edited ? toArray(capture.box) : null}
+                  onPreview={(p) => {
+                    // the column may have moved onto the ink's centre
+                    if (p.snap?.moved) void refresh();
+                    setSimPreview(p);
+                    setStrictness(p.strictness_default ?? STRICTNESS_DEFAULT);
+                  }}
+                  strictness={strictness}
+                  onStrictness={setStrictness}
+                  unticked={unticked}
+                  onDone={(n) => {
+                    setLastColumn(null);
+                    say(
+                      n
+                        ? `${n} similar columns added (Ctrl+Z undoes)`
+                        : "Nothing added",
+                    );
+                    void refresh();
+                  }}
+                  onClose={() => setLastColumn(null)}
+                  onError={fail}
+                />
+              )}
+              {page ? (
+                <Canvas
+                  who={who}
+                  symbols={colSymbols}
+                  nudgeId={lastColumn}
+                  onNudge={nudgeColumn}
+                  onColumnTool={refreshSymbols}
+                  lastColumn={lastColumn}
+                  capture={capture}
+                  onCapture={(box, edited) => setCapture({ box, edited })}
+                  onRotate={(ids, by) =>
+                    void act(
+                      send(
+                        "POST",
+                        `/api/projects/${projectId}/line-first/pieces/edit`,
+                        {
+                          who,
+                          member_ids: ids,
+                          ...by,
+                        },
+                      ),
+                      ids.length === 1
+                        ? "Rotated (Ctrl+Z undoes)"
+                        : `${ids.length} columns rotated (Ctrl+Z undoes)`,
+                    )
+                  }
+                  profileMarks={profileOverlay}
+                  jumpBox={jumpBox}
+                  similar={
+                    simPreview
+                      ? {
+                          matches: shownAt(
+                            previewMatches(simPreview),
+                            strictness,
+                          ),
+                          unticked,
+                          onToggle: (k) => setUnticked((u) => toggle(u, k)),
+                          example: simPreview.example.rect
+                            ? {
+                                rect: simPreview.example.rect,
+                                source: simPreview.example.source ?? "vector",
+                              }
+                            : null,
+                        }
+                      : null
+                  }
+                  pdf={pdf}
+                  page={page}
+                  data={shownData}
+                  lines={lines}
+                  layers={layers}
+                  onLayers={setLayers}
+                  selected={selected}
+                  onSelect={(ids, add) =>
+                    setSelected((s) => {
+                      const n = new Set(add ? s : []);
+                      for (const id of ids) {
+                        if (add && n.has(id) && ids.length === 1) n.delete(id);
+                        else n.add(id);
+                      }
+                      return n;
+                    })
+                  }
+                  pendingEdits={page.pending_edits}
+                  onCrop={(box: Box) =>
+                    void act(
+                      send("POST", sheetUrl(page, "build-setup/crop"), {
+                        box,
+                        ...viewBody,
+                        who,
+                      }),
+                    )
+                  }
+                  onPick={(p: Pt2, mode: PickMode) => void pickPen(p, mode)}
+                  penNeedsConfirm={
+                    page?.views
+                      ?.find((v) => v.id === view?.id)
+                      ?.system_values.includes("pen_class") ?? false
+                  }
+                  onConfirmPen={() =>
+                    act(
+                      send("POST", sheetUrl(page, "build-setup/confirm-pen"), {
+                        ...(view ? { view_id: view.id } : {}),
+                        who,
+                      }),
+                      "Beam pen confirmed",
+                    )
+                  }
+                  drawing={drawing}
+                  onDrawing={setDrawing}
+                  activeViewId={view?.id ?? null}
+                  onActiveView={setViewId}
+                  onRemovePen={(pen) =>
+                    void act(
+                      send("POST", sheetUrl(page, "build-setup/remove-pen"), {
+                        pen_class: pen,
+                        ...viewBody,
+                        who,
+                      }),
+                    )
+                  }
+                  onToggleDeselect={(line, index) =>
+                    void act(
+                      send("POST", viewUrl("deselections/toggle"), {
+                        line,
+                        line_index: index,
+                        who,
+                      }),
+                    )
+                  }
+                  onBoxDeselect={(ls) =>
+                    void act(
+                      send("POST", viewUrl("deselections/box"), {
+                        lines: ls.map((l) => ({
+                          line: l.line,
+                          line_index: l.index,
+                        })),
+                        who,
+                      }),
+                      `${ls.length} lines deselected`,
+                    )
+                  }
+                  onResetDeselect={() =>
+                    void act(
+                      send("POST", viewUrl("deselections/reset"), { who }),
+                    )
+                  }
+                  onExclude={(box) =>
+                    void act(send("POST", viewUrl("exclusions"), { box, who }))
+                  }
+                  onDeleteExclusion={(id) =>
+                    void act(
+                      send("DELETE", viewUrl(`exclusions/${id}`), { who }),
+                    )
+                  }
+                  onAcceptExclusions={(ids) =>
+                    void act(
+                      send(
+                        "POST",
+                        viewUrl("exclusions/accept"),
+                        ids === "all" ? { all: true, who } : { ids, who },
+                      ),
+                    )
+                  }
+                  onSuggestExcludes={() =>
+                    void act(
+                      send<{ suggested: number }>(
+                        "POST",
+                        viewUrl("exclusions/suggest"),
+                        { who },
+                      ).then((r) => {
+                        say(
+                          r.suggested
+                            ? `${r.suggested} suggested: accept all or one by one`
+                            : "Nothing to suggest",
+                        );
+                      }),
+                    )
+                  }
+                  onAddView={(box) =>
+                    void act(
+                      send<{ id: string }>(
+                        "POST",
+                        `/api/projects/${projectId}/sheets/${page.id}/build-views`,
+                        { box, who },
+                      ).then((v) => setViewId(v.id)),
+                      "View added: set its role and scale",
+                    )
+                  }
+                  onDraw={(kind, a, b, opts) =>
+                    void act(
+                      send<Piece>("POST", sheetUrl(page, "line-first/pieces"), {
+                        who,
+                        kind,
+                        a,
+                        b,
+                        ...(opts ?? {}),
+                      }).then((pc) => {
+                        // Phase 14b: a placed column offers Find similar
+                        setLastColumn(pc.type === "column" ? pc.id : null);
+                        // Phase 0-14g: a Shift placement stays where it was put
+                        setPlacedNoSnap(opts?.snap?.source === "shift_off");
+                      }),
+                    )
+                  }
+                  onEnds={(pc: Piece, a, b) =>
+                    void act(
+                      send(
+                        "POST",
+                        `/api/projects/${projectId}/line-first/pieces/${pc.id}/ends`,
+                        { who, a, b },
+                      ),
+                    )
+                  }
+                  onUndo={() =>
+                    void undoAsking(
+                      (confirm) =>
+                        send<{ view?: UndoneView }>(
+                          "POST",
+                          `/api/projects/${projectId}/undo`,
+                          confirm ? { who, confirm: true } : { who },
+                        ),
+                      (q) => window.confirm(q),
+                    )
+                      .then((r) => {
+                        if (!r) return;
+                        say(r.view ? undoneViewText(r.view) : "Undone");
+                        return refresh();
+                      })
+                      .catch(fail)
+                  }
+                  building={(page.views ?? []).some(
+                    (v) => v.badge === "Building",
+                  )}
+                  onApprove={() => void editSelected({ approved: true })}
+                  onDeleteSelected={deleteSelected}
+                  toolAsk={toolAsk}
+                />
+              ) : (
+                <div className="center">
+                  <div className="empty">No pages yet</div>
+                </div>
+              )}
+            </div>
+            {drawer === "details" && (
+              <Drawer title="Project details" onClose={() => setDrawer(null)}>
+                <ProjectDetailsPanel
+                  projectId={projectId}
+                  who={who}
+                  onClose={() => setDrawer(null)}
+                  onJump={(pageIndex, box, sid) => {
+                    const target =
+                      pages.find((p) => p.id === sid) ??
+                      pages.find((p) => p.page_number === pageIndex + 1);
+                    setJumpBox(box);
+                    if (target && target.id !== sheetId) selectSheet(target.id);
+                  }}
+                  onChanged={say}
+                  onError={fail}
+                />
+              </Drawer>
+            )}
+            {drawer === "profile" && page && (
+              <Drawer title="Profile search" onClose={() => setDrawer(null)}>
+                <ProfilePanel
+                  key={page.id}
+                  projectId={projectId}
+                  sheetId={page.id}
+                  who={who}
+                  noText={noText(page)}
+                  version={profileTick + pieces.length}
+                  onOverlay={setProfileOverlay}
+                  onChanged={(m) => {
+                    say(m);
+                    setProfileTick((t) => t + 1);
+                    void refresh();
+                  }}
+                  onError={fail}
+                />
+              </Drawer>
+            )}
+          </div>
+          {!rightOpen && (
+            <button
+              className="rail rail-right"
+              aria-label="open properties"
+              title="Show Properties"
+              onClick={() => setRightOpen(true)}
+            >
+              <ChevronLeft size={16} />
+            </button>
           )}
-          {showColumnHint(page, pieces, !!lastColumn) && (
-            <ColumnHint text={COLUMN_HINT} />
-          )}
-          {page && <ColumnCounts pieces={pieces} />}
-          {page && lastColumn && (
-            <FindSimilarBar
-              key={lastColumn}
-              projectId={projectId}
-              memberId={lastColumn}
-              who={who}
-              preview={simPreview}
-              snap={!(placedNoSnap || nudged > 0 || nudgeOffset !== null)}
-              beforeSearch={flushNudges}
-              box={capture?.edited ? toArray(capture.box) : null}
-              onPreview={(p) => {
-                // the column may have moved onto the ink's centre
-                if (p.snap?.moved) void refresh();
-                setSimPreview(p);
-                setStrictness(p.strictness_default ?? STRICTNESS_DEFAULT);
+          {rightOpen && (
+            <PropertiesPanel
+              onCollapse={() => setRightOpen(false)}
+              bomRows={bom?.rows ?? []}
+              sheetId={sheetId}
+              selected={selectedPieces}
+              kinds={kinds}
+              crop={view ? view.box : (data?.crop ?? page?.setup.crop ?? null)}
+              onEdit={(e) => void editSelected(e)}
+              onDelete={deleteSelected}
+              perimeter={perimeter}
+              columnHeight={columnHeight}
+              onCropTool={() => askTool("crop")}
+              onResetCrop={
+                page ? () => resetFullPage(page, view?.id ?? null) : undefined
+              }
+              viewPieces={pieces.filter(
+                (p) =>
+                  (p.build_view_id ?? data?.views?.[0]?.id ?? null) ===
+                  (view?.id ?? null),
+              )}
+              viewName={
+                (data?.views?.length ?? 0) > 1 ? (view?.name ?? null) : null
+              }
+              onSelectPieces={(ids) => setSelected(new Set(ids))}
+              onOpenPage={(id, ids) => {
+                if (id === sheetId) {
+                  setSelected(new Set(ids));
+                  return;
+                }
+                pendingSelect.current = { sheetId: id, ids };
+                selectSheet(id);
               }}
-              strictness={strictness}
-              onStrictness={setStrictness}
-              unticked={unticked}
-              onDone={(n) => {
-                setLastColumn(null);
-                say(
-                  n
-                    ? `${n} similar columns added (Ctrl+Z undoes)`
-                    : "Nothing added",
-                );
-                void refresh();
+              pageName={(id) => {
+                const pg = pages.find((x) => x.id === id);
+                return pg
+                  ? `Page ${pg.page_number}${pg.sheet_number ? ` · ${pg.sheet_number}` : ""}`
+                  : "Page";
               }}
-              onClose={() => setLastColumn(null)}
-              onError={fail}
-            />
-          )}
-          {page ? (
-            <Canvas
-              who={who}
-              symbols={colSymbols}
-              nudgeId={lastColumn}
-              onNudge={nudgeColumn}
-              onColumnTool={refreshSymbols}
-              lastColumn={lastColumn}
-              capture={capture}
-              onCapture={(box, edited) => setCapture({ box, edited })}
-              onRotate={(ids, by) =>
+              onSetSizeAll={(ids, profile) =>
                 void act(
                   send(
                     "POST",
@@ -1048,253 +1417,14 @@ export const Workspace: React.FC<{
                     {
                       who,
                       member_ids: ids,
-                      ...by,
+                      profile_text: profile,
                     },
                   ),
-                  ids.length === 1
-                    ? "Rotated (Ctrl+Z undoes)"
-                    : `${ids.length} columns rotated (Ctrl+Z undoes)`,
+                  `${profile} set on ${ids.length} pieces (Undo puts them back)`,
                 )
               }
-              profileMarks={profileOverlay}
-              similar={
-                simPreview
-                  ? {
-                      matches: shownAt(previewMatches(simPreview), strictness),
-                      unticked,
-                      onToggle: (k) => setUnticked((u) => toggle(u, k)),
-                      example: simPreview.example.rect
-                        ? {
-                            rect: simPreview.example.rect,
-                            source: simPreview.example.source ?? "vector",
-                          }
-                        : null,
-                    }
-                  : null
-              }
-              pdf={pdf}
-              page={page}
-              data={shownData}
-              lines={lines}
-              layers={layers}
-              onLayers={setLayers}
-              selected={selected}
-              onSelect={(ids, add) =>
-                setSelected((s) => {
-                  const n = new Set(add ? s : []);
-                  for (const id of ids) {
-                    if (add && n.has(id) && ids.length === 1) n.delete(id);
-                    else n.add(id);
-                  }
-                  return n;
-                })
-              }
-              pendingEdits={page.pending_edits}
-              onCrop={(box: Box) =>
-                void act(
-                  send("POST", sheetUrl(page, "build-setup/crop"), {
-                    box,
-                    ...viewBody,
-                    who,
-                  }),
-                )
-              }
-              onPick={(p: Pt2, mode: PickMode) => void pickPen(p, mode)}
-              penNeedsConfirm={
-                page?.views
-                  ?.find((v) => v.id === view?.id)
-                  ?.system_values.includes("pen_class") ?? false
-              }
-              onConfirmPen={() =>
-                act(
-                  send("POST", sheetUrl(page, "build-setup/confirm-pen"), {
-                    ...(view ? { view_id: view.id } : {}),
-                    who,
-                  }),
-                  "Beam pen confirmed",
-                )
-              }
-              drawing={drawing}
-              onDrawing={setDrawing}
-              activeViewId={view?.id ?? null}
-              onActiveView={setViewId}
-              onRemovePen={(pen) =>
-                void act(
-                  send("POST", sheetUrl(page, "build-setup/remove-pen"), {
-                    pen_class: pen,
-                    ...viewBody,
-                    who,
-                  }),
-                )
-              }
-              onToggleDeselect={(line, index) =>
-                void act(
-                  send("POST", viewUrl("deselections/toggle"), {
-                    line,
-                    line_index: index,
-                    who,
-                  }),
-                )
-              }
-              onBoxDeselect={(ls) =>
-                void act(
-                  send("POST", viewUrl("deselections/box"), {
-                    lines: ls.map((l) => ({
-                      line: l.line,
-                      line_index: l.index,
-                    })),
-                    who,
-                  }),
-                  `${ls.length} lines deselected`,
-                )
-              }
-              onResetDeselect={() =>
-                void act(send("POST", viewUrl("deselections/reset"), { who }))
-              }
-              onExclude={(box) =>
-                void act(send("POST", viewUrl("exclusions"), { box, who }))
-              }
-              onDeleteExclusion={(id) =>
-                void act(send("DELETE", viewUrl(`exclusions/${id}`), { who }))
-              }
-              onAcceptExclusions={(ids) =>
-                void act(
-                  send(
-                    "POST",
-                    viewUrl("exclusions/accept"),
-                    ids === "all" ? { all: true, who } : { ids, who },
-                  ),
-                )
-              }
-              onSuggestExcludes={() =>
-                void act(
-                  send<{ suggested: number }>(
-                    "POST",
-                    viewUrl("exclusions/suggest"),
-                    { who },
-                  ).then((r) => {
-                    say(
-                      r.suggested
-                        ? `${r.suggested} suggested: accept all or one by one`
-                        : "Nothing to suggest",
-                    );
-                  }),
-                )
-              }
-              onAddView={(box) =>
-                void act(
-                  send<{ id: string }>(
-                    "POST",
-                    `/api/projects/${projectId}/sheets/${page.id}/build-views`,
-                    { box, who },
-                  ).then((v) => setViewId(v.id)),
-                  "View added: set its role and scale",
-                )
-              }
-              onDraw={(kind, a, b, opts) =>
-                void act(
-                  send<Piece>("POST", sheetUrl(page, "line-first/pieces"), {
-                    who,
-                    kind,
-                    a,
-                    b,
-                    ...(opts ?? {}),
-                  }).then((pc) => {
-                    // Phase 14b: a placed column offers Find similar
-                    setLastColumn(pc.type === "column" ? pc.id : null);
-                    // Phase 0-14g: a Shift placement stays where it was put
-                    setPlacedNoSnap(opts?.snap?.source === "shift_off");
-                  }),
-                )
-              }
-              onEnds={(pc: Piece, a, b) =>
-                void act(
-                  send(
-                    "POST",
-                    `/api/projects/${projectId}/line-first/pieces/${pc.id}/ends`,
-                    { who, a, b },
-                  ),
-                )
-              }
-              onUndo={() =>
-                void undoAsking(
-                  (confirm) =>
-                    send<{ view?: UndoneView }>(
-                      "POST",
-                      `/api/projects/${projectId}/undo`,
-                      confirm ? { who, confirm: true } : { who },
-                    ),
-                  (q) => window.confirm(q),
-                )
-                  .then((r) => {
-                    if (!r) return;
-                    say(r.view ? undoneViewText(r.view) : "Undone");
-                    return refresh();
-                  })
-                  .catch(fail)
-              }
-              building={(page.views ?? []).some((v) => v.badge === "Building")}
-              onApprove={() => void editSelected({ approved: true })}
-              onDeleteSelected={deleteSelected}
-              toolAsk={toolAsk}
             />
-          ) : (
-            <div className="center">
-              <div className="empty">No pages yet</div>
-            </div>
           )}
-          <PropertiesPanel
-            bomRows={bom?.rows ?? []}
-            sheetId={sheetId}
-            selected={selectedPieces}
-            kinds={kinds}
-            crop={view ? view.box : (data?.crop ?? page?.setup.crop ?? null)}
-            onEdit={(e) => void editSelected(e)}
-            onDelete={deleteSelected}
-            perimeter={perimeter}
-            columnHeight={columnHeight}
-            onCropTool={() => askTool("crop")}
-            onResetCrop={
-              page ? () => resetFullPage(page, view?.id ?? null) : undefined
-            }
-            viewPieces={pieces.filter(
-              (p) =>
-                (p.build_view_id ?? data?.views?.[0]?.id ?? null) ===
-                (view?.id ?? null),
-            )}
-            viewName={
-              (data?.views?.length ?? 0) > 1 ? (view?.name ?? null) : null
-            }
-            onSelectPieces={(ids) => setSelected(new Set(ids))}
-            onOpenPage={(id, ids) => {
-              if (id === sheetId) {
-                setSelected(new Set(ids));
-                return;
-              }
-              pendingSelect.current = { sheetId: id, ids };
-              selectSheet(id);
-            }}
-            pageName={(id) => {
-              const pg = pages.find((x) => x.id === id);
-              return pg
-                ? `Page ${pg.page_number}${pg.sheet_number ? ` · ${pg.sheet_number}` : ""}`
-                : "Page";
-            }}
-            onSetSizeAll={(ids, profile) =>
-              void act(
-                send(
-                  "POST",
-                  `/api/projects/${projectId}/line-first/pieces/edit`,
-                  {
-                    who,
-                    member_ids: ids,
-                    profile_text: profile,
-                  },
-                ),
-                `${profile} set on ${ids.length} pieces (Undo puts them back)`,
-              )
-            }
-          />
         </div>
       )}
       {saveAsk && page && (

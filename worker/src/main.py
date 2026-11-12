@@ -20,6 +20,8 @@ from src.build.similar_job import JOB_TYPE as FIND_SIMILAR
 from src.build.similar_job import run_find_similar
 from src.config import WorkerConfig, load_config
 from src.db import connect
+from src.details.job import JOB_TYPE as READ_DETAILS
+from src.details.job import run_read_details
 from src.pdf_scan.job import JOB_TYPE as SCAN_PDF
 from src.pdf_scan.job import run_scan_pdf
 from src.queue import Job, claim_next_job, complete_job, fail_expired_jobs, fail_job
@@ -44,6 +46,7 @@ HANDLERS: dict[str, Handler] = {
     FIND_SIMILAR: run_find_similar,
     LEARN_STYLE: run_learn_style,
     READ_LABELS: run_read_labels,
+    READ_DETAILS: run_read_details,
     COPY_PROJECT: run_copy_project,
 }
 

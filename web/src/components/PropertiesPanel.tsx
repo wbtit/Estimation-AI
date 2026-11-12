@@ -1,4 +1,5 @@
 import { sourceChip } from "../lib/profile-callout";
+import { usePersistentFlag } from "../lib/ui-state";
 import React, { useEffect, useRef, useState } from "react";
 import {
   Check,
@@ -58,7 +59,11 @@ const Section: React.FC<{
   testId?: string;
   children: React.ReactNode;
 }> = ({ title, extra, testId, children }) => {
-  const [open, setOpen] = useState(true);
+  // remembered per person (localStorage, wrapped), by the section's title
+  const [open, setOpen] = usePersistentFlag(
+    `section.${title.replace(/ ·.*$/, "")}`,
+    true,
+  );
   return (
     <div className="section" data-testid={testId}>
       <div className="sec-bar">
@@ -173,6 +178,8 @@ export const PropertiesPanel: React.FC<{
   perimeter?: PerimeterApi;
   /** Review 3 item 4: the height of selected columns (their BOM length) and the project default. */
   columnHeight?: ColumnHeightApi;
+  /** hide the panel (the workspace then shows a thin rail to reopen it) */
+  onCollapse?: () => void;
 }> = ({
   bomRows,
   sheetId,
@@ -191,6 +198,7 @@ export const PropertiesPanel: React.FC<{
   pageName = (id) => id,
   perimeter,
   columnHeight,
+  onCollapse,
 }) => {
   const [tab, setTab] = useState<"summary" | "member">(
     selected.length ? "member" : "summary",
@@ -205,6 +213,17 @@ export const PropertiesPanel: React.FC<{
     <div className="props dark">
       <div className="panel-head">
         <PanelRight size={16} /> Properties
+        <span className="grow" />
+        {onCollapse && (
+          <button
+            className="icon"
+            aria-label="close properties"
+            title="Hide Properties"
+            onClick={onCollapse}
+          >
+            <ChevronRight size={16} />
+          </button>
+        )}
       </div>
       <div className="seg">
         <button
