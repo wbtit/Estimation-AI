@@ -516,18 +516,51 @@ export const buildRoutes: FastifyPluginAsync<BuildRouteOptions> = async (app, op
           })
           .execute();
       };
+      // Review 4: the beam style is learned from this click (worker job learn_style). A new pen
+      // replaces a learned style until the job has run (single meanwhile); a person's override
+      // is never reset.
+      const learned = v.row.beam_style_source !== 'person';
+      const resetStyle =
+        mode === 'replace' && learned
+          ? {
+              beam_style: null,
+              beam_gap_min_pt: null,
+              beam_gap_max_pt: null,
+              beam_style_source: null,
+              beam_style_evidence: null,
+            }
+          : {};
+      const swap =
+        mode === 'add'
+          ? add
+          : replacePens(v, { pen_class: hit.pen_class, source: 'person' }, editor);
       await confirm(
         s,
         v,
         'pen_class',
         before,
         after,
-        { no_beams_by: null, no_beams_at: null },
+        { no_beams_by: null, no_beams_at: null, ...resetStyle },
         editor,
         'pick_pen',
-        mode === 'add'
-          ? add
-          : replacePens(v, { pen_class: hit.pen_class, source: 'person' }, editor),
+        async (trx) => {
+          await swap(trx);
+          if (learned)
+            await trx
+              .insertInto('jobs')
+              .values({
+                type: 'learn_style',
+                payload: JSON.stringify({
+                  sheet_id: s.id,
+                  view_id: v.row.id,
+                  x: request.body.x,
+                  y: request.body.y,
+                  pen_class: hit.pen_class,
+                  mode,
+                }),
+              })
+              .execute();
+        },
       );
       return {
         ok: true,
@@ -624,6 +657,51 @@ export const buildRoutes: FastifyPluginAsync<BuildRouteOptions> = async (app, op
         replacePens(v, null, editor),
       );
       return { ok: true, pen_class: null };
+    },
+  );
+
+  // Review 4: a person sets the page beam style of a view (single | double | both). It overrides
+  // the learned value and is never replaced by a later pen pick; one setup action, the view is
+  // "Requesting Build" until it is built again.
+  app.post<{
+    Params: { projectId: string; sheetId: string };
+    Body: { style: 'single' | 'double' | 'both'; view_id?: string; who: string };
+  }>(
+    '/api/projects/:projectId/sheets/:sheetId/build-setup/beam-style',
+    {
+      schema: {
+        params: sheetParams,
+        body: {
+          type: 'object',
+          required: ['style', 'who'],
+          additionalProperties: false,
+          properties: { style: { enum: ['single', 'double', 'both'] }, view_id: uuid, who },
+        },
+      },
+    },
+    async (request) => {
+      const { s, v } = await target(
+        request.params.projectId,
+        request.params.sheetId,
+        request.body.view_id,
+      );
+      const editor = who_(request.body.who);
+      const style = request.body.style;
+      await confirm(
+        s,
+        v,
+        'beam_style',
+        v.row.beam_style ?? 'single',
+        style,
+        {
+          beam_style: style,
+          beam_style_source: 'person',
+          beam_style_by: editor,
+          beam_style_at: new Date(),
+        },
+        editor,
+      );
+      return { ok: true, beam_style: style };
     },
   );
 

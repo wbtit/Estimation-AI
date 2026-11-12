@@ -36,6 +36,7 @@ import {
   type Pt2,
   type RoleName,
   type Route,
+  BEAM_STYLE_LABEL,
 } from "../lib/lf";
 import { usePdf } from "../lib/usePdf";
 import {
@@ -600,6 +601,15 @@ export const Workspace: React.FC<{
           who,
         }),
         "No beams: press ▶ to rebuild",
+      ),
+    setBeamStyle: (p, viewId, style) =>
+      act(
+        send("POST", sheetUrl(p, "build-setup/beam-style"), {
+          style,
+          ...withView(viewId),
+          who,
+        }),
+        `Beam lines: ${BEAM_STYLE_LABEL[style]}: press ▶ to rebuild`,
       ),
     // Phase 14f: from the red Pen chip: open the page (and view) with the Pick beam tool
     pickPen: (p, viewId) => {

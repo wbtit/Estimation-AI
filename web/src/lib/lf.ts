@@ -192,7 +192,18 @@ export interface BuildView {
   setup_changed_at: string | null;
   built_at: string | null;
   deselections_unmatched?: number;
+  /** Review 4: how the page draws beams (learned at the pen pick, or set by a person). */
+  beam_style?: "single" | "double" | "both";
+  beam_style_source?: "learned" | "person" | null;
+  beam_gap_pt?: number | null;
+  beam_style_evidence?: { reason?: string } | null;
 }
+
+export const BEAM_STYLE_LABEL = {
+  single: "Single line",
+  double: "Double line",
+  both: "Both",
+} as const;
 
 /** A view as the page list shows it (with its badge and counts). */
 export interface PageViewInfo extends BuildView {

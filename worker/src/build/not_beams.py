@@ -314,9 +314,11 @@ def not_beams(
         # a base plate first: its parallel edges with bolts between would read as a wall
         if plates and plate_line(plates, ln.p0, ln.p1):
             out.base_plate.append(ln.id)
-        elif is_wall_face(ln, pg, ratio):
+        # Review 4: the midline of a double-line pair (it has evidence) is two flange lines with a
+        # dashed centreline: the flange fill beside it is not a wall, and a pair is no column edge
+        elif ln.evidence is None and is_wall_face(ln, pg, ratio):
             out.wall.append(ln.id)
-        elif is_column_shape_edge(ln, pg, positions, ratio):
+        elif ln.evidence is None and is_column_shape_edge(ln, pg, positions, ratio):
             out.column_shape.append(ln.id)
         else:
             out.lines.append(ln)

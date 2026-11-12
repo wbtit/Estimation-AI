@@ -315,3 +315,75 @@ describe("a page whose text could not be read", () => {
     expect(screen.queryByTestId("card-text-problem")).toBeNull();
   });
 });
+
+describe("Beam lines: the page beam style (single / double / both)", () => {
+  const withStyle = (a: ReturnType<typeof actions>) => {
+    a.setBeamStyle = vi.fn();
+    return a;
+  };
+
+  it("shows the learned style once the view has a pen, and a change asks for the override", () => {
+    const a = withStyle(actions());
+    card(
+      a,
+      page(
+        view({
+          pens: [
+            {
+              pen_class: "0.25-0.5|black|solid",
+              position: 1,
+              source: "person",
+            },
+          ],
+          reasons: [],
+          badge: "Requesting Build",
+          beam_style: "double",
+          beam_style_source: "learned",
+          beam_gap_pt: 3.9,
+          beam_style_evidence: { reason: "thin pair with a dashed centreline" },
+        }),
+      ),
+    );
+    const select = screen.getByTestId("beam-style") as HTMLSelectElement;
+    expect(select.value).toBe("double");
+    expect(select.title).toBe("thin pair with a dashed centreline");
+    expect(screen.getByTestId("beam-style-note").textContent).toContain(
+      "learned: two thin lines with a dashed centreline",
+    );
+    fireEvent.change(select, { target: { value: "both" } });
+    expect(a.setBeamStyle).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "s1" }),
+      "v1",
+      "both",
+    );
+  });
+
+  it("a person's choice is labelled as theirs; no pen and no action: no control", () => {
+    const a = withStyle(actions());
+    card(
+      a,
+      page(
+        view({
+          pens: [{ pen_class: "p", position: 1, source: "person" }],
+          reasons: [],
+          badge: "Requesting Build",
+          beam_style: "single",
+          beam_style_source: "person",
+        }),
+      ),
+    );
+    expect(screen.getByTestId("beam-style").getAttribute("title")).toBe(
+      "Set by a person",
+    );
+    expect(screen.queryByTestId("beam-style-note")).toBeNull();
+    cleanup();
+    card(withStyle(actions()), page(view()));
+    expect(screen.queryByTestId("beam-style")).toBeNull(); // no pen yet
+    cleanup();
+    card(
+      actions(),
+      page(view({ pens: [{ pen_class: "p", position: 1, source: "person" }] })),
+    );
+    expect(screen.queryByTestId("beam-style")).toBeNull(); // the page cannot set it
+  });
+});

@@ -65,6 +65,8 @@ class BeamLine:
     role: str = "beam"  # girder or beam, set by supports.py
     level: int | None = None  # support order: 1 girder, 2+ beams; None = never supported twice
     supports: list = field(default_factory=list)
+    # Review 4: the evidence of a double-line pair (this line is the pair's midline), else None
+    evidence: dict | None = None
 
     @property
     def length(self) -> float:

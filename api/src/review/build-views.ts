@@ -180,6 +180,11 @@ export function viewJson(v: LoadedView) {
     deselections: v.deselections,
     setup_changed_at: r.setup_changed_at,
     built_at: r.built_at,
+    // Review 4: the page beam style (single when never learned or set)
+    beam_style: r.beam_style ?? 'single',
+    beam_style_source: r.beam_style_source,
+    beam_gap_pt: num(r.beam_gap_min_pt),
+    beam_style_evidence: r.beam_style_evidence,
   };
 }
 
